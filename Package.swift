@@ -11,7 +11,7 @@ let package = Package(
             name: "Metria",
             dependencies: ["MetriaCore"],
             path: ".",
-            exclude: ["Sources/MetriaCore", "Tests", "AGENTS.md", "README.md"],
+            exclude: ["Sources/MetriaCore", "Tests", "AGENTS.md", "README.md", "LICENSE"],
             sources: ["Sources/Metria/MetriaApp.swift"],
             resources: [
                 .copy("Logos/claude-logo.png"),
