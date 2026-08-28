@@ -214,7 +214,10 @@ enum KeychainReader {
     private struct ClaudeCredentials: Decodable { let claudeAiOauth: OAuth; struct OAuth: Decodable { let accessToken: String } }
 }
 
-struct GaugeColor { static func color(for percent: Double) -> Color { percent >= 85 ? .red : percent >= 65 ? .orange : percent >= 40 ? .yellow : .green } }
+struct GaugeColor {
+    static func color(for percent: Double) -> Color { Color(nsColor: nsColor(for: percent)) }
+    static func nsColor(for percent: Double) -> NSColor { percent >= 85 ? .systemRed : percent >= 65 ? .systemOrange : percent >= 40 ? .systemYellow : .systemGreen }
+}
 
 struct ProviderLogo: View {
     let provider: ProviderKind
@@ -251,21 +254,6 @@ extension ProviderKind {
     }
 }
 
-struct RingGauge: View {
-    let usage: ProviderUsage
-    var body: some View {
-        let percent = usage.primary?.percent ?? 0
-        VStack(spacing: 8) {
-            ZStack {
-                Circle().stroke(Color(white: 0.19), lineWidth: 8)
-                Circle().trim(from: 0, to: percent / 100).stroke(GaugeColor.color(for: percent), style: StrokeStyle(lineWidth: 4, lineCap: .round)).rotationEffect(.degrees(-90))
-                ProviderLogo(provider: usage.kind, size: 25).foregroundStyle(.white)
-            }.frame(width: 70, height: 70)
-            Text("\(Int(percent.rounded()))% ").font(.system(size: 25, weight: .medium, design: .rounded)).foregroundStyle(.white)
-        }
-    }
-}
-
 struct UsageCard: View {
     let usage: ProviderUsage
     var width: CGFloat = 390
@@ -287,9 +275,82 @@ struct UsageCard: View {
 
 extension UsageWindow { var resetText: String { guard let resetDate else { return "No reset data" }; let seconds = resetDate.timeIntervalSinceNow; if seconds > 0 && seconds < 86400 { return "Resets in \(Int(seconds / 60)) min" }; return "Resets \(resetDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))" } }
 
+struct DashboardUsageCard: View {
+    let usage: ProviderUsage
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(window.title)
+                            Spacer()
+                            Text("\(Int(window.percent.rounded()))%")
+                                .foregroundStyle(GaugeColor.color(for: window.percent))
+                                .monospacedDigit()
+                        }
+                        .font(.subheadline)
+                        ProgressView(value: min(max(window.percent, 0), 100), total: 100)
+                            .tint(GaugeColor.color(for: window.percent))
+                        Text(window.resetText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let error = usage.error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                ProviderLogo(provider: usage.kind, size: 20)
+                Text(usage.kind.rawValue)
+                Spacer()
+                if usage.error == nil {
+                    Label("Connected", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
 struct PopoverContent: View {
     @ObservedObject var store: UsageStore
-    var body: some View { VStack(spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 20) { HStack(spacing: 22) { ForEach(store.providers) { RingGauge(usage: $0) } }.padding(.horizontal, 18).padding(.top, 20); ForEach(store.providers) { UsageCard(usage: $0) } }.padding(.horizontal, 12) }; HStack { Text("Updated \(Date().formatted(.dateTime.hour().minute()))").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Refresh") { store.refresh() }.buttonStyle(.plain).focusable(false).foregroundStyle(.white) }.padding(.horizontal, 18).padding(.vertical, 16) }.background(Color.black) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Dashboard").font(.title2.weight(.semibold))
+                    Text("AI coding assistant usage").font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(action: store.refresh) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(store.providers) { DashboardUsageCard(usage: $0) }
+                }
+            }
+
+            Divider()
+
+            Text("Updated \(Date().formatted(.dateTime.hour().minute()))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .frame(width: 440, height: 700)
+    }
 }
 
 struct SidebarContent: View {
@@ -629,6 +690,7 @@ struct SettingsView: View {
                 Spacer()
                 Button("Exit", role: .destructive, action: onQuit)
                     .buttonStyle(.plain)
+                    .focusable(false)
                     .foregroundStyle(.red)
                     .font(.system(size: 12))
             }
@@ -668,7 +730,12 @@ struct SettingsView: View {
                 title.append(NSAttributedString(string: " "))
             }
             let name = usage.kind == .openCodeGo ? "Go" : usage.kind.rawValue
-            title.append(NSAttributedString(string: "\(name) \(Int(usage.primary!.percent.rounded()))%", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+            let percent = usage.primary!.percent
+            title.append(NSAttributedString(string: "\(name) ", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+            let percentageAttributes: [NSAttributedString.Key: Any] = percent >= 40
+                ? [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: GaugeColor.nsColor(for: percent)]
+                : [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]
+            title.append(NSAttributedString(string: "\(Int(percent.rounded()))%", attributes: percentageAttributes))
         }
         statusItem.button?.image = nil
         statusItem.button?.attributedTitle = usages.isEmpty ? NSAttributedString(string: "--") : title
