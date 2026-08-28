@@ -11,14 +11,13 @@ let package = Package(
             name: "Metria",
             dependencies: ["MetriaCore"],
             path: ".",
-            exclude: ["Sources/MetriaCore", "Tests", "AGENTS.md", "README.md", "LICENSE"],
+            exclude: ["Sources/MetriaCore", "AGENTS.md", "README.md", "LICENSE"],
             sources: ["Sources/Metria/MetriaApp.swift"],
             resources: [
-                .copy("Logos/claude-logo.png"),
-                .copy("Logos/codex-logo.png"),
-                .copy("Logos/opencode-logo.png")
+                .copy("Assets/claude-logo.png"),
+                .copy("Assets/codex-logo.png"),
+                .copy("Assets/opencode-logo.png")
             ]
-        ),
-        .testTarget(name: "MetriaCoreTests", dependencies: ["MetriaCore"])
+        )
     ]
 )

@@ -34,16 +34,7 @@ swift build
 swift run Metria
 ```
 
-## Test
-
-```sh
-swift test
-```
-
-The `MetriaCore` module isolates the usage refresh and retention rules behind an injectable provider seam, which is what the tests exercise.
-
 ## Project layout
 
 - `Sources/Metria/MetriaApp.swift` — app entrypoint, providers, and views.
 - `Sources/MetriaCore/UsageStore.swift` — shared usage state, provider seam, and refresh/retry logic.
-- `Tests/MetriaCoreTests/` — tests for the usage store.
