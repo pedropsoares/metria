@@ -238,6 +238,17 @@ extension ProviderKind {
         guard let logoName, let url = Bundle.module.url(forResource: logoName, withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
     }
+
+    var sidebarProgressGradient: LinearGradient {
+        switch self {
+        case .claude:
+            LinearGradient(colors: [.orange, .orange], startPoint: .leading, endPoint: .trailing)
+        case .codex:
+            LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .openCodeGo:
+            LinearGradient(colors: [.white, .white], startPoint: .leading, endPoint: .trailing)
+        }
+    }
 }
 
 struct RingGauge: View {
@@ -283,16 +294,17 @@ struct PopoverContent: View {
 
 struct SidebarContent: View {
     @ObservedObject var store: UsageStore
-    @ObservedObject var position: SidebarPositionState
+    let dockSide: DockSide
     let onSwitchToMenuBar: () -> Void
     let onOpenSettings: () -> Void
     let onDragMove: (CGFloat) -> Void
+    let onSidebarHover: (Bool) -> Void
     @State private var hoveredProvider: ProviderKind?
     @State private var hoveredProviderIndex: Int?
     @State private var lastDragScreenLocation: CGPoint?
     @State private var isRevealed = false
 
-    private var isRight: Bool { position.dockSide == .right }
+    private var isRight: Bool { dockSide == .right }
     private let providerHeight: CGFloat = 56
     private let providerSpacing: CGFloat = 12
     private let dockTopPadding: CGFloat = 28
@@ -328,6 +340,12 @@ struct SidebarContent: View {
 
     var body: some View {
         ZStack(alignment: isRight ? .trailing : .leading) {
+            // Fixes the ZStack's own size to exactly 420x420 so the dock's
+            // alignment is resolved against a deterministic box — without this,
+            // the cardSlot's 324pt phantom width (present even at rest) makes
+            // the ZStack's natural size ambiguous, causing the dock to sit
+            // flush against one edge but with extra gap on the other.
+            Color.clear.allowsHitTesting(false)
             dock
             cardSlot
                 .frame(width: 324, alignment: isRight ? .trailing : .leading)
@@ -352,6 +370,7 @@ struct SidebarContent: View {
         if let hoveredProvider,
            let usage = visibleProviders.first(where: { $0.kind == hoveredProvider }) {
             UsageCard(usage: usage, width: 300)
+                .onHover(perform: onSidebarHover)
                 .overlay(alignment: isRight ? .trailing : .leading) {
                     // Offset by exactly the HStack gap so the tip lands right on the dock's edge.
                         SidebarPointer(pointsLeft: !isRight)
@@ -405,6 +424,7 @@ struct SidebarContent: View {
             .padding(.bottom, dockBottomPadding)
         }
         .frame(width: 80, height: dockHeight)
+        .onHover(perform: onSidebarHover)
         .opacity(isRevealed ? 1 : 0)
         .scaleEffect(isRevealed ? 1 : 0.86, anchor: isRight ? .trailing : .leading)
         .background(Color.black)
@@ -425,16 +445,11 @@ struct SidebarContent: View {
     }
 }
 
-/// The sidebar can be docked to either screen edge; dragging it near the opposite edge
-/// snaps it there and mirrors the whole layout (card side, pointer, and rounded corners).
+/// The sidebar is fixed to the right edge of the screen; kept as an enum since the
+/// dock's mirrored shapes (`LeftDockShape`/`RightDockShape`) still branch on it.
 enum DockSide: String {
     case left
     case right
-}
-
-final class SidebarPositionState: ObservableObject {
-    @Published var dockSide: DockSide
-    init(dockSide: DockSide) { self.dockSide = dockSide }
 }
 
 /// Type-erased shape so the dock's `.clipShape` can switch between the left- and
@@ -454,7 +469,7 @@ struct SidebarProviderItem: View {
             ZStack {
                 Circle().stroke(Color(white: 0.18), lineWidth: 5)
                 Circle().trim(from: 0, to: percent / 100)
-                    .stroke(GaugeColor.color(for: percent), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .stroke(usage.kind.sidebarProgressGradient, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 ProviderLogo(provider: usage.kind, size: 14).foregroundStyle(.white)
             }
@@ -530,8 +545,6 @@ struct SettingsView: View {
     @ObservedObject var store: UsageStore
     let displayMode: DisplayMode
     let onSelectDisplayMode: (DisplayMode) -> Void
-    let dockSide: DockSide
-    let onSelectDockSide: (DockSide) -> Void
     @State private var sidebarOpacity: Double
     let onChangeSidebarOpacity: (Double) -> Void
     let onQuit: () -> Void
@@ -540,8 +553,6 @@ struct SettingsView: View {
         store: UsageStore,
         displayMode: DisplayMode,
         onSelectDisplayMode: @escaping (DisplayMode) -> Void,
-        dockSide: DockSide,
-        onSelectDockSide: @escaping (DockSide) -> Void,
         sidebarOpacity: Double,
         onChangeSidebarOpacity: @escaping (Double) -> Void,
         onQuit: @escaping () -> Void
@@ -549,8 +560,6 @@ struct SettingsView: View {
         self.store = store
         self.displayMode = displayMode
         self.onSelectDisplayMode = onSelectDisplayMode
-        self.dockSide = dockSide
-        self.onSelectDockSide = onSelectDockSide
         _sidebarOpacity = State(initialValue: sidebarOpacity)
         self.onChangeSidebarOpacity = onChangeSidebarOpacity
         self.onQuit = onQuit
@@ -571,16 +580,6 @@ struct SettingsView: View {
                 Text("Only one option is visible at a time: the floating sidebar or the menu bar text.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Sidebar position").font(.system(size: 13, weight: .medium))
-                Picker("", selection: Binding(get: { dockSide }, set: onSelectDockSide)) {
-                    Text("Left").tag(DockSide.left)
-                    Text("Right").tag(DockSide.right)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -641,7 +640,7 @@ struct SettingsView: View {
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = UsageStore(providers: [ClaudeProvider(), CodexProvider(), OpenCodeGoProvider()]); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?
-    lazy var positionState = SidebarPositionState(dockSide: dockSide)
+    private var isSidebarHovered = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -711,10 +710,11 @@ struct SettingsView: View {
         sidebarWindow.hasShadow = false
         sidebarWindow.contentViewController = NSHostingController(rootView: SidebarContent(
             store: store,
-            position: positionState,
+            dockSide: dockSide,
             onSwitchToMenuBar: switchToMenuBar,
             onOpenSettings: openSettings,
-            onDragMove: moveSidebar
+            onDragMove: moveSidebar,
+            onSidebarHover: { [weak self] isHovering in self?.setSidebarHovering(isHovering) }
         ))
         sidebarWindow.setFrame(NSRect(origin: origin, size: NSSize(width: windowWidth, height: windowHeight)), display: true)
     }
@@ -729,28 +729,27 @@ struct SettingsView: View {
         sidebarWindow.setFrameOrigin(frame.origin)
     }
 
-    private var dockSide: DockSide {
-        get { DockSide(rawValue: UserDefaults.standard.string(forKey: "sidebarDockSide") ?? "") ?? .right }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "sidebarDockSide") }
-    }
+    // Fixed to the right edge; no longer user-configurable (removed from Settings
+    // because switching sides at runtime could leave the window with an incorrect offset).
+    private let dockSide: DockSide = .right
 
     private var sidebarOpacity: Double {
         get { UserDefaults.standard.object(forKey: "sidebarOpacity") as? Double ?? 1 }
         set { UserDefaults.standard.set(newValue, forKey: "sidebarOpacity") }
     }
 
-    private func selectDockSide(_ side: DockSide) {
-        dockSide = side
-        positionState.dockSide = side
-        guard let sidebarWindow else { return }
-        let visibleFrame = NSScreen.main?.visibleFrame ?? sidebarWindow.frame
-        let targetX = side == .right ? visibleFrame.maxX - sidebarWindow.frame.width - Self.sidebarHorizontalInset : visibleFrame.minX + Self.sidebarHorizontalInset
-        sidebarWindow.setFrameOrigin(NSPoint(x: targetX, y: sidebarWindow.frame.origin.y))
-    }
-
     private func setSidebarOpacity(_ opacity: Double) {
         sidebarOpacity = opacity
-        sidebarWindow?.alphaValue = opacity
+        sidebarWindow?.alphaValue = isSidebarHovered ? 1 : opacity
+    }
+
+    private func setSidebarHovering(_ isHovering: Bool) {
+        isSidebarHovered = isHovering
+        guard let sidebarWindow else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            sidebarWindow.animator().alphaValue = isHovering ? 1 : sidebarOpacity
+        }
     }
 
     // The two modes are mutually exclusive: only one is visible at a time.
@@ -808,8 +807,6 @@ struct SettingsView: View {
                 self.displayMode = mode
                 self.applyDisplayMode()
             },
-            dockSide: dockSide,
-            onSelectDockSide: { [weak self] side in self?.selectDockSide(side) },
             sidebarOpacity: sidebarOpacity,
             onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
             onQuit: { [weak self] in self?.quit() }

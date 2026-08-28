@@ -1,5 +1,7 @@
 # Metria
 
+![Metria banner](https://i.imgur.com/JrV7abR.png)
+
 A macOS menu-bar app that tracks your AI coding assistant usage in real time.
 
 ## What it does
