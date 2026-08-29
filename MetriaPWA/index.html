@@ -29,7 +29,7 @@
           <span>Pairing phrase (12 words)</span>
           <textarea id="phraseInput" rows="2" placeholder="apple giraffe mountain ..." autocomplete="off" spellcheck="false" required class="w-full resize-none rounded-[10px] border border-[#383b41] bg-[#131519] p-3 text-white outline-none focus:border-[#77b58e]"></textarea>
         </label>
-        <p id="pairingError" class="error-text" hidden>Those words don't match — check for typos and try again.</p>
+        <p id="pairingError" class="text-xs text-[#ff9e98]" hidden>Those words don't match — check for typos and try again.</p>
         <label class="grid gap-2 text-xs text-[#b9bbc2]">
           <span>ntfy server</span>
           <input id="serverInput" type="url" value="https://ntfy.sh" inputmode="url" required class="w-full rounded-[10px] border border-[#383b41] bg-[#131519] p-3 text-white outline-none focus:border-[#77b58e]">
@@ -42,7 +42,7 @@
       <video id="scannerVideo" class="aspect-square w-[min(340px,90vw)] rounded-[20px] bg-black object-cover" playsinline muted></video>
       <canvas id="scannerCanvas" hidden></canvas>
       <p class="m-0 text-center text-[13px] text-[#c7c9cf]">Point the camera at the QR code in Metria's Settings.</p>
-      <p id="scannerError" class="error-text" hidden></p>
+      <p id="scannerError" class="text-xs text-[#ff9e98]" hidden></p>
       <button id="scannerCancel" type="button" class="cursor-pointer rounded-[10px] bg-[#24272c] px-4 py-3 font-bold text-[#f5f5f7]">Cancel</button>
     </div>
 

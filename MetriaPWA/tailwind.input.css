@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Elements using a Tailwind display utility (e.g. `grid`, `flex`) override the
+   browser's default [hidden] handling, because utilities live in a higher-priority
+   layer than the base [hidden] rule. Put this outside any layer so it always wins
+   and keeps hidden elements hidden (scanner overlay, empty state, dashboards). */
+[hidden] { display: none !important; }
