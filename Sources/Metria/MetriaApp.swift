@@ -214,6 +214,50 @@ enum KeychainReader {
     private struct ClaudeCredentials: Decodable { let claudeAiOauth: OAuth; struct OAuth: Decodable { let accessToken: String } }
 }
 
+private struct MetriaSnapshot: Encodable {
+    struct Provider: Encodable {
+        let name: String
+        let percent: Double
+        let resetDate: Date?
+    }
+
+    let updatedAt: Date
+    let providers: [Provider]
+}
+
+private final class NtfyPublisher {
+    private let defaults = UserDefaults.standard
+    private var lastPayload: Data?
+
+    func publish(_ providers: [ProviderUsage]) {
+        guard let topic = defaults.string(forKey: "ntfyTopic"), !topic.isEmpty,
+              let server = URL(string: defaults.string(forKey: "ntfyServer") ?? "https://ntfy.sh"),
+              server.scheme == "https", server.host != nil else { return }
+
+        let snapshot = MetriaSnapshot(
+            updatedAt: Date(),
+            providers: providers.compactMap { usage in
+                guard let primary = usage.primary else { return nil }
+                return .init(name: usage.kind.rawValue, percent: primary.percent, resetDate: primary.resetDate)
+            }
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let payload = try? encoder.encode(snapshot), payload != lastPayload else { return }
+        lastPayload = payload
+
+        var request = URLRequest(url: server.appendingPathComponent(topic))
+        request.httpMethod = "POST"
+        request.httpBody = payload
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Metria usage", forHTTPHeaderField: "Title")
+        request.setValue("low", forHTTPHeaderField: "Priority")
+        Task {
+            _ = try? await URLSession.shared.data(for: request)
+        }
+    }
+}
+
 struct GaugeColor {
     static func color(for percent: Double) -> Color { Color(nsColor: nsColor(for: percent)) }
     static func nsColor(for percent: Double) -> NSColor { percent >= 85 ? .systemRed : percent >= 65 ? .systemOrange : percent >= 40 ? .systemYellow : .systemGreen }
@@ -609,6 +653,9 @@ struct SettingsView: View {
     @State private var sidebarOpacity: Double
     let onChangeSidebarOpacity: (Double) -> Void
     let onQuit: () -> Void
+    @State private var ntfyServer: String
+    @State private var ntfyTopic: String
+    let onChangeNtfy: (String, String) -> Void
 
     init(
         store: UsageStore,
@@ -616,7 +663,10 @@ struct SettingsView: View {
         onSelectDisplayMode: @escaping (DisplayMode) -> Void,
         sidebarOpacity: Double,
         onChangeSidebarOpacity: @escaping (Double) -> Void,
-        onQuit: @escaping () -> Void
+        onQuit: @escaping () -> Void,
+        ntfyServer: String,
+        ntfyTopic: String,
+        onChangeNtfy: @escaping (String, String) -> Void
     ) {
         self.store = store
         self.displayMode = displayMode
@@ -624,6 +674,9 @@ struct SettingsView: View {
         _sidebarOpacity = State(initialValue: sidebarOpacity)
         self.onChangeSidebarOpacity = onChangeSidebarOpacity
         self.onQuit = onQuit
+        _ntfyServer = State(initialValue: ntfyServer)
+        _ntfyTopic = State(initialValue: ntfyTopic)
+        self.onChangeNtfy = onChangeNtfy
     }
 
     var body: some View {
@@ -684,6 +737,20 @@ struct SettingsView: View {
                 }
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("iPhone PWA").font(.system(size: 13, weight: .medium))
+                TextField("ntfy server", text: $ntfyServer)
+                TextField("ntfy topic", text: $ntfyTopic)
+                Button("Save ntfy connection") {
+                    onChangeNtfy(ntfyServer, ntfyTopic)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                Text("The PWA reads usage snapshots from this topic.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+
             Spacer(minLength: 0)
 
             HStack {
@@ -696,12 +763,12 @@ struct SettingsView: View {
             }
         }
         .padding(24)
-        .frame(width: 360, height: 500)
+        .frame(width: 360, height: 620)
     }
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = UsageStore(providers: [ClaudeProvider(), CodexProvider(), OpenCodeGoProvider()]); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?
+    let store = UsageStore(providers: [ClaudeProvider(), CodexProvider(), OpenCodeGoProvider()]); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher()
     private var isSidebarHovered = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -710,7 +777,10 @@ struct SettingsView: View {
         configureStatusItem()
         configurePopover()
         configureSidebar()
-        observation = store.$providers.sink { [weak self] providers in self?.updateStatusItem(providers) }
+        observation = store.$providers.sink { [weak self] providers in
+            self?.updateStatusItem(providers)
+            self?.ntfyPublisher.publish(providers)
+        }
         applyDisplayMode()
     }
 
@@ -859,7 +929,7 @@ struct SettingsView: View {
 
     @objc private func openSettings() {
         let window = settingsWindow ?? {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 430), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 620), styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.title = "Settings"
             window.isReleasedWhenClosed = false
             window.center()
@@ -876,7 +946,14 @@ struct SettingsView: View {
             },
             sidebarOpacity: sidebarOpacity,
             onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
-            onQuit: { [weak self] in self?.quit() }
+            onQuit: { [weak self] in self?.quit() },
+            ntfyServer: UserDefaults.standard.string(forKey: "ntfyServer") ?? "https://ntfy.sh",
+            ntfyTopic: UserDefaults.standard.string(forKey: "ntfyTopic") ?? "",
+            onChangeNtfy: { server, topic in
+                UserDefaults.standard.set(server.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "ntfyServer")
+                UserDefaults.standard.set(topic.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "ntfyTopic")
+                self.store.refresh()
+            }
         ))
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
