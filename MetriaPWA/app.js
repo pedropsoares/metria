@@ -13,6 +13,12 @@ const status = document.querySelector("#connectionStatus");
 const providerGrid = document.querySelector("#providerGrid");
 const emptyState = document.querySelector("#emptyState");
 const lastUpdated = document.querySelector("#lastUpdated");
+const scanButton = document.querySelector("#scanButton");
+const scannerOverlay = document.querySelector("#scannerOverlay");
+const scannerVideo = document.querySelector("#scannerVideo");
+const scannerCanvas = document.querySelector("#scannerCanvas");
+const scannerError = document.querySelector("#scannerError");
+const scannerCancel = document.querySelector("#scannerCancel");
 
 function setStatus(label, state) {
   status.textContent = label;
@@ -85,6 +91,7 @@ form.addEventListener("submit", async (event) => {
   const words = phraseInput.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const secretBytes = await window.MetriaPairing.wordsToSecret(words);
   if (!secretBytes) {
+    pairingError.textContent = "Those words don't match — check for typos and try again.";
     pairingError.hidden = false;
     return;
   }
@@ -104,18 +111,65 @@ document.querySelector("#changeTopic").addEventListener("click", () => {
   setStatus("Not connected", "idle");
 });
 
-// Reads a pairing link's fragment (e.g. from scanning the Mac app's QR code). The
-// fragment never reaches any server — it's stripped from the visible URL immediately
-// after reading it, so the secret doesn't linger in browser history.
-function readPairingFromHash() {
-  if (!location.hash) return null;
-  const params = new URLSearchParams(location.hash.slice(1));
+// Extracts { secretBase64, server } from a pairing link's fragment, whether that link
+// came from the address bar's hash or from a QR code scanned inside the app.
+function parsePairingParams(hashString) {
+  const params = new URLSearchParams(hashString);
   const secretBase64 = params.get("s");
   if (!secretBase64) return null;
   const server = params.get("server") ? decodeURIComponent(params.get("server")) : "https://ntfy.sh";
-  history.replaceState(null, "", location.pathname + location.search);
   return { secretBase64, server };
 }
+
+// Autofills the setup form with the words the secret encodes to, so the user can see
+// and confirm what they're pairing with instead of the app silently connecting behind
+// the scenes. Mirrors the manual "type the phrase" flow rather than bypassing it.
+async function fillPairingFields(config) {
+  const secretBytes = window.MetriaPairing.base64UrlToBytes(config.secretBase64);
+  const words = await window.MetriaPairing.secretToWords(secretBytes);
+  phraseInput.value = words.join(" ");
+  serverInput.value = config.server;
+}
+
+// Reads a pairing link's fragment (e.g. from opening the QR code in the system Camera
+// app). The fragment never reaches any server — it's stripped from the visible URL
+// immediately after reading it, so the secret doesn't linger in browser history.
+function readPairingFromHash() {
+  if (!location.hash) return null;
+  const parsed = parsePairingParams(location.hash.slice(1));
+  if (parsed) history.replaceState(null, "", location.pathname + location.search);
+  return parsed;
+}
+
+scanButton?.addEventListener("click", () => {
+  scannerError.hidden = true;
+  scannerOverlay.hidden = false;
+  window.MetriaScanner.startQrScanner({
+    video: scannerVideo,
+    canvas: scannerCanvas,
+    onDecode: async (text) => {
+      window.MetriaScanner.stopQrScanner();
+      scannerOverlay.hidden = true;
+      try {
+        const parsed = parsePairingParams(new URL(text).hash.slice(1));
+        if (!parsed) throw new Error("not a pairing link");
+        await fillPairingFields(parsed);
+      } catch {
+        pairingError.textContent = "That QR code isn't a Metria pairing code.";
+        pairingError.hidden = false;
+      }
+    },
+    onError: (message) => {
+      scannerError.textContent = message;
+      scannerError.hidden = false;
+    }
+  });
+});
+
+scannerCancel.addEventListener("click", () => {
+  window.MetriaScanner.stopQrScanner();
+  scannerOverlay.hidden = true;
+});
 
 async function init() {
   const hashConfig = readPairingFromHash();
@@ -123,13 +177,7 @@ async function init() {
   if (savedSnapshot) renderSnapshot(savedSnapshot);
 
   if (hashConfig) {
-    // Scanning the Mac app's QR code lands here: autofill the phrase field with the
-    // words the secret encodes to, so the user can see and confirm what they're
-    // pairing with instead of the app silently connecting behind the scenes.
-    const secretBytes = window.MetriaPairing.base64UrlToBytes(hashConfig.secretBase64);
-    const words = await window.MetriaPairing.secretToWords(secretBytes);
-    phraseInput.value = words.join(" ");
-    serverInput.value = hashConfig.server;
+    await fillPairingFields(hashConfig);
     return;
   }
 

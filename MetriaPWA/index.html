@@ -22,7 +22,8 @@
 
     <section id="setup" class="panel setup-panel">
       <p class="section-label">Pair with your Mac</p>
-      <p class="muted">Open Metria on your Mac and scan the QR code from Settings, or type the 12-word phrase below.</p>
+      <p class="muted">Scan the QR code from Metria's Settings, or type the 12-word phrase below.</p>
+      <button id="scanButton" type="button" class="scan-button">Scan QR code</button>
       <form id="topicForm" class="topic-form">
         <label>
           <span>Pairing phrase (12 words)</span>
@@ -36,6 +37,15 @@
         <button type="submit">Connect</button>
       </form>
     </section>
+
+    <div id="scannerOverlay" class="scanner-overlay" hidden>
+      <video id="scannerVideo" class="scanner-video" playsinline muted></video>
+      <canvas id="scannerCanvas" hidden></canvas>
+      <div class="scanner-frame"></div>
+      <p class="scanner-hint">Point the camera at the QR code in Metria's Settings.</p>
+      <p id="scannerError" class="error-text" hidden></p>
+      <button id="scannerCancel" type="button" class="scanner-cancel">Cancel</button>
+    </div>
 
     <section id="dashboard" class="dashboard" hidden>
       <div class="dashboard-heading">
@@ -54,6 +64,8 @@
   </main>
   <script src="wordlist.js"></script>
   <script src="pairing.js"></script>
+  <script src="jsQR.js"></script>
+  <script src="scanner.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
