@@ -1,4 +1,4 @@
-const CACHE_NAME = "metria-pwa-v5";
+const CACHE_NAME = "metria-pwa-v6";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./pairing.js", "./wordlist.js", "./scanner.js", "./jsQR.js", "./manifest.json"];
 
 self.addEventListener("install", (event) => {
