@@ -22,7 +22,13 @@ const scannerCancel = document.querySelector("#scannerCancel");
 
 function setStatus(label, state) {
   status.textContent = label;
-  status.className = `status status-${state}`;
+  const classes = {
+    idle: "border-[#34383d] text-[#9b9da5]",
+    connecting: "border-[#34383d] text-[#f3cb86]",
+    live: "border-[#326847] text-[#9be8b9]",
+    offline: "border-[#34383d] text-[#ff9e98]"
+  };
+  status.className = `rounded-full border px-2.5 py-1.5 text-[11px] font-bold ${classes[state]}`;
 }
 
 function normalizeServer(server) {
@@ -33,10 +39,10 @@ function renderSnapshot(snapshot) {
   const providers = Array.isArray(snapshot?.providers) ? snapshot.providers : [];
   providerGrid.innerHTML = providers.map((provider) => {
     const percent = Math.max(0, Math.min(100, Number(provider.percent) || 0));
-    return `<article class="provider-card">
-      <div class="card-topline"><span>${escapeHtml(provider.name)}</span><strong>${Math.round(percent)}%</strong></div>
-      <div class="progress-track"><div class="progress-bar" style="width: ${percent}%"></div></div>
-      <p>${provider.resetDate ? `Resets ${formatDate(provider.resetDate)}` : "No reset date"}</p>
+    return `<article class="rounded-[18px] border border-[#2a2d32] bg-[#181a1ed1] p-[18px] shadow-[0_18px_60px_rgba(0,0,0,.16)]">
+      <div class="flex items-center justify-between gap-4"><span>${escapeHtml(provider.name)}</span><strong class="text-[26px] tracking-[-0.05em]">${Math.round(percent)}%</strong></div>
+      <div class="mt-[18px] h-[7px] overflow-hidden rounded-full bg-[#34373b]"><div class="h-full rounded-full bg-gradient-to-r from-[#78c291] to-[#d8ef9d]" style="width: ${percent}%"></div></div>
+      <p class="mb-0 mt-[13px] text-[11px] text-[#92959e]">${provider.resetDate ? `Resets ${formatDate(provider.resetDate)}` : "No reset date"}</p>
     </article>`;
   }).join("");
   emptyState.hidden = providers.length > 0;

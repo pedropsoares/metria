@@ -1,0 +1,10 @@
+{
+  "name": "metria-pwa",
+  "private": true,
+  "scripts": {
+    "build": "tailwindcss -i ./MetriaPWA/tailwind.input.css -o ./MetriaPWA/app.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}
