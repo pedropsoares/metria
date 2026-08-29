@@ -1,5 +1,5 @@
-const CACHE_NAME = "metria-pwa-v2";
-const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.json"];
+const CACHE_NAME = "metria-pwa-v3";
+const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./pairing.js", "./wordlist.js", "./manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));

@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import CoreImage
+import CryptoKit
 import Foundation
 import SwiftUI
 import MetriaCore
@@ -225,14 +227,123 @@ private struct MetriaSnapshot: Encodable {
     let providers: [Provider]
 }
 
+/// Stores the pairing master secret in the macOS Keychain. The secret never leaves the
+/// Mac in plaintext: the PWA only ever receives it via the QR code or 12-word phrase,
+/// both of which the user controls when and how to share.
+enum PairingKeychain {
+    private static let service = "com.metria.pairing"
+    private static let account = "ntfy-pairing-secret"
+
+    static func load() -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
+        return result as? Data
+    }
+
+    @discardableResult
+    static func save(_ secret: Data) -> Bool {
+        delete()
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: secret,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+    }
+
+    static func delete() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    static func loadOrGenerate() -> Data {
+        if let existing = load() { return existing }
+        let generated = PairingSecret.generate()
+        save(generated)
+        return generated
+    }
+
+    static func regenerate() -> Data {
+        let generated = PairingSecret.generate()
+        save(generated)
+        return generated
+    }
+}
+
+private extension Data {
+    /// URL-safe base64 without padding, so the secret can sit in a URL fragment without
+    /// needing percent-encoding.
+    var base64URLEncodedString: String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}
+
+/// Owns the pairing secret's presentation: the QR code and the 12-word phrase shown in
+/// Settings, plus the shareable link. The secret itself lives in `PairingKeychain`.
+@MainActor final class PairingManager: ObservableObject {
+    /// Change this if you deploy your own fork of MetriaPWA elsewhere.
+    static let pwaBaseURL = "https://metria-pwa.vercel.app"
+
+    @Published private(set) var words: [String] = []
+    @Published private(set) var qrImage: NSImage?
+    private var secret: Data = Data()
+
+    init() {
+        secret = PairingKeychain.loadOrGenerate()
+        words = PairingSecret.words(from: secret)
+    }
+
+    func regenerate() {
+        secret = PairingKeychain.regenerate()
+        words = PairingSecret.words(from: secret)
+    }
+
+    func pairingLink(server: String) -> String {
+        let encodedServer = server.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? server
+        return "\(Self.pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
+    }
+
+    func refreshQRCode(server: String) {
+        qrImage = Self.renderQRCode(for: pairingLink(server: server))
+    }
+
+    private static func renderQRCode(for string: String) -> NSImage? {
+        guard let data = string.data(using: .utf8),
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let outputImage = filter.outputImage else { return nil }
+        let scaled = outputImage.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: scaled.extent.width, height: scaled.extent.height))
+    }
+}
+
 private final class NtfyPublisher {
     private let defaults = UserDefaults.standard
     private var lastPayload: Data?
 
     func publish(_ providers: [ProviderUsage]) {
-        guard let topic = defaults.string(forKey: "ntfyTopic"), !topic.isEmpty,
-              let server = URL(string: defaults.string(forKey: "ntfyServer") ?? "https://ntfy.sh"),
-              server.scheme == "https", server.host != nil else { return }
+        guard let server = URL(string: defaults.string(forKey: "ntfyServer") ?? "https://ntfy.sh"),
+              server.scheme == "https", server.host != nil,
+              let secret = PairingKeychain.load() else { return }
 
         let snapshot = MetriaSnapshot(
             updatedAt: Date(),
@@ -244,13 +355,16 @@ private final class NtfyPublisher {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let payload = try? encoder.encode(snapshot), payload != lastPayload else { return }
+
+        let topic = PairingSecret.topic(from: secret)
+        let key = PairingSecret.encryptionKey(from: secret)
+        guard let sealed = try? AES.GCM.seal(payload, using: key), let combined = sealed.combined else { return }
         lastPayload = payload
 
         var request = URLRequest(url: server.appendingPathComponent(topic))
         request.httpMethod = "POST"
-        request.httpBody = payload
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Metria usage", forHTTPHeaderField: "Title")
+        request.httpBody = combined.base64EncodedData()
+        request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
         request.setValue("low", forHTTPHeaderField: "Priority")
         Task {
             _ = try? await URLSession.shared.data(for: request)
@@ -648,35 +762,37 @@ enum DisplayMode: String {
 
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
+    @ObservedObject var pairing: PairingManager
     let displayMode: DisplayMode
     let onSelectDisplayMode: (DisplayMode) -> Void
     @State private var sidebarOpacity: Double
     let onChangeSidebarOpacity: (Double) -> Void
     let onQuit: () -> Void
     @State private var ntfyServer: String
-    @State private var ntfyTopic: String
-    let onChangeNtfy: (String, String) -> Void
+    let onChangeServer: (String) -> Void
+    @State private var isPhraseRevealed = false
+    @State private var isRegenerateConfirmationShown = false
 
     init(
         store: UsageStore,
+        pairing: PairingManager,
         displayMode: DisplayMode,
         onSelectDisplayMode: @escaping (DisplayMode) -> Void,
         sidebarOpacity: Double,
         onChangeSidebarOpacity: @escaping (Double) -> Void,
         onQuit: @escaping () -> Void,
         ntfyServer: String,
-        ntfyTopic: String,
-        onChangeNtfy: @escaping (String, String) -> Void
+        onChangeServer: @escaping (String) -> Void
     ) {
         self.store = store
+        self.pairing = pairing
         self.displayMode = displayMode
         self.onSelectDisplayMode = onSelectDisplayMode
         _sidebarOpacity = State(initialValue: sidebarOpacity)
         self.onChangeSidebarOpacity = onChangeSidebarOpacity
         self.onQuit = onQuit
         _ntfyServer = State(initialValue: ntfyServer)
-        _ntfyTopic = State(initialValue: ntfyTopic)
-        self.onChangeNtfy = onChangeNtfy
+        self.onChangeServer = onChangeServer
     }
 
     var body: some View {
@@ -737,18 +853,61 @@ struct SettingsView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("iPhone PWA").font(.system(size: 13, weight: .medium))
-                TextField("ntfy server", text: $ntfyServer)
-                TextField("ntfy topic", text: $ntfyTopic)
-                Button("Save ntfy connection") {
-                    onChangeNtfy(ntfyServer, ntfyTopic)
+
+                if let qrImage = pairing.qrImage {
+                    Image(nsImage: qrImage)
+                        .interpolation(.none)
+                        .resizable()
+                        .frame(width: 132, height: 132)
+                        .frame(maxWidth: .infinity)
+                        .padding(6)
+                        .background(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.borderedProminent)
+
+                HStack {
+                    Text(isPhraseRevealed ? pairing.words.joined(separator: " ") : String(repeating: "•", count: 44))
+                        .font(.system(size: 11, design: .monospaced))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button(isPhraseRevealed ? "Hide" : "Show") { isPhraseRevealed.toggle() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.blue)
+                }
+
+                HStack(spacing: 10) {
+                    Button("Copy phrase") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(pairing.words.joined(separator: " "), forType: .string)
+                    }
+                    Button("Copy link") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(pairing.pairingLink(server: ntfyServer), forType: .string)
+                    }
+                    Spacer()
+                    Button("Regenerate", role: .destructive) { isRegenerateConfirmationShown = true }
+                }
                 .controlSize(.small)
-                Text("The PWA reads usage snapshots from this topic.")
+
+                TextField("ntfy server", text: $ntfyServer)
+                    .onSubmit { onChangeServer(ntfyServer) }
+
+                Text("Scan the QR code with your iPhone camera, or open the PWA and type the phrase.")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
+            }
+            .alert("Regenerate pairing?", isPresented: $isRegenerateConfirmationShown) {
+                Button("Cancel", role: .cancel) {}
+                Button("Regenerate", role: .destructive) {
+                    pairing.regenerate()
+                    pairing.refreshQRCode(server: ntfyServer)
+                }
+            } message: {
+                Text("Any iPhone using the current QR code or phrase will stop receiving updates.")
             }
 
             Spacer(minLength: 0)
@@ -763,12 +922,12 @@ struct SettingsView: View {
             }
         }
         .padding(24)
-        .frame(width: 360, height: 620)
+        .frame(width: 360, height: 760)
     }
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = UsageStore(providers: [ClaudeProvider(), CodexProvider(), OpenCodeGoProvider()]); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher()
+    let store = UsageStore(providers: [ClaudeProvider(), CodexProvider(), OpenCodeGoProvider()]); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager()
     private var isSidebarHovered = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -777,11 +936,17 @@ struct SettingsView: View {
         configureStatusItem()
         configurePopover()
         configureSidebar()
+        pairing.refreshQRCode(server: ntfyServer)
         observation = store.$providers.sink { [weak self] providers in
             self?.updateStatusItem(providers)
             self?.ntfyPublisher.publish(providers)
         }
         applyDisplayMode()
+    }
+
+    private var ntfyServer: String {
+        get { UserDefaults.standard.string(forKey: "ntfyServer") ?? "https://ntfy.sh" }
+        set { UserDefaults.standard.set(newValue, forKey: "ntfyServer") }
     }
 
     private func updateStatusItem(_ providers: [ProviderUsage]) {
@@ -929,7 +1094,7 @@ struct SettingsView: View {
 
     @objc private func openSettings() {
         let window = settingsWindow ?? {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 620), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 760), styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.title = "Settings"
             window.isReleasedWhenClosed = false
             window.center()
@@ -938,6 +1103,7 @@ struct SettingsView: View {
         }()
         window.contentViewController = NSHostingController(rootView: SettingsView(
             store: store,
+            pairing: pairing,
             displayMode: displayMode,
             onSelectDisplayMode: { [weak self] mode in
                 guard let self else { return }
@@ -947,11 +1113,11 @@ struct SettingsView: View {
             sidebarOpacity: sidebarOpacity,
             onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
             onQuit: { [weak self] in self?.quit() },
-            ntfyServer: UserDefaults.standard.string(forKey: "ntfyServer") ?? "https://ntfy.sh",
-            ntfyTopic: UserDefaults.standard.string(forKey: "ntfyTopic") ?? "",
-            onChangeNtfy: { server, topic in
-                UserDefaults.standard.set(server.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "ntfyServer")
-                UserDefaults.standard.set(topic.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "ntfyTopic")
+            ntfyServer: ntfyServer,
+            onChangeServer: { [weak self] server in
+                guard let self else { return }
+                self.ntfyServer = server.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.pairing.refreshQRCode(server: self.ntfyServer)
                 self.store.refresh()
             }
         ))

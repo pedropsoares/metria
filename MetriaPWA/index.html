@@ -21,16 +21,17 @@
     </header>
 
     <section id="setup" class="panel setup-panel">
-      <p class="section-label">Connect your topic</p>
-      <p class="muted">Use the same ntfy topic configured in the Mac app.</p>
+      <p class="section-label">Pair with your Mac</p>
+      <p class="muted">Open Metria on your Mac and scan the QR code from Settings, or type the 12-word phrase below.</p>
       <form id="topicForm" class="topic-form">
+        <label>
+          <span>Pairing phrase (12 words)</span>
+          <textarea id="phraseInput" rows="2" placeholder="apple giraffe mountain ..." autocomplete="off" spellcheck="false" required></textarea>
+        </label>
+        <p id="pairingError" class="error-text" hidden>Those words don't match — check for typos and try again.</p>
         <label>
           <span>ntfy server</span>
           <input id="serverInput" type="url" value="https://ntfy.sh" inputmode="url" required>
-        </label>
-        <label>
-          <span>Topic</span>
-          <input id="topicInput" type="text" placeholder="your-private-topic" autocomplete="off" required>
         </label>
         <button type="submit">Connect</button>
       </form>
@@ -42,7 +43,7 @@
           <p class="section-label">Current snapshot</p>
           <p id="lastUpdated" class="muted">Waiting for the Mac app</p>
         </div>
-        <button id="changeTopic" class="text-button" type="button">Change topic</button>
+        <button id="changeTopic" class="text-button" type="button">Change pairing</button>
       </div>
       <div id="providerGrid" class="provider-grid"></div>
       <div id="emptyState" class="panel empty-state" hidden>
@@ -51,6 +52,8 @@
       </div>
     </section>
   </main>
+  <script src="wordlist.js"></script>
+  <script src="pairing.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
