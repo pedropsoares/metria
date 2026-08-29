@@ -17,7 +17,6 @@ button { cursor: pointer; border: 0; border-radius: 10px; padding: 12px 16px; co
 .scanner-overlay { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; gap: 16px; padding: 24px; background: rgba(6, 7, 8, .94); }
 .scanner-overlay[hidden] { display: none; }
 .scanner-video { width: min(340px, 90vw); aspect-ratio: 1; border-radius: 20px; object-fit: cover; background: #000; }
-.scanner-frame { position: absolute; width: min(240px, 62vw); aspect-ratio: 1; border: 2px solid #a6e4ba; border-radius: 18px; pointer-events: none; }
 .scanner-hint { margin: 0; color: #c7c9cf; font-size: 13px; text-align: center; }
 .scanner-cancel { background: #24272c; color: #f5f5f7; }
 .dashboard { margin-top: 42px; }.dashboard-heading { margin-bottom: 18px; }.dashboard-heading .muted { margin: 5px 0 0; }

@@ -1,4 +1,8 @@
-const CACHE_NAME = "metria-pwa-v6";
+// This name is fixed on purpose — do not bump it on every deploy. Because the fetch
+// handler below is network-first, freshness never depends on the cache name changing;
+// it only exists so the cache has a stable place to live and so the `activate` cleanup
+// below can sweep out old-named caches left over from versions before this comment.
+const CACHE_NAME = "metria-pwa";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./pairing.js", "./wordlist.js", "./scanner.js", "./jsQR.js", "./manifest.json"];
 
 self.addEventListener("install", (event) => {
