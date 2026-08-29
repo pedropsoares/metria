@@ -117,19 +117,29 @@ function readPairingFromHash() {
   return { secretBase64, server };
 }
 
-const hashConfig = readPairingFromHash();
-const savedSnapshot = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "null");
-if (savedSnapshot) renderSnapshot(savedSnapshot);
+async function init() {
+  const hashConfig = readPairingFromHash();
+  const savedSnapshot = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "null");
+  if (savedSnapshot) renderSnapshot(savedSnapshot);
 
-if (hashConfig) {
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(hashConfig));
-  connect(hashConfig);
-} else {
+  if (hashConfig) {
+    // Scanning the Mac app's QR code lands here: autofill the phrase field with the
+    // words the secret encodes to, so the user can see and confirm what they're
+    // pairing with instead of the app silently connecting behind the scenes.
+    const secretBytes = window.MetriaPairing.base64UrlToBytes(hashConfig.secretBase64);
+    const words = await window.MetriaPairing.secretToWords(secretBytes);
+    phraseInput.value = words.join(" ");
+    serverInput.value = hashConfig.server;
+    return;
+  }
+
   const savedConfig = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
   if (savedConfig?.secretBase64) {
     serverInput.value = savedConfig.server;
     connect(savedConfig);
   }
 }
+
+init();
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");

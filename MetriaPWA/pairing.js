@@ -44,6 +44,22 @@ async function wordsToSecret(words) {
   return checksumMatches ? entropyBytes : null;
 }
 
+// Encodes the 16-byte secret as a 12-word phrase, the reverse of wordsToSecret. Used to
+// autofill the phrase field when a QR code / pairing link is opened, so the user sees
+// exactly what they're connecting with before it's used.
+async function secretToWords(secretBytes) {
+  const wordlist = window.BIP39_WORDLIST;
+  const checksum = await checksumBits(secretBytes, 4);
+  const allBits = bytesToBits(secretBytes).concat(checksum);
+  const words = [];
+  for (let i = 0; i < allBits.length; i += 11) {
+    const chunk = allBits.slice(i, i + 11);
+    const value = chunk.reduce((accumulator, bit) => (accumulator << 1) | bit, 0);
+    words.push(wordlist[value]);
+  }
+  return words;
+}
+
 function base64UrlToBytes(base64url) {
   const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
   const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
@@ -94,4 +110,4 @@ async function decryptSnapshot(base64Body, cryptoKey) {
   return JSON.parse(new TextDecoder().decode(plaintext));
 }
 
-window.MetriaPairing = { wordsToSecret, base64UrlToBytes, bytesToBase64Url, deriveFromSecret, decryptSnapshot };
+window.MetriaPairing = { wordsToSecret, secretToWords, base64UrlToBytes, bytesToBase64Url, deriveFromSecret, decryptSnapshot };
