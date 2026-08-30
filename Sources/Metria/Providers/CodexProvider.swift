@@ -14,14 +14,24 @@ struct CodexProvider: UsageProvider {
     private var sessionsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions") }
 
     func fetch() async -> ProviderFetchResult {
-        if let usage = await fetchOpenCodeUsage() { return usage }
-        FileHandle.standardError.write("[Codex] falling back to local session files\n".data(using: .utf8)!)
+        if let remoteResult = await fetchOpenCodeUsage() {
+            switch remoteResult {
+            case .loaded(_), .empty(_):
+                return remoteResult
+            case .failed(_, let message, let retryAfter):
+                if case .loaded(var localUsage) = fetchLocalUsage() {
+                    localUsage.error = "\(message) Showing the latest local session data."
+                    return .loaded(localUsage)
+                }
+                return .failed(kind, message, retryAfter: retryAfter)
+            }
+        }
         return fetchLocalUsage()
     }
     private func fetchOpenCodeUsage() async -> ProviderFetchResult? {
-        guard let data = try? Data(contentsOf: authURL) else { FileHandle.standardError.write("[Codex] cannot read auth.json at \(authURL.path)\n".data(using: .utf8)!); return nil }
-        guard let auth = try? JSONDecoder().decode(OpenCodeAuth.self, from: data) else { FileHandle.standardError.write("[Codex] cannot decode auth.json\n".data(using: .utf8)!); return nil }
-        guard let credentials = auth.openai else { FileHandle.standardError.write("[Codex] no openai key in auth.json\n".data(using: .utf8)!); return nil }
+        guard let data = try? Data(contentsOf: authURL) else { return nil }
+        guard let auth = try? JSONDecoder().decode(OpenCodeAuth.self, from: data) else { return nil }
+        guard let credentials = auth.openai else { return nil }
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
         request.setValue("Bearer \(credentials.access)", forHTTPHeaderField: "Authorization")
         request.setValue(credentials.accountId, forHTTPHeaderField: "ChatGPT-Account-Id")
@@ -29,13 +39,19 @@ struct CodexProvider: UsageProvider {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            guard status == 200 else { FileHandle.standardError.write("[Codex] HTTP \(status): \(String(data: data, encoding: .utf8) ?? "")\n".data(using: .utf8)!); return nil }
+            guard status == 200 else {
+                let error = ProviderError.http(status)
+                return .failed(kind, error.localizedDescription, retryAfter: error.retryAfter)
+            }
             let value = try JSONDecoder().decode(OpenAIUsageResponse.self, from: data)
             return .loaded(ProviderUsage(kind: kind, windows: [
                 UsageWindow(title: "Current session", percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
                 UsageWindow(title: "All models", percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
             ], updatedAt: Date(), error: nil))
-        } catch { FileHandle.standardError.write("[Codex] request/decode error: \(error)\n".data(using: .utf8)!); return nil }
+        } catch {
+            let providerError = error as? ProviderError
+            return .failed(kind, error.localizedDescription, retryAfter: providerError?.retryAfter)
+        }
     }
     private func fetchLocalUsage() -> ProviderFetchResult {
         let candidates = findCandidates()
@@ -51,7 +67,7 @@ struct CodexProvider: UsageProvider {
                 return .loaded(ProviderUsage(kind: kind, windows: [primary, secondary].compactMap { $0 }, updatedAt: candidate.0, error: nil))
             }
         }
-        return .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil))
+        return .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: "No recent local usage data was found. Sign in and use Codex once to create a usage snapshot."))
     }
     private struct OpenCodeAuth: Decodable { let openai: Credentials?; struct Credentials: Decodable { let access: String; let accountId: String } }
     private struct OpenAIUsageResponse: Decodable {
@@ -73,8 +89,9 @@ struct CodexProvider: UsageProvider {
         return candidates
     }
     private func parseLimit(_ raw: [String: Any]?, title: String) -> UsageWindow? {
-        guard let raw, let percent = raw["used_percent"] as? Double else { return nil }
-        let reset = (raw["resets_at"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? (raw["resets_at"] as? Int).map { Date(timeIntervalSince1970: Double($0)) }
+        guard let raw, let rawPercent = raw["used_percent"] as? NSNumber else { return nil }
+        let percent = rawPercent.doubleValue
+        let reset = (raw["resets_at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
         return UsageWindow(title: title, percent: reset.map { $0 < Date() ? 0 : percent } ?? percent, resetDate: reset)
     }
 }

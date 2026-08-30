@@ -9,6 +9,14 @@ extension ProviderKind {
         switch self { case .claude: "sparkles"; case .codex: "hexagon"; case .openCodeGo: "globe.americas.fill" }
     }
 
+    var reconnectCommand: String {
+        switch self {
+        case .claude: "claude auth login"
+        case .codex: "codex login"
+        case .openCodeGo: "opencode auth login"
+        }
+    }
+
     var logoName: String? {
         switch self { case .claude: "claude-logo"; case .codex: "codex-logo"; case .openCodeGo: "opencode-logo" }
     }

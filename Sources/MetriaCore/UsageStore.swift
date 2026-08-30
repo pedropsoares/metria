@@ -41,7 +41,7 @@ public struct ProviderUsage: Identifiable, Equatable {
 public enum ProviderFetchResult: Equatable {
     case loaded(ProviderUsage)
     case empty(ProviderUsage)
-    case failed(ProviderKind, String)
+    case failed(ProviderKind, String, retryAfter: TimeInterval?)
 }
 
 public protocol UsageProvider {
@@ -64,6 +64,19 @@ public final class UsageStore: ObservableObject {
     private var retryTasks: [ProviderKind: Task<Void, Never>] = [:]
     private var isRefreshing = false
     private let enabledProvidersKey = "enabledProviderKinds"
+    private let cachedUsageKey = "cachedProviderUsage"
+
+    private struct CachedUsage: Codable {
+        struct CachedWindow: Codable {
+            let title: String
+            let percent: Double
+            let resetDate: Date?
+        }
+
+        let kind: String
+        let windows: [CachedWindow]
+        let updatedAt: Date?
+    }
 
     public init(providers: [any UsageProvider], defaults: UserDefaults = .standard) {
         self.sources = providers
@@ -72,6 +85,8 @@ public final class UsageStore: ObservableObject {
             .compactMap(ProviderKind.init(rawValue:))
         let availableKinds = Set(providers.filter(\.isAvailable).map(\.kind))
         enabledProviderKinds = savedKinds.isEmpty ? availableKinds : Set(savedKinds)
+        self.providers = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
+            .filter { availableKinds.contains($0.kind) && enabledProviderKinds.contains($0.kind) }
     }
 
     public func isProviderAvailable(_ kind: ProviderKind) -> Bool {
@@ -80,6 +95,30 @@ public final class UsageStore: ObservableObject {
 
     public func setupHint(for kind: ProviderKind) -> String? {
         sources.first(where: { $0.kind == kind })?.setupHint
+    }
+
+    public func diagnosis(for kind: ProviderKind) -> String {
+        guard let source = sources.first(where: { $0.kind == kind }) else {
+            return "This provider is not registered in Metria."
+        }
+
+        var details = [source.isAvailable ? "Local credentials or usage files were detected." : source.setupHint]
+        if let usage = providers.first(where: { $0.kind == kind }) {
+            if usage.windows.isEmpty {
+                details.append("No usage windows are available yet.")
+            } else {
+                details.append("Usage data contains \(usage.windows.count) window(s).")
+            }
+            if let updatedAt = usage.updatedAt {
+                details.append("Last successful update: \(updatedAt.formatted(.dateTime))")
+            }
+            if let error = usage.error {
+                details.append("Latest issue: \(error)")
+            }
+        } else {
+            details.append("Metria has not received a response from this provider yet.")
+        }
+        return details.joined(separator: "\n")
     }
 
     public func setProviderEnabled(_ kind: ProviderKind, isEnabled: Bool) {
@@ -135,7 +174,7 @@ public final class UsageStore: ObservableObject {
         let kind: ProviderKind
         switch result {
         case .loaded(let usage), .empty(let usage): kind = usage.kind
-        case .failed(let failedKind, _): kind = failedKind
+        case .failed(let failedKind, _, _): kind = failedKind
         }
         guard enabledProviderKinds.contains(kind) else {
             retryTasks[kind]?.cancel()
@@ -144,17 +183,31 @@ public final class UsageStore: ObservableObject {
         }
 
         switch result {
-        case .loaded(let usage), .empty(let usage):
+        case .loaded(let usage):
             replace(usage)
+            if !usage.windows.isEmpty {
+                saveCachedUsage()
+            }
+            if usage.error == nil {
+                retryTasks[usage.kind]?.cancel()
+                retryTasks[usage.kind] = nil
+            }
+        case .empty(let usage):
+            if let index = providers.firstIndex(where: { $0.kind == usage.kind }), !providers[index].windows.isEmpty {
+                providers[index].error = usage.error ?? "No current usage data was returned. Showing the last successful update."
+            } else {
+                replace(usage)
+            }
             retryTasks[usage.kind]?.cancel()
             retryTasks[usage.kind] = nil
-        case .failed(let kind, let message):
+        case .failed(let kind, let message, let retryAfter):
+            let displayMessage = retryAfter.map { "\(message) Retrying in \(Self.retryDescription($0))." } ?? message
             if let index = providers.firstIndex(where: { $0.kind == kind }) {
-                providers[index].error = "\(message). Retrying in a moment."
+                providers[index].error = displayMessage
             } else {
-                providers.append(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: "\(message). Retrying in a moment."))
+                providers.append(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: displayMessage))
             }
-            scheduleRetry(for: kind)
+            scheduleRetry(for: kind, after: retryAfter)
         }
         providers.sort { $0.kind.rawValue < $1.kind.rawValue }
     }
@@ -167,15 +220,47 @@ public final class UsageStore: ObservableObject {
         }
     }
 
-    private func scheduleRetry(for kind: ProviderKind) {
-        guard retryTasks[kind] == nil, let provider = sources.first(where: { $0.kind == kind }) else { return }
+    private func scheduleRetry(for kind: ProviderKind, after delay: TimeInterval?) {
+        guard let delay, delay > 0, retryTasks[kind] == nil,
+              let provider = sources.first(where: { $0.kind == kind }) else { return }
         retryTasks[kind] = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let self else { return }
             self.retryTasks[kind] = nil
             guard self.enabledProviderKinds.contains(kind) else { return }
             self.refresh(providers: [provider])
         }
+    }
+
+    private func saveCachedUsage() {
+        let cached = providers.filter { !$0.windows.isEmpty }.map { usage in
+            CachedUsage(
+                kind: usage.kind.rawValue,
+                windows: usage.windows.map { .init(title: $0.title, percent: $0.percent, resetDate: $0.resetDate) },
+                updatedAt: usage.updatedAt
+            )
+        }
+        guard let data = try? JSONEncoder().encode(cached) else { return }
+        defaults.set(data, forKey: cachedUsageKey)
+    }
+
+    private static func loadCachedUsage(from defaults: UserDefaults, key: String) -> [ProviderUsage] {
+        guard let data = defaults.data(forKey: key),
+              let cached = try? JSONDecoder().decode([CachedUsage].self, from: data) else { return [] }
+        return cached.compactMap { item in
+            guard let kind = ProviderKind(rawValue: item.kind) else { return nil }
+            return ProviderUsage(
+                kind: kind,
+                windows: item.windows.map { UsageWindow(title: $0.title, percent: $0.percent, resetDate: $0.resetDate) },
+                updatedAt: item.updatedAt,
+                error: nil
+            )
+        }
+    }
+
+    private static func retryDescription(_ delay: TimeInterval) -> String {
+        let minutes = max(1, Int(ceil(delay / 60)))
+        return minutes == 1 ? "about 1 minute" : "about \(minutes) minutes"
     }
 
     deinit {

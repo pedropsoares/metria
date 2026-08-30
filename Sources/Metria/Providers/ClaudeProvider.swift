@@ -15,7 +15,11 @@ struct ClaudeProvider: UsageProvider {
                 UsageWindow(title: "Current session", percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
                 UsageWindow(title: "All models", percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
             ], updatedAt: Date(), error: nil))
-        } catch { FileHandle.standardError.write("[Claude] error: \(error)\n".data(using: .utf8)!); return .failed(kind, error.localizedDescription) }
+        } catch {
+            let providerError = error as? ProviderError
+            FileHandle.standardError.write("[Claude] error: \(error.localizedDescription)\n".data(using: .utf8)!)
+            return .failed(kind, error.localizedDescription, retryAfter: providerError?.retryAfter)
+        }
     }
     private func requestUsage(token: String) async throws -> Data {
         for attempt in 0..<3 {
@@ -30,9 +34,9 @@ struct ClaudeProvider: UsageProvider {
                 guard status == 200 else { throw ProviderError.http(status) }
                 return data
             }
-            guard attempt < 2 else { throw ProviderError.http(status) }
             let retryAfter = httpResponse?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? pow(2, Double(attempt + 1))
-            try? await Task.sleep(for: .seconds(min(retryAfter, 30)))
+            guard attempt < 2 else { throw ProviderError.rateLimited(retryAfter: retryAfter) }
+            try await Task.sleep(for: .seconds(min(retryAfter, 30)))
         }
         throw ProviderError.unavailable
     }

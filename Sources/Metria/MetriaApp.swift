@@ -194,11 +194,18 @@ struct UsageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: isCompact ? 10 : 18) {
             HStack(spacing: isCompact ? 6 : 10) { ProviderLogo(provider: usage.kind, size: isCompact ? 17 : 24); Text(usage.kind.rawValue).font(.system(size: isCompact ? 15 : 22, weight: .medium)); Spacer(); Circle().fill(usage.error == nil ? .green : .orange).frame(width: isCompact ? 5 : 7, height: isCompact ? 5 : 7) }
-            ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
-                VStack(alignment: .leading, spacing: isCompact ? 5 : 8) {
-                    HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: isCompact ? 10 : 15))
-                    GeometryReader { proxy in ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: proxy.size.width * window.percent / 100) } }.frame(height: isCompact ? 5 : 7)
-                    Text("\(Int(window.percent.rounded()))% Used").font(.system(size: isCompact ? 11 : 15))
+            if usage.windows.isEmpty {
+                Label(usage.error ?? "Waiting for usage data...", systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill")
+                    .font(.system(size: isCompact ? 10 : 13))
+                    .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
+                    .lineLimit(3)
+            } else {
+                ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
+                    VStack(alignment: .leading, spacing: isCompact ? 5 : 8) {
+                        HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: isCompact ? 10 : 15))
+                        GeometryReader { proxy in ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: proxy.size.width * window.percent / 100) } }.frame(height: isCompact ? 5 : 7)
+                        Text("\(Int(window.percent.rounded()))% Used").font(.system(size: isCompact ? 11 : 15))
+                    }
                 }
             }
             if let error = usage.error { Text(error).font(.system(size: isCompact ? 9 : 12)).foregroundStyle(.secondary).lineLimit(2) }
@@ -233,21 +240,28 @@ struct DashboardUsageCard: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(window.title)
-                            Spacer()
-                            Text("\(Int(window.percent.rounded()))%")
-                                .foregroundStyle(GaugeColor.color(for: window.percent))
-                                .monospacedDigit()
-                        }
+                if usage.windows.isEmpty {
+                    Label(usage.error ?? "Waiting for usage data...", systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill")
                         .font(.subheadline)
-                        ProgressView(value: min(max(window.percent, 0), 100), total: 100)
-                            .tint(GaugeColor.color(for: window.percent))
-                        Text(window.resetText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(window.title)
+                                Spacer()
+                                Text("\(Int(window.percent.rounded()))%")
+                                    .foregroundStyle(GaugeColor.color(for: window.percent))
+                                    .monospacedDigit()
+                            }
+                            .font(.subheadline)
+                            ProgressView(value: min(max(window.percent, 0), 100), total: 100)
+                                .tint(GaugeColor.color(for: window.percent))
+                            Text(window.resetText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 if let error = usage.error {
@@ -274,6 +288,16 @@ struct DashboardUsageCard: View {
 
 struct PopoverContent: View {
     @ObservedObject var store: UsageStore
+
+    private var visibleProviders: [ProviderUsage] {
+        ProviderKind.allCases
+            .filter { store.enabledProviderKinds.contains($0) && store.isProviderAvailable($0) }
+            .map { kind in
+                store.providers.first(where: { $0.kind == kind })
+                    ?? ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil)
+            }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
@@ -290,7 +314,15 @@ struct PopoverContent: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(store.providers) { DashboardUsageCard(usage: $0) }
+                    if visibleProviders.isEmpty {
+                        Label("No providers are available yet. Sign in to a supported provider and refresh.", systemImage: "externaldrive.badge.questionmark")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 24)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        ForEach(visibleProviders) { DashboardUsageCard(usage: $0) }
+                    }
                 }
             }
 
@@ -554,6 +586,28 @@ enum DisplayMode: String {
     case menuBar
 }
 
+private enum SettingsSection: String, CaseIterable, Identifiable {
+    case general
+    case providers
+    case iPhone
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .providers: "Providers"
+        case .iPhone: "iPhone"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .providers: "square.stack.3d.up"
+        case .iPhone: "iphone"
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var pairing: PairingManager
@@ -562,10 +616,16 @@ struct SettingsView: View {
     @State private var sidebarOpacity: Double
     let onChangeSidebarOpacity: (Double) -> Void
     let onQuit: () -> Void
+    let onReconnect: (ProviderKind) -> Void
     @State private var ntfyServer: String
     let onChangeServer: (String) -> Void
     @State private var isPhraseRevealed = false
     @State private var isRegenerateConfirmationShown = false
+    @State private var isDiagnosticShown = false
+    @State private var diagnosticMessage = ""
+    @State private var isReconnectShown = false
+    @State private var reconnectMessage = ""
+    @State private var selectedSection: SettingsSection = .general
 
     init(
         store: UsageStore,
@@ -575,6 +635,7 @@ struct SettingsView: View {
         sidebarOpacity: Double,
         onChangeSidebarOpacity: @escaping (Double) -> Void,
         onQuit: @escaping () -> Void,
+        onReconnect: @escaping (ProviderKind) -> Void,
         ntfyServer: String,
         onChangeServer: @escaping (String) -> Void
     ) {
@@ -585,135 +646,200 @@ struct SettingsView: View {
         _sidebarOpacity = State(initialValue: sidebarOpacity)
         self.onChangeSidebarOpacity = onChangeSidebarOpacity
         self.onQuit = onQuit
+        self.onReconnect = onReconnect
         _ntfyServer = State(initialValue: ntfyServer)
         self.onChangeServer = onChangeServer
     }
 
     var body: some View {
-        TabView {
-            Form {
-                Section("Display") {
-                    Picker("Show usage in", selection: Binding(get: { displayMode }, set: onSelectDisplayMode)) {
-                        Text("Floating sidebar").tag(DisplayMode.sidebar)
-                        Text("Menu bar").tag(DisplayMode.menuBar)
-                    }
-                    .pickerStyle(.segmented)
-
-                    Text("Only one option is visible at a time.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Sidebar") {
-                    HStack {
-                        Text("Opacity")
-                        Spacer()
-                        Text("\(Int(sidebarOpacity * 100))%")
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(value: $sidebarOpacity, in: 0.35...1)
-                        .onChange(of: sidebarOpacity) { onChangeSidebarOpacity($0) }
-                }
-
-                Section("Updates") {
-                    Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
-                        Text("Refresh every \(Int(store.refreshInterval / 60)) min")
-                    }
-                }
-
-                Section {
-                    Button("Exit", role: .destructive, action: onQuit)
-                }
+        NavigationSplitView {
+            List(SettingsSection.allCases, selection: $selectedSection) { section in
+                Label(section.title, systemImage: section.symbol)
+                    .tag(section)
             }
-            .formStyle(.grouped)
-            .tabItem { Label("General", systemImage: "gearshape") }
+            .listStyle(.sidebar)
+            .navigationTitle("Metria")
+            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+        } detail: {
+            detailView
+                .navigationTitle(selectedSection.title)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(minWidth: 680, idealWidth: 720, minHeight: 500, idealHeight: 580)
+    }
 
-            Form {
-                Section("Enabled providers") {
-                    ForEach(ProviderKind.allCases) { kind in
-                        Toggle(isOn: Binding(
-                            get: { store.enabledProviderKinds.contains(kind) },
-                            set: { store.setProviderEnabled(kind, isEnabled: $0) }
-                        )) {
-                            HStack(spacing: 8) {
-                                ProviderLogo(provider: kind, size: 18)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(kind.rawValue)
-                                    if !store.isProviderAvailable(kind), let hint = store.setupHint(for: kind) {
-                                        Text(hint)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                        .disabled(!store.isProviderAvailable(kind))
-                    }
+    @ViewBuilder private var detailView: some View {
+        switch selectedSection {
+        case .general: generalView
+        case .providers: providersView
+        case .iPhone: iPhoneView
+        }
+    }
+
+    private var generalView: some View {
+        Form {
+            Section("Display") {
+                Picker("Show usage in", selection: Binding(get: { displayMode }, set: onSelectDisplayMode)) {
+                    Text("Floating sidebar").tag(DisplayMode.sidebar)
+                    Text("Menu bar").tag(DisplayMode.menuBar)
                 }
-
-                Text("At least one provider must remain enabled.")
-                    .font(.caption)
+                .pickerStyle(.segmented)
+                Text("Only one option is visible at a time.")
                     .foregroundStyle(.secondary)
             }
-            .formStyle(.grouped)
-            .tabItem { Label("Providers", systemImage: "square.stack.3d.up") }
 
-            Form {
-                Section("Pair your iPhone") {
-                    if let qrImage = pairing.qrImage {
+            Section("Sidebar") {
+                HStack {
+                    Text("Opacity")
+                    Slider(value: $sidebarOpacity, in: 0.35...1)
+                        .onChange(of: sidebarOpacity) { onChangeSidebarOpacity($0) }
+                    Text("\(Int(sidebarOpacity * 100))%")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(width: 42, alignment: .trailing)
+                }
+            }
+
+            Section("Updates") {
+                Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
+                    Text("Refresh every \(Int(store.refreshInterval / 60)) min")
+                }
+            }
+
+            Section {
+                Button("Exit", role: .destructive, action: onQuit)
+            }
+        }
+        .formStyle(.columns)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var providersView: some View {
+        Form {
+            ForEach(ProviderKind.allCases) { kind in
+                Section {
+                    Toggle("Use this provider", isOn: Binding(
+                        get: { store.enabledProviderKinds.contains(kind) },
+                        set: { store.setProviderEnabled(kind, isEnabled: $0) }
+                    ))
+                    .disabled(!store.isProviderAvailable(kind))
+
+                    HStack {
+                        Button("Diagnose") {
+                            diagnosticMessage = store.diagnosis(for: kind)
+                            isDiagnosticShown = true
+                        }
+                        Button("Reconnect") {
+                            onReconnect(kind)
+                            reconnectMessage = "The login command for \(kind.rawValue) was sent to Terminal. If it did not start automatically, paste this command:\n\n\(kind.reconnectCommand)"
+                            isReconnectShown = true
+                        }
+                        Spacer()
+                    }
+                    .controlSize(.small)
+
+                    if let usage = store.providers.first(where: { $0.kind == kind }) {
+                        if let error = usage.error {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .lineLimit(2)
+                        }
+                        if let updatedAt = usage.updatedAt {
+                            Text("Last update: \(updatedAt.formatted(.dateTime.hour().minute()))")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Label {
+                        Text(kind.rawValue)
+                    } icon: {
+                        ProviderLogo(provider: kind, size: 18)
+                    }
+                } footer: {
+                    if !store.isProviderAvailable(kind), let hint = store.setupHint(for: kind) {
+                        Text(hint)
+                    } else {
+                        Text("Reconnect opens the provider's sign-in flow in Terminal.")
+                    }
+                }
+            }
+
+            Text("At least one provider must remain enabled.")
+                .foregroundStyle(.secondary)
+        }
+        .formStyle(.columns)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert("Provider diagnosis", isPresented: $isDiagnosticShown) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(diagnosticMessage)
+        }
+        .alert("Reconnect provider", isPresented: $isReconnectShown) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(reconnectMessage)
+        }
+    }
+
+    private var iPhoneView: some View {
+        Form {
+            Section("Pair your iPhone") {
+                if let qrImage = pairing.qrImage {
+                    HStack {
                         Image(nsImage: qrImage)
                             .interpolation(.none)
                             .resizable()
                             .frame(width: 132, height: 132)
-                            .frame(maxWidth: .infinity)
-                    }
-
-                    HStack {
-                        Text(isPhraseRevealed ? pairing.words.joined(separator: " ") : String(repeating: "•", count: 44))
-                            .font(.system(size: 11, design: .monospaced))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
                         Spacer()
-                        Button(isPhraseRevealed ? "Hide" : "Show") { isPhraseRevealed.toggle() }
                     }
+                }
 
-                    HStack(spacing: 10) {
-                        Button("Copy phrase") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(pairing.words.joined(separator: " "), forType: .string)
-                        }
-                        Button("Copy link") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(pairing.pairingLink(server: ntfyServer), forType: .string)
-                        }
-                        Spacer()
-                        Button("Regenerate", role: .destructive) { isRegenerateConfirmationShown = true }
+                HStack {
+                    Text(isPhraseRevealed ? pairing.words.joined(separator: " ") : String(repeating: "•", count: 44))
+                        .font(.system(size: 11, design: .monospaced))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button(isPhraseRevealed ? "Hide" : "Show") { isPhraseRevealed.toggle() }
+                }
+
+                HStack(spacing: 10) {
+                    Button("Copy phrase") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(pairing.words.joined(separator: " "), forType: .string)
                     }
-                    .controlSize(.small)
+                    Button("Copy link") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(pairing.pairingLink(server: ntfyServer), forType: .string)
+                    }
+                    Spacer()
+                    Button("Regenerate", role: .destructive) { isRegenerateConfirmationShown = true }
                 }
-
-                Section("Connection") {
-                    TextField("ntfy server", text: $ntfyServer)
-                        .onSubmit { onChangeServer(ntfyServer) }
-                }
-
-                Text("Scan the QR code with your iPhone camera, or open the PWA and enter the phrase.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .controlSize(.small)
             }
-            .formStyle(.grouped)
-            .alert("Regenerate pairing?", isPresented: $isRegenerateConfirmationShown) {
-                Button("Cancel", role: .cancel) {}
-                Button("Regenerate", role: .destructive) {
-                    pairing.regenerate()
-                    pairing.refreshQRCode(server: ntfyServer)
-                }
-            } message: {
-                Text("Any iPhone using the current QR code or phrase will stop receiving updates.")
+
+            Section("Connection") {
+                TextField("ntfy server", text: $ntfyServer)
+                    .onSubmit { onChangeServer(ntfyServer) }
             }
-            .tabItem { Label("iPhone", systemImage: "iphone") }
+
+            Text("Scan the QR code with your iPhone camera, or open the PWA and enter the phrase.")
+                .foregroundStyle(.secondary)
         }
-        .frame(width: 420, height: 440)
+        .formStyle(.columns)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert("Regenerate pairing?", isPresented: $isRegenerateConfirmationShown) {
+            Button("Cancel", role: .cancel) {}
+            Button("Regenerate", role: .destructive) {
+                pairing.regenerate()
+                pairing.refreshQRCode(server: ntfyServer)
+            }
+        } message: {
+            Text("Any iPhone using the current QR code or phrase will stop receiving updates.")
+        }
     }
 }
 
@@ -887,11 +1013,26 @@ struct SettingsView: View {
     @objc private func switchToSidebar() { displayMode = .sidebar; applyDisplayMode() }
     @objc func quit() { NSApp.terminate(nil) }
 
+    private func reconnectProvider(_ kind: ProviderKind) {
+        let command = kind.reconnectCommand
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+
+        let escapedCommand = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let scriptSource = "tell application \"Terminal\" to do script \"\(escapedCommand)\""
+        var scriptError: NSDictionary?
+        let didOpenTerminal = NSAppleScript(source: scriptSource)?.executeAndReturnError(&scriptError) != nil
+        if !didOpenTerminal {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+        }
+    }
+
     @objc private func openSettings() {
         let window = settingsWindow ?? {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 440), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 580), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.title = "Settings"
             window.isReleasedWhenClosed = false
+            window.minSize = NSSize(width: 680, height: 500)
             window.center()
             settingsWindow = window
             return window
@@ -907,8 +1048,9 @@ struct SettingsView: View {
             },
             sidebarOpacity: sidebarOpacity,
             onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
-            onQuit: { [weak self] in self?.quit() },
-            ntfyServer: ntfyServer,
+             onQuit: { [weak self] in self?.quit() },
+             onReconnect: { [weak self] kind in self?.reconnectProvider(kind) },
+             ntfyServer: ntfyServer,
             onChangeServer: { [weak self] server in
                 guard let self else { return }
                 self.ntfyServer = server.trimmingCharacters(in: .whitespacesAndNewlines)

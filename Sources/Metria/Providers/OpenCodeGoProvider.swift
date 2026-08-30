@@ -12,12 +12,7 @@ struct OpenCodeGoProvider: UsageProvider {
     func fetch() async -> ProviderFetchResult {
         do {
             let key = try readAPIKey()
-            var request = URLRequest(url: URL(string: "https://opencode.ai/zen/go/v1/usage")!)
-            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            guard status == 200 else { throw ProviderError.unavailable }
+            let data = try await requestUsage(key: key)
             let usage = try JSONDecoder().decode(OpenCodeGoResponse.self, from: data).usage
             return .loaded(ProviderUsage(kind: kind, windows: [
                 UsageWindow(title: "Current session", percent: usage.rolling.percent, resetDate: usage.rolling.resetDate),
@@ -25,8 +20,29 @@ struct OpenCodeGoProvider: UsageProvider {
                 UsageWindow(title: "This month", percent: usage.monthly.percent, resetDate: usage.monthly.resetDate)
             ], updatedAt: Date(), error: nil))
         } catch {
-            return .failed(kind, error.localizedDescription)
+            let providerError = error as? ProviderError
+            return .failed(kind, error.localizedDescription, retryAfter: providerError?.retryAfter)
         }
+    }
+
+    private func requestUsage(key: String) async throws -> Data {
+        for attempt in 0..<3 {
+            var request = URLRequest(url: URL(string: "https://opencode.ai/zen/go/v1/usage")!)
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let httpResponse = response as? HTTPURLResponse
+            let status = httpResponse?.statusCode ?? -1
+            if status == 429 {
+                let retryAfter = httpResponse?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? pow(2, Double(attempt + 1))
+                guard attempt < 2 else { throw ProviderError.rateLimited(retryAfter: retryAfter) }
+                try await Task.sleep(for: .seconds(min(retryAfter, 30)))
+                continue
+            }
+            guard status == 200 else { throw ProviderError.http(status) }
+            return data
+        }
+        throw ProviderError.unavailable
     }
 
     private func readAPIKey() throws -> String {
