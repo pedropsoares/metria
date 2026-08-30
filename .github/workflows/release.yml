@@ -69,6 +69,7 @@ jobs:
           VERSION: ${{ inputs.version || github.ref_name }}
           SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
         run: |
           test -n "$SPARKLE_PUBLIC_ED_KEY"
           bash scripts/package-macos.sh
@@ -106,11 +107,14 @@ jobs:
           test -n "$SPARKLE_PRIVATE_ED_KEY"
           swift build
           sparkle_bin=".build/artifacts/sparkle/Sparkle/bin/generate_appcast"
+          mkdir -p appcast
+          cp dist/*.zip appcast/
           printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sparkle_bin" \
             --ed-key-file - \
             --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ inputs.version || github.ref_name }}/" \
             --link "https://github.com/${{ github.repository }}" \
-            dist
+            appcast
+          cp appcast/appcast.xml dist/appcast.xml
 
       - name: Create GitHub Release
         env:
