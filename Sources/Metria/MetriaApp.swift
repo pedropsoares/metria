@@ -169,24 +169,6 @@ private extension Data {
     }
 }
 
-@MainActor private final class CloudflarePushPublisher {
-    private static let endpoint = URL(string: "https://metria-pwa.yuriramos2406.workers.dev/api/usage")!
-
-    func publish(snapshot: Data, secret: Data) {
-        guard let snapshotObject = try? JSONSerialization.jsonObject(with: snapshot),
-              let payload = try? JSONSerialization.data(withJSONObject: [
-                "secret": secret.base64URLEncodedString,
-                "snapshot": snapshotObject
-              ]) else { return }
-
-        var request = URLRequest(url: Self.endpoint)
-        request.httpMethod = "POST"
-        request.httpBody = payload
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        Task { _ = try? await URLSession.shared.data(for: request) }
-    }
-}
-
 struct GaugeColor {
     static func color(for percent: Double) -> Color { Color(nsColor: nsColor(for: percent)) }
     static func nsColor(for percent: Double) -> NSColor { percent >= 85 ? .systemRed : percent >= 65 ? .systemOrange : percent >= 40 ? .systemYellow : .systemGreen }
@@ -212,26 +194,27 @@ struct ProviderLogo: View {
 struct UsageCard: View {
     let usage: ProviderUsage
     var width: CGFloat = 390
-    private var isCompact: Bool { width < 350 }
+    var scale: CGFloat = 1
+    private var isCompact: Bool { width < 390 }
     var body: some View {
-        VStack(alignment: .leading, spacing: isCompact ? 10 : 18) {
-            HStack(spacing: isCompact ? 6 : 10) { ProviderLogo(provider: usage.kind, size: isCompact ? 17 : 24); Text(usage.kind.rawValue).font(.system(size: isCompact ? 15 : 22, weight: .medium)); Spacer(); Circle().fill(usage.error == nil ? .green : .orange).frame(width: isCompact ? 5 : 7, height: isCompact ? 5 : 7) }
+        VStack(alignment: .leading, spacing: (isCompact ? 10 : 18) * scale) {
+            HStack(spacing: (isCompact ? 6 : 10) * scale) { ProviderLogo(provider: usage.kind, size: (isCompact ? 17 : 24) * scale); Text(usage.kind.rawValue).font(.system(size: (isCompact ? 15 : 22) * scale, weight: .medium)); Spacer(); Circle().fill(usage.error == nil ? .green : .orange).frame(width: (isCompact ? 5 : 7) * scale, height: (isCompact ? 5 : 7) * scale) }
             if usage.windows.isEmpty {
                 Label(usage.error ?? "Waiting for usage data...", systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill")
-                    .font(.system(size: isCompact ? 10 : 13))
+                    .font(.system(size: (isCompact ? 10 : 13) * scale))
                     .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
                     .lineLimit(3)
             } else {
                 ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
-                    VStack(alignment: .leading, spacing: isCompact ? 5 : 8) {
-                        HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: isCompact ? 10 : 15))
-                        GeometryReader { proxy in ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: proxy.size.width * window.percent / 100) } }.frame(height: isCompact ? 5 : 7)
-                        Text("\(Int(window.percent.rounded()))% Used").font(.system(size: isCompact ? 11 : 15))
+                    VStack(alignment: .leading, spacing: (isCompact ? 5 : 8) * scale) {
+                        HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
+                        GeometryReader { proxy in ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: proxy.size.width * window.percent / 100) } }.frame(height: (isCompact ? 5 : 7) * scale)
+                        Text("\(Int(window.percent.rounded()))% Used").font(.system(size: (isCompact ? 11 : 15) * scale))
                     }
                 }
             }
-            if let error = usage.error { Text(error).font(.system(size: isCompact ? 9 : 12)).foregroundStyle(.secondary).lineLimit(2) }
-        }.padding(.horizontal, isCompact ? 14 : 24).padding(.vertical, isCompact ? 16 : 28).frame(width: width).background(.black).clipShape(RoundedRectangle(cornerRadius: isCompact ? 16 : 24)).foregroundStyle(.white)
+            if let error = usage.error { Text(error).font(.system(size: (isCompact ? 9 : 12) * scale)).foregroundStyle(.secondary).lineLimit(2) }
+        }.padding(.horizontal, (isCompact ? 14 : 24) * scale).padding(.vertical, (isCompact ? 16 : 28) * scale).frame(width: width).background(.black).clipShape(RoundedRectangle(cornerRadius: (isCompact ? 16 : 24) * scale)).foregroundStyle(.white)
     }
 }
 
@@ -359,25 +342,92 @@ struct PopoverContent: View {
     }
 }
 
-struct SidebarContent: View {
-    @ObservedObject var store: UsageStore
-    let dockSide: DockSide
-    let onSwitchToMenuBar: () -> Void
-    let onOpenSettings: () -> Void
-    let onDragMove: (CGFloat) -> Void
-    let onSidebarHover: (Bool) -> Void
-    @State private var hoveredProvider: ProviderKind?
-    @State private var hoveredProviderIndex: Int?
-    @State private var lastDragScreenLocation: CGPoint?
-    @State private var isRevealed = false
+/// Resolves where the side notch sits: flush against the right edge of the screen,
+/// hanging from just below the real menu bar (using `visibleFrame` rather than the
+/// physical notch's `safeAreaInsets`, since a screen edge isn't hardware — this keeps
+/// it clear of the menu bar's own icons and, on notched Macs, clear of the real notch).
+struct NotchGeometry {
+    private let rightEdgeX: CGFloat
+    private let topAnchorY: CGFloat
 
-    private var isRight: Bool { dockSide == .right }
-    private let providerHeight: CGFloat = 56
-    private let providerSpacing: CGFloat = 12
-    private let dockTopPadding: CGFloat = 28
-    private let dockControlsSpacing: CGFloat = 28
-    private let dockControlsHeight: CGFloat = 16
-    private let dockBottomPadding: CGFloat = 16
+    static func current() -> NotchGeometry {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+            return NotchGeometry(rightEdgeX: 0, topAnchorY: 0)
+        }
+        let rightEdgeX = screen.frame.maxX
+        let topAnchorY = screen.visibleFrame.maxY - 12
+        return NotchGeometry(rightEdgeX: rightEdgeX, topAnchorY: topAnchorY)
+    }
+
+    /// A frame of the given size, still flush against the right edge and still hanging
+    /// from the same top anchor — used to compute the expanded shelf's frame so it
+    /// grows leftward and downward from the idle rail instead of jumping around.
+    func frame(width: CGFloat, height: CGFloat, verticalOffset: CGFloat = 0) -> CGRect {
+        CGRect(x: rightEdgeX - width, y: topAnchorY - height + verticalOffset, width: width, height: height)
+    }
+}
+
+enum NotchSize: String, CaseIterable, Identifiable {
+    case small
+    case medium
+    case large
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var scale: CGFloat {
+        switch self {
+        case .small: 0.85
+        case .medium: 1
+        case .large: 1.15
+        }
+    }
+}
+
+struct NotchMetrics {
+    let scale: CGFloat
+
+    init(size: NotchSize) { scale = size.scale }
+
+    var idleWidth: CGFloat { 80 * scale }
+    var compactHeight: CGFloat { 236 * scale }
+    var hoverHeight: CGFloat { 280 * scale }
+    var hiddenWidth: CGFloat { 10 * scale }
+    var hiddenHeight: CGFloat { 80 * scale }
+    var cornerRadius: CGFloat { 20 * scale }
+    var providerItemHeight: CGFloat { 64 * scale }
+    var providerSpacing: CGFloat { 10 * scale }
+    var cardSpacing: CGFloat { 12 * scale }
+    var cardWidth: CGFloat { 316 * scale }
+    var cardContentWidth: CGFloat { 300 * scale }
+    var controlsSpacing: CGFloat { 14 * scale }
+    var controlsHeight: CGFloat { 16 * scale }
+    var controlsGap: CGFloat { 8 * scale }
+    var controlsBottomSpace: CGFloat { 20 * scale }
+}
+
+/// Shared visibility state so the view and the window-level click routing stay in sync
+/// without relying on SwiftUI `Button` actions, which are unreliable in a non-activating
+/// borderless panel.
+@MainActor final class NotchMode: ObservableObject {
+    @Published var isHiddenMode = UserDefaults.standard.bool(forKey: "hiddenNotch")
+    @Published var size = NotchSize(rawValue: UserDefaults.standard.string(forKey: "notchSize") ?? "") ?? .medium
+}
+
+/// The floating surface itself: a compact provider rail flush against the right screen
+/// edge while idle, which grows leftward and downward into a shelf on hover. Both states
+/// share the same flush-right, rounded-left shape so the surface reads as attached to
+/// the screen rather than as a floating rectangle.
+struct NotchContent: View {
+    @ObservedObject var store: UsageStore
+    @ObservedObject var mode: NotchMode
+    let onNotchHover: (Bool) -> Void
+    let onProviderHover: (ProviderKind, Int, Bool) -> Void
+    @State private var isHovered = false
+    @State private var pendingHoverCollapse: DispatchWorkItem?
+
+    private var isHiddenMode: Bool { mode.isHiddenMode }
+    private var metrics: NotchMetrics { NotchMetrics(size: mode.size) }
+
     private var visibleProviders: [ProviderUsage] {
         ProviderKind.allCases
             .filter { store.enabledProviderKinds.contains($0) && store.isProviderAvailable($0) }
@@ -386,223 +436,220 @@ struct SidebarContent: View {
                     ?? ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil)
             }
     }
-    private var dockHeight: CGFloat {
-        dockTopPadding
-            + CGFloat(visibleProviders.count) * providerHeight
-            + CGFloat(max(visibleProviders.count - 1, 0)) * providerSpacing
-            + dockControlsSpacing
-            + dockControlsHeight
-            + dockBottomPadding
-    }
-    private var pointerOffsetY: CGFloat {
-        guard let hoveredProviderIndex else { return 0 }
-        return -dockHeight / 2
-            + dockTopPadding
-            + providerHeight / 2
-            + CGFloat(hoveredProviderIndex) * (providerHeight + providerSpacing)
-    }
-
-    // Real gap between the card and the dock; the pointer bridges across it below.
-    private let cardGap: CGFloat = 16
 
     var body: some View {
-        ZStack(alignment: isRight ? .trailing : .leading) {
-            // Fixes the ZStack's own size to exactly 420x420 so the dock's
-            // alignment is resolved against a deterministic box — without this,
-            // the cardSlot's 324pt phantom width (present even at rest) makes
-            // the ZStack's natural size ambiguous, causing the dock to sit
-            // flush against one edge but with extra gap on the other.
-            Color.clear.allowsHitTesting(false)
-            dock
-            cardSlot
-                .frame(width: 324, alignment: isRight ? .trailing : .leading)
-                .offset(x: isRight ? -96 : 96, y: pointerOffsetY)
-        }
-        .frame(width: 420, height: 420, alignment: isRight ? .trailing : .leading)
-        .coordinateSpace(name: "sidebar")
-        .onAppear {
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.72)) { isRevealed = true }
-        }
-        .onHover { isInside in
-            if !isInside {
-                withAnimation(.easeIn(duration: 0.12)) {
-                    hoveredProvider = nil
-                    hoveredProviderIndex = nil
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private var cardSlot: some View {
-        if let hoveredProvider,
-           let usage = visibleProviders.first(where: { $0.kind == hoveredProvider }) {
-            UsageCard(usage: usage, width: 300)
-                .onHover(perform: onSidebarHover)
-                .overlay(alignment: isRight ? .trailing : .leading) {
-                    // Offset by exactly the HStack gap so the tip lands right on the dock's edge.
-                        SidebarPointer(pointsLeft: !isRight)
-                            .fill(.black)
-                            .frame(width: cardGap + 4, height: 34)
-                            .offset(x: isRight ? cardGap : -cardGap)
-                }
-                .transition(.move(edge: isRight ? .trailing : .leading).combined(with: .opacity))
-        } else {
-            Color.clear
-        }
-    }
-
-    private var dock: some View {
-        VStack(spacing: 0) {
-            Color.clear.frame(height: dockTopPadding)
-            VStack(spacing: providerSpacing) {
-                ForEach(Array(visibleProviders.enumerated()), id: \.element.id) { index, usage in
-                    SidebarProviderItem(usage: usage)
-                        .frame(width: 80, height: providerHeight)
-                        .onHover { isHovering in
-                            if isHovering {
-                                withAnimation(.easeOut(duration: 0.18)) {
-                                    hoveredProvider = usage.kind
-                                    hoveredProviderIndex = index
-                                }
-                            }
-                        }
-                }
-            }
-            Color.clear.frame(height: dockControlsSpacing)
-            HStack(spacing: 20) {
-                Spacer()
-                Button(action: onOpenSettings) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(white: 0.58))
-                }
-                .buttonStyle(.plain)
-
-                // Hides the floating sidebar and switches usage display to the menu bar.
-                Button(action: onSwitchToMenuBar) {
-                    Image(systemName: "eye.slash")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(white: 0.58))
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-            .frame(height: dockControlsHeight)
-            .padding(.bottom, dockBottomPadding)
-        }
-        .frame(width: 80, height: dockHeight)
-        .onHover(perform: onSidebarHover)
-        .opacity(isRevealed ? 1 : 0)
-        .scaleEffect(isRevealed ? 1 : 0.86, anchor: isRight ? .trailing : .leading)
-        .background(Color.black)
-        .clipShape(isRight ? AnyShape(RightDockShape()) : AnyShape(LeftDockShape()))
-        // Press anywhere on the sidebar and drag vertically to reposition it on screen.
-        // Horizontal movement is intentionally ignored; the Settings dialog controls the dock side.
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 2)
-                .onChanged { _ in
-                    let current = NSEvent.mouseLocation
-                    if let last = lastDragScreenLocation {
-                        onDragMove(current.y - last.y)
+        ZStack(alignment: .topTrailing) {
+            UnevenRoundedRectangle(
+                topLeadingRadius: metrics.cornerRadius,
+                bottomLeadingRadius: metrics.cornerRadius,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+            .fill(.black)
+            .frame(
+                width: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
+                height: isHiddenMode && !isHovered
+                    ? metrics.hiddenHeight
+                    : isHovered ? metrics.hoverHeight : metrics.compactHeight,
+                alignment: .topTrailing
+            )
+            .onHover { isInside in
+                pendingHoverCollapse?.cancel()
+                if isInside {
+                    withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
+                        isHovered = true
                     }
-                    lastDragScreenLocation = current
+                    onNotchHover(true)
+                } else {
+                    let collapse = DispatchWorkItem {
+                        withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
+                            isHovered = false
+                        }
+                        onNotchHover(false)
+                    }
+                    pendingHoverCollapse = collapse
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: collapse)
                 }
-                .onEnded { _ in lastDragScreenLocation = nil }
-        )
+            }
+
+            if !isHiddenMode || isHovered {
+                compactProviders
+                    .frame(width: metrics.idleWidth, alignment: .topTrailing)
+            }
+
+            if isHovered {
+                controls
+                    .frame(width: metrics.idleWidth, height: metrics.controlsHeight)
+                    .offset(y: metrics.compactHeight + metrics.controlsGap)
+                    .transition(.opacity)
+            }
+        }
+        .frame(width: metrics.idleWidth, height: metrics.hoverHeight, alignment: .topTrailing)
+    }
+
+    private var compactProviders: some View {
+        VStack(spacing: metrics.providerSpacing) {
+            ForEach(Array(visibleProviders.enumerated()), id: \.element.id) { index, usage in
+                SidebarProviderItem(usage: usage, scale: metrics.scale)
+                    .frame(width: metrics.idleWidth, height: metrics.providerItemHeight)
+                    .contentShape(Rectangle())
+                    .onHover { isHovering in
+                        onProviderHover(usage.kind, index, isHovering)
+                    }
+            }
+        }
+        .padding(.vertical, 12 * metrics.scale)
+    }
+
+    private var controls: some View {
+        HStack(spacing: metrics.controlsSpacing) {
+            Spacer()
+            Image(systemName: "gearshape")
+                .font(.system(size: 13 * metrics.scale))
+                .foregroundStyle(Color(white: 0.58))
+            Image(systemName: isHiddenMode ? "pin.fill" : "arrow.right")
+                .font(.system(size: 13 * metrics.scale))
+                .foregroundStyle(Color(white: 0.58))
+                .accessibilityLabel(isHiddenMode ? "Pin notch" : "Hide notch")
+            Spacer()
+        }
+        .frame(height: metrics.controlsHeight)
     }
 }
 
-/// The sidebar is fixed to the right edge of the screen; kept as an enum since the
-/// dock's mirrored shapes (`LeftDockShape`/`RightDockShape`) still branch on it.
-enum DockSide: String {
-    case left
-    case right
+struct NotchCardContent: View {
+    let usage: ProviderUsage
+    let metrics: NotchMetrics
+    let onHover: (Bool) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            UsageCard(usage: usage, width: metrics.cardContentWidth, scale: metrics.scale)
+            SideNotchPointer()
+                .fill(.black)
+                .frame(width: 16 * metrics.scale, height: 34 * metrics.scale)
+        }
+        .onHover(perform: onHover)
+    }
 }
 
-/// Type-erased shape so the dock's `.clipShape` can switch between the left- and
-/// right-docked corner shapes at runtime.
-struct AnyShape: Shape {
-    private let makePath: @Sendable (CGRect) -> Path
-    init<S: Shape>(_ shape: S) { makePath = { shape.path(in: $0) } }
-    func path(in rect: CGRect) -> Path { makePath(rect) }
+struct SideNotchPointer: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.closeSubpath()
+        }
+    }
+}
+
+/// Captures taps on the two bottom controls directly at the window level, since SwiftUI
+/// `Button` actions can be dropped in a non-activating borderless panel. Also captures
+/// vertical drags before child SwiftUI views can consume them.
+final class DraggableNotchPanel: NSPanel {
+    var metrics = NotchMetrics(size: .medium)
+    var onDragMove: ((CGFloat) -> Void)?
+    var onGearTap: (() -> Void)?
+    var onEyeTap: (() -> Void)?
+    private var lastMouseY: CGFloat?
+    private var didDrag = false
+    private var didHandleControlTap = false
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            didDrag = false
+            didHandleControlTap = routeControlTap(at: event.locationInWindow)
+            lastMouseY = event.locationInWindow.y
+        case .leftMouseDragged:
+            didDrag = true
+            if let lastMouseY {
+                let currentMouseY = event.locationInWindow.y
+                onDragMove?(currentMouseY - lastMouseY)
+                self.lastMouseY = currentMouseY
+            }
+        case .leftMouseUp:
+            if !didDrag && !didHandleControlTap { _ = routeControlTap(at: event.locationInWindow) }
+            didHandleControlTap = false
+            lastMouseY = nil
+        default:
+            break
+        }
+        super.sendEvent(event)
+    }
+
+    // The controls sit right below the provider stack. In window coordinates (origin at
+    // the bottom-left) that band spans from `hoverHeight - compactHeight - gap - controlsHeight`
+    // up to `hoverHeight - compactHeight - gap`.
+    @discardableResult
+    private func routeControlTap(at point: NSPoint) -> Bool {
+        let controlsTop = metrics.hoverHeight - (metrics.compactHeight + metrics.controlsGap)
+        let controlsBottom = controlsTop - metrics.controlsHeight
+        guard point.y >= controlsBottom, point.y <= controlsTop else { return false }
+        if point.x < metrics.idleWidth / 2 { onGearTap?() } else { onEyeTap?() }
+        return true
+    }
+}
+
+/// Keeps the rail's rounded corners transparent to the rest of the menu bar.
+final class NotchHostingView: NSHostingView<NotchContent> {
+    var isHovered = false
+    var isHiddenMode = false
+    var metrics = NotchMetrics(size: .medium)
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard containsVisibleSurface(point) else { return nil }
+        return super.hitTest(point)
+    }
+
+    private func containsVisibleSurface(_ point: NSPoint) -> Bool {
+        let topBasedY = isFlipped ? point.y : bounds.height - point.y
+        let surfaceWidth = isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth
+        let surfaceHeight = isHiddenMode && !isHovered
+            ? metrics.hiddenHeight
+            : isHovered ? metrics.hoverHeight : metrics.compactHeight
+        let x = bounds.width - point.x
+        let radius = min(metrics.cornerRadius, surfaceWidth / 2, surfaceHeight / 2)
+
+        guard x >= 0, x <= surfaceWidth, topBasedY >= 0, topBasedY <= surfaceHeight else { return false }
+        guard x <= surfaceWidth - radius else { return true }
+
+        let topCorner = CGPoint(x: surfaceWidth - radius, y: radius)
+        let bottomCorner = CGPoint(x: surfaceWidth - radius, y: surfaceHeight - radius)
+        let cornerCenter = topBasedY < surfaceHeight / 2 ? topCorner : bottomCorner
+        let distanceX = x - cornerCenter.x
+        let distanceY = topBasedY - cornerCenter.y
+        return distanceX * distanceX + distanceY * distanceY <= radius * radius
+    }
 }
 
 struct SidebarProviderItem: View {
     let usage: ProviderUsage
+    let scale: CGFloat
 
     var body: some View {
         let percent = usage.primary?.percent ?? 0
-        VStack(spacing: 3) {
+        VStack(spacing: 3 * scale) {
             ZStack {
-                Circle().stroke(Color(white: 0.18), lineWidth: 5)
+                Circle().stroke(Color(white: 0.18), lineWidth: 5 * scale)
                 Circle().trim(from: 0, to: percent / 100)
-                    .stroke(usage.kind.sidebarProgressGradient, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                     .stroke(usage.kind.sidebarProgressGradient, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                ProviderLogo(provider: usage.kind, size: 14).foregroundStyle(.white)
+                ProviderLogo(provider: usage.kind, size: 14 * scale).foregroundStyle(.white)
             }
-            .frame(width: 38, height: 38)
+            .frame(width: 38 * scale, height: 38 * scale)
             Text("\(Int(percent.rounded()))%")
-                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .font(.system(size: 11 * scale, weight: .regular, design: .rounded))
                 .foregroundStyle(.white)
         }
         .contentShape(Rectangle())
     }
 }
 
-struct SidebarPointer: Shape {
-    var pointsLeft: Bool = false
-
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            if pointsLeft {
-                path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
-                path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
-                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            } else {
-                path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-                path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
-                path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-            }
-            path.closeSubpath()
-        }
-    }
-}
-
-/// Rounded corners on the left side only, flush against the screen's right edge.
-struct RightDockShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            path.move(to: CGPoint(x: rect.minX + 34, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.minX + 34, y: rect.maxY))
-            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - 34), control: CGPoint(x: rect.minX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + 34))
-            path.addQuadCurve(to: CGPoint(x: rect.minX + 34, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
-            path.closeSubpath()
-        }
-    }
-}
-
-/// Mirror of `RightDockShape`: rounded corners on the right side only, flush
-/// against the screen's left edge.
-struct LeftDockShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            path.move(to: CGPoint(x: rect.maxX - 34, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.maxX - 34, y: rect.maxY))
-            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY - 34), control: CGPoint(x: rect.maxX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + 34))
-            path.addQuadCurve(to: CGPoint(x: rect.maxX - 34, y: rect.minY), control: CGPoint(x: rect.maxX, y: rect.minY))
-            path.closeSubpath()
-        }
-    }
-}
-
 /// The two display modes are mutually exclusive: usage either appears in the
-/// floating sidebar, or as text in the macOS menu bar.
+/// floating notch, or as text in the macOS menu bar.
 enum DisplayMode: String {
     case sidebar
     case menuBar
@@ -666,6 +713,8 @@ struct SettingsView: View {
     @ObservedObject var pairing: PairingManager
     let displayMode: DisplayMode
     let onSelectDisplayMode: (DisplayMode) -> Void
+    let notchSize: NotchSize
+    let onSelectNotchSize: (NotchSize) -> Void
     @State private var sidebarOpacity: Double
     let onChangeSidebarOpacity: (Double) -> Void
     @State private var launchAtLoginEnabled: Bool
@@ -694,6 +743,8 @@ struct SettingsView: View {
         pairing: PairingManager,
         displayMode: DisplayMode,
         onSelectDisplayMode: @escaping (DisplayMode) -> Void,
+        notchSize: NotchSize,
+        onSelectNotchSize: @escaping (NotchSize) -> Void,
         sidebarOpacity: Double,
         onChangeSidebarOpacity: @escaping (Double) -> Void,
         launchAtLoginEnabled: Bool,
@@ -713,6 +764,8 @@ struct SettingsView: View {
         self.pairing = pairing
         self.displayMode = displayMode
         self.onSelectDisplayMode = onSelectDisplayMode
+        self.notchSize = notchSize
+        self.onSelectNotchSize = onSelectNotchSize
         _sidebarOpacity = State(initialValue: sidebarOpacity)
         self.onChangeSidebarOpacity = onChangeSidebarOpacity
         _launchAtLoginEnabled = State(initialValue: launchAtLoginEnabled)
@@ -757,25 +810,46 @@ struct SettingsView: View {
     private var generalView: some View {
         Form {
             Section("Display") {
-                Picker("Show usage in", selection: Binding(get: { displayMode }, set: onSelectDisplayMode)) {
-                    Text("Floating sidebar").tag(DisplayMode.sidebar)
-                    Text("Menu bar").tag(DisplayMode.menuBar)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Show usage in")
+                        .font(.headline)
+                    Picker("Show usage in", selection: Binding(get: { displayMode }, set: onSelectDisplayMode)) {
+                        Text("Notch").tag(DisplayMode.sidebar)
+                        Text("Menu bar").tag(DisplayMode.menuBar)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
                 Text("Only one option is visible at a time.")
                     .foregroundStyle(.secondary)
             }
 
-            Section("Sidebar") {
-                HStack {
-                    Text("Opacity")
-                    Slider(value: $sidebarOpacity, in: 0.35...1)
-                        .onChange(of: sidebarOpacity) { onChangeSidebarOpacity($0) }
-                    Text("\(Int(sidebarOpacity * 100))%")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .frame(width: 42, alignment: .trailing)
+            Section("Notch") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Size")
+                        .font(.headline)
+                    Picker("Size", selection: Binding(get: { notchSize }, set: onSelectNotchSize)) {
+                        ForEach(NotchSize.allCases) { size in
+                            Text(size.title).tag(size)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
                 }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Opacity")
+                        .font(.headline)
+                    HStack {
+                        Slider(value: $sidebarOpacity, in: 0.35...1)
+                            .onChange(of: sidebarOpacity) { onChangeSidebarOpacity($0) }
+                        Text("\(Int(sidebarOpacity * 100))%")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .frame(width: 42, alignment: .trailing)
+                    }
+                }
+                Text("Applies to the usage card; the provider rail always stays fully opaque so it reads as part of the display.")
+                    .foregroundStyle(.secondary)
             }
 
             Section("Updates") {
@@ -803,7 +877,7 @@ struct SettingsView: View {
                 Button("Exit", role: .destructive, action: onQuit)
             }
         }
-        .formStyle(.columns)
+        .formStyle(.grouped)
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .alert("Launch at login", isPresented: Binding(
@@ -869,7 +943,7 @@ struct SettingsView: View {
             Text("At least one provider must remain enabled.")
                 .foregroundStyle(.secondary)
         }
-        .formStyle(.columns)
+        .formStyle(.grouped)
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .alert("Provider diagnosis", isPresented: $isDiagnosticShown) {
@@ -923,23 +997,38 @@ struct SettingsView: View {
             }
 
             Section("Connection") {
-                TextField("ntfy server", text: $ntfyServer)
-                    .onSubmit { onChangeServer(ntfyServer) }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Ntfy server")
+                        .font(.headline)
+                    TextField("https://ntfy.sh", text: $ntfyServer)
+                        .onSubmit { onChangeServer(ntfyServer) }
+                }
             }
 
             Section("PWA hosting") {
-                LabeledContent("Local address") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Local address")
+                        .font(.headline)
                     Text(localPWAURL() ?? "Starting local server…")
                         .font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                TextField("Local server port", text: $localServerPort)
-                    .onSubmit {
-                        guard let port = UInt16(localServerPort), port > 0 else { return }
-                        onChangeLocalServerPort(port)
-                    }
-                TextField("Custom PWA URL", text: $customPWAURL)
-                    .onSubmit { onChangeCustomPWAURL(customPWAURL) }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Local server port")
+                        .font(.headline)
+                    TextField("8973", text: $localServerPort)
+                        .onSubmit {
+                            guard let port = UInt16(localServerPort), port > 0 else { return }
+                            onChangeLocalServerPort(port)
+                        }
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Custom PWA URL")
+                        .font(.headline)
+                    TextField("https://...", text: $customPWAURL)
+                        .onSubmit { onChangeCustomPWAURL(customPWAURL) }
+                }
                 Text("Leave Custom PWA URL empty to pair through this Mac on the same Wi-Fi network. Use an HTTPS URL to keep remote access and PWA installation.")
                     .foregroundStyle(.secondary)
             }
@@ -947,7 +1036,7 @@ struct SettingsView: View {
             Text("Scan the QR code with your iPhone camera, or open the PWA and enter the phrase. The local address must be reachable from your iPhone.")
                 .foregroundStyle(.secondary)
         }
-        .formStyle(.columns)
+        .formStyle(.grouped)
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .alert("Regenerate pairing?", isPresented: $isRegenerateConfirmationShown) {
@@ -962,8 +1051,7 @@ struct SettingsView: View {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); private let cloudflarePushPublisher = CloudflarePushPublisher(); let pairing = PairingManager(); private let updater = AppUpdater(); private let localPWAServer = LocalPWAServer()
-    private var isSidebarHovered = false
+    let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager(); private let updater = AppUpdater(); private let localPWAServer = LocalPWAServer()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -975,7 +1063,6 @@ struct SettingsView: View {
         ntfyPublisher.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             self.localPWAServer.updateSnapshot(snapshot)
-            self.cloudflarePushPublisher.publish(snapshot: snapshot, secret: self.pairing.currentSecret)
         }
         ntfyPublisher.publish(store.providers, secret: pairing.currentSecret)
         localPWAServer.onURLChange = { [weak self] in self?.refreshPairingQRCode() }
@@ -1075,46 +1162,197 @@ struct SettingsView: View {
 
     private func configurePopover() { popover = NSPopover(); popover.behavior = .transient; popover.contentSize = NSSize(width: 440, height: 700); popover.contentViewController = NSHostingController(rootView: PopoverContent(store: store)) }
 
-    private static let sidebarWidth: CGFloat = 420
-    private static let sidebarHeight: CGFloat = 420
-    private static let sidebarHorizontalInset: CGFloat = 40
+    private var notchGeometry = NotchGeometry.current()
+    private let notchMode = NotchMode()
+    private var notchMetrics: NotchMetrics { NotchMetrics(size: notchMode.size) }
+    private var cardWindow: NSPanel?
+    private var activeCardProvider: ProviderKind?
+    private var activeCardIndex = 0
+    private var isRailHovered = false
+    private var isCardHovered = false
+    private var pendingCardDismiss: DispatchWorkItem?
 
     private func configureSidebar() {
-        let visibleFrame = NSScreen.main?.visibleFrame ?? .zero
-        let windowWidth = Self.sidebarWidth; let windowHeight = Self.sidebarHeight
-        let x = dockSide == .right ? visibleFrame.maxX - windowWidth - Self.sidebarHorizontalInset : visibleFrame.minX + Self.sidebarHorizontalInset
-        let origin = NSPoint(x: x, y: visibleFrame.maxY - windowHeight - 20)
-        sidebarWindow = NSPanel(contentRect: NSRect(origin: origin, size: NSSize(width: windowWidth, height: windowHeight)), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        sidebarWindow.level = .floating
-        sidebarWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        notchGeometry = NotchGeometry.current()
+        let windowFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
+        let notchPanel = DraggableNotchPanel(contentRect: windowFrame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        sidebarWindow = notchPanel
+        notchPanel.metrics = notchMetrics
+        notchPanel.onDragMove = { [weak self] deltaY in self?.moveNotch(by: deltaY) }
+        notchPanel.onGearTap = { [weak self] in self?.openSettings() }
+        notchPanel.onEyeTap = { [weak self] in
+            guard let self else { return }
+            self.setHiddenNotch(!self.notchMode.isHiddenMode)
+        }
+        sidebarWindow.level = .statusBar
+        sidebarWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         sidebarWindow.isOpaque = false
         sidebarWindow.alphaValue = sidebarOpacity
         sidebarWindow.backgroundColor = .clear
         sidebarWindow.hasShadow = false
-        sidebarWindow.contentViewController = NSHostingController(rootView: SidebarContent(
-            store: store,
-            dockSide: dockSide,
-            onSwitchToMenuBar: switchToMenuBar,
-            onOpenSettings: openSettings,
-            onDragMove: moveSidebar,
-            onSidebarHover: { [weak self] isHovering in self?.setSidebarHovering(isHovering) }
-        ))
-        sidebarWindow.setFrame(NSRect(origin: origin, size: NSSize(width: windowWidth, height: windowHeight)), display: true)
+        sidebarWindow.isMovable = false
+        sidebarWindow.contentView = makeHostingView()
+        sidebarWindow.setFrame(windowFrame, display: true)
+
+        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersDidChange), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
-    // Keep the full interaction window inside the visible screen while dragging so the dock
-    // cannot disappear beyond an edge before the final snap.
-    private func moveSidebar(byDeltaY deltaY: CGFloat) {
+    // Building a fresh hosting view resets the SwiftUI hover state so that, on hiding,
+    // the rail truly collapses to the slim bar instead of staying expanded under the cursor.
+    private func makeHostingView() -> NotchHostingView {
+        let content = NotchContent(
+            store: store,
+            mode: notchMode,
+            onNotchHover: { [weak self] isHovered in self?.setRailHovered(isHovered) },
+            onProviderHover: { [weak self] provider, index, isHovered in
+                self?.setProviderHovered(provider, index: index, isHovered: isHovered)
+            }
+        )
+        let hostingView = NotchHostingView(rootView: content)
+        hostingView.isHiddenMode = notchMode.isHiddenMode
+        hostingView.metrics = notchMetrics
+        return hostingView
+    }
+
+    // Displays can be connected/disconnected or change resolution at any time; recompute
+    // the notch's real position and snap back to it unless the shelf is mid-interaction.
+    @objc private func screenParametersDidChange() {
+        notchGeometry = NotchGeometry.current()
         guard let sidebarWindow else { return }
+        let windowFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
+        sidebarWindow.setFrame(windowFrame, display: true)
+        if activeCardProvider != nil {
+            positionCard(index: activeCardIndex)
+        }
+    }
+
+    private var notchYOffset: CGFloat {
+        get { UserDefaults.standard.object(forKey: "notchPositionY") as? CGFloat ?? 0 }
+        set { UserDefaults.standard.set(newValue, forKey: "notchPositionY") }
+    }
+
+    // Keep the side notch inside the visible frame while dragging, and preserve the
+    // offset so the user's preferred vertical position survives relaunches.
+    private func moveNotch(by deltaY: CGFloat) {
+        guard let sidebarWindow else { return }
+        let visibleFrame = NSScreen.main?.visibleFrame ?? sidebarWindow.frame
         var frame = sidebarWindow.frame
-        let visibleFrame = NSScreen.main?.visibleFrame ?? frame
         frame.origin.y = min(max(frame.origin.y + deltaY, visibleFrame.minY), visibleFrame.maxY - frame.height)
         sidebarWindow.setFrameOrigin(frame.origin)
+
+        let defaultFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight)
+        notchYOffset = frame.origin.y - defaultFrame.origin.y
+        if activeCardProvider != nil { positionCard(index: activeCardIndex) }
     }
 
-    // Fixed to the right edge; no longer user-configurable (removed from Settings
-    // because switching sides at runtime could leave the window with an incorrect offset).
-    private let dockSide: DockSide = .right
+    private func setRailHovered(_ isHovered: Bool) {
+        isRailHovered = isHovered
+        (sidebarWindow?.contentView as? NotchHostingView)?.isHovered = isHovered
+        if isHovered {
+            pendingCardDismiss?.cancel()
+        } else {
+            scheduleCardDismiss()
+        }
+    }
+
+    private func setHiddenNotch(_ isHidden: Bool) {
+        UserDefaults.standard.set(isHidden, forKey: "hiddenNotch")
+        guard notchMode.isHiddenMode != isHidden else { return }
+        notchMode.isHiddenMode = isHidden
+        isCardHovered = false
+        activeCardProvider = nil
+        cardWindow?.orderOut(nil)
+        if isHidden {
+            isRailHovered = false
+            // Fresh view resets the SwiftUI hover state so the rail collapses at once.
+            sidebarWindow?.contentView = makeHostingView()
+        }
+    }
+
+    private func setNotchSize(_ size: NotchSize) {
+        guard notchMode.size != size else { return }
+        notchMode.size = size
+        UserDefaults.standard.set(size.rawValue, forKey: "notchSize")
+        (sidebarWindow as? DraggableNotchPanel)?.metrics = notchMetrics
+        if let hostingView = sidebarWindow?.contentView as? NotchHostingView {
+            hostingView.metrics = notchMetrics
+            hostingView.needsLayout = true
+        }
+        sidebarWindow?.setFrame(notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset), display: true)
+        if let activeCardProvider {
+            showCard(for: activeCardProvider, index: activeCardIndex)
+        }
+    }
+
+    private func setProviderHovered(_ provider: ProviderKind, index: Int, isHovered: Bool) {
+        if isHovered {
+            isRailHovered = true
+            pendingCardDismiss?.cancel()
+            showCard(for: provider, index: index)
+        } else {
+            scheduleCardDismiss()
+        }
+    }
+
+    private func setCardHovered(_ isHovered: Bool) {
+        isCardHovered = isHovered
+        if isHovered {
+            pendingCardDismiss?.cancel()
+        } else {
+            scheduleCardDismiss()
+        }
+    }
+
+    private func scheduleCardDismiss() {
+        pendingCardDismiss?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.isRailHovered, !self.isCardHovered else { return }
+            self.cardWindow?.orderOut(nil)
+            self.activeCardProvider = nil
+        }
+        pendingCardDismiss = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+    }
+
+    private func showCard(for provider: ProviderKind, index: Int) {
+        let usage = store.providers.first(where: { $0.kind == provider })
+            ?? ProviderUsage(kind: provider, windows: [], updatedAt: nil, error: nil)
+
+        if cardWindow == nil {
+            let window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            window.level = .statusBar
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = true
+            window.isMovable = false
+            cardWindow = window
+        }
+
+        activeCardProvider = provider
+        activeCardIndex = index
+        let cardContent = NotchCardContent(usage: usage, metrics: notchMetrics) { [weak self] isHovered in
+            self?.setCardHovered(isHovered)
+        }
+        cardWindow?.contentViewController = NSHostingController(rootView: cardContent)
+        cardWindow?.layoutIfNeeded()
+        let cardHeight = max(cardWindow?.contentViewController?.view.fittingSize.height ?? 0, 1)
+        positionCard(index: index, height: cardHeight)
+        cardWindow?.alphaValue = sidebarOpacity
+        cardWindow?.orderFrontRegardless()
+    }
+
+    private func positionCard(index: Int, height: CGFloat? = nil) {
+        guard let cardWindow else { return }
+        let cardHeight = height ?? max(cardWindow.contentViewController?.view.fittingSize.height ?? 0, 1)
+        let railFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.compactHeight, verticalOffset: notchYOffset)
+        let providerCenterY = railFrame.maxY - 12 * notchMetrics.scale - notchMetrics.providerItemHeight / 2
+            - CGFloat(index) * (notchMetrics.providerItemHeight + notchMetrics.providerSpacing)
+        let visibleFrame = NSScreen.main?.visibleFrame ?? railFrame
+        let originY = min(max(providerCenterY - cardHeight / 2, visibleFrame.minY + 8), visibleFrame.maxY - cardHeight - 8)
+        let originX = railFrame.minX - notchMetrics.cardWidth - notchMetrics.cardSpacing
+        cardWindow.setFrame(NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight), display: true)
+    }
 
     private var sidebarOpacity: Double {
         get { UserDefaults.standard.object(forKey: "sidebarOpacity") as? Double ?? 1 }
@@ -1123,16 +1361,8 @@ struct SettingsView: View {
 
     private func setSidebarOpacity(_ opacity: Double) {
         sidebarOpacity = opacity
-        sidebarWindow?.alphaValue = isSidebarHovered ? 1 : opacity
-    }
-
-    private func setSidebarHovering(_ isHovering: Bool) {
-        isSidebarHovered = isHovering
-        guard let sidebarWindow else { return }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            sidebarWindow.animator().alphaValue = isHovering ? 1 : sidebarOpacity
-        }
+        sidebarWindow?.alphaValue = opacity
+        cardWindow?.alphaValue = opacity
     }
 
     // The two modes are mutually exclusive: only one is visible at a time.
@@ -1148,24 +1378,25 @@ struct SettingsView: View {
             statusItem.isVisible = false
         case .menuBar:
             sidebarWindow.orderOut(nil)
+            cardWindow?.orderOut(nil)
             statusItem.isVisible = true
         }
     }
 
     private func animateSidebarIn() {
         guard let sidebarWindow else { return }
-        let visibleFrame = NSScreen.main?.visibleFrame ?? sidebarWindow.frame
-        let targetX = dockSide == .right ? visibleFrame.maxX - sidebarWindow.frame.width - Self.sidebarHorizontalInset : visibleFrame.minX + Self.sidebarHorizontalInset
-        let targetOrigin = NSPoint(x: targetX, y: sidebarWindow.frame.origin.y)
-        let entranceOffset: CGFloat = dockSide == .right ? 42 : -42
+        notchGeometry = NotchGeometry.current()
+        isRailHovered = false
+        isCardHovered = false
+        activeCardProvider = nil
+        cardWindow?.orderOut(nil)
         sidebarWindow.alphaValue = 0
-        sidebarWindow.setFrameOrigin(NSPoint(x: targetX + entranceOffset, y: targetOrigin.y))
+        sidebarWindow.setFrame(notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset), display: true)
         sidebarWindow.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.45
+            context.duration = 0.3
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             sidebarWindow.animator().alphaValue = sidebarOpacity
-            sidebarWindow.animator().setFrameOrigin(targetOrigin)
         }
     }
 
@@ -1206,6 +1437,8 @@ struct SettingsView: View {
                 self.displayMode = mode
                 self.applyDisplayMode()
             },
+            notchSize: notchMode.size,
+            onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
             sidebarOpacity: sidebarOpacity,
             onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
             launchAtLoginEnabled: LaunchAtLoginManager.isEnabled,
