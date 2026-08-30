@@ -1,8 +1,17 @@
 # Metria
 
-![Metria banner](https://i.imgur.com/JrV7abR.png)
+*A macOS menu-bar app that tracks your AI coding assistant usage in real time.*
 
-A macOS menu-bar app that tracks your AI coding assistant usage in real time.
+<p align="center">
+  <img src="https://i.imgur.com/JrV7abR.png" alt="Metria banner" width="480" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/yurirxmos/metria/stargazers"><img src="https://img.shields.io/github/stars/yurirxmos/metria?style=flat-square" alt="Stars" /></a>
+  <a href="https://github.com/yurirxmos/metria/releases"><img src="https://img.shields.io/github/v/tag/yurirxmos/metria?label=version&style=flat-square" alt="Version" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/yurirxmos/metria/commits"><img src="https://img.shields.io/github/commit-activity/m/yurirxmos/metria?style=flat-square" alt="Commits" /></a>
+</p>
 
 ## What it does
 
@@ -40,14 +49,31 @@ The PWA can be deployed to any HTTPS static host. The Mac app currently uses the
 - macOS 13 or later
 - A Swift toolchain (Swift 5.9+)
 
-## Build and run
+## Quick start
+
+### Install Metria
+
+Download the latest `.dmg` from [GitHub Releases](https://github.com/yurirxmos/metria/releases), choosing the package for your Mac:
+
+- **Apple Silicon** — M-series Macs.
+- **Intel** — Intel-based Macs.
+
+Open the disk image, drag `Metria.app` to `Applications`, and launch it from Finder or Spotlight. Metria runs in the menu bar and does not open a regular application window.
+
+### Launch at login
+
+After installing Metria as an app, open **Settings > General**, enable **Launch at login**, and approve Metria in **System Settings > General > Login Items** if macOS requests approval.
+
+The startup option is available for the installed `.app`. It is not registered when running the development command below.
+
+### Run in development
 
 ```sh
 swift build
 swift run Metria
 ```
 
-To create a local macOS application archive:
+To create a local macOS application archive for installation:
 
 ```sh
 bash scripts/package-macos.sh
@@ -61,3 +87,20 @@ This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Relea
 - `Sources/Metria/Providers/` — provider implementations, credential readers, and provider registry.
 - `Sources/MetriaCore/UsageStore.swift` — shared usage state, provider seam, and refresh/retry logic.
 - `scripts/package-macos.sh` — reproducible macOS app bundle and archive builder.
+
+## Contributing
+
+Contributions are welcome! Feel free to open an issue to report a bug or suggest a feature, or open a pull request with your changes.
+
+- Fork the repository and create a branch from `main`.
+- Keep changes focused and follow the existing code style.
+- Run `swift build` from the repository root to verify the package compiles.
+- For the iPhone PWA, build its stylesheet with `npm ci && npm run build`.
+- Keep all repository text in en-US (comments, UI strings, commit messages, docs).
+- Do not commit credentials, generated `.build/` output, or local configuration.
+
+See the [project layout](#project-layout) to find where each change belongs. Thanks for helping out!
+
+## License
+
+Metria is open source under MIT; see [LICENSE](LICENSE).

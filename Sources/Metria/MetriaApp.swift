@@ -3,6 +3,7 @@ import Combine
 import CoreImage
 import CryptoKit
 import Foundation
+import ServiceManagement
 import SwiftUI
 import MetriaCore
 
@@ -586,6 +587,37 @@ enum DisplayMode: String {
     case menuBar
 }
 
+enum LaunchAtLoginManager {
+    static var isAvailable: Bool {
+        Bundle.main.bundleURL.pathExtension == "app"
+    }
+
+    static var isEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    static func setEnabled(_ enabled: Bool) -> String? {
+        guard isAvailable else {
+            return "Launch at login is available after installing Metria as an app in Applications."
+        }
+
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            return "Metria could not update its launch-at-login setting: \(error.localizedDescription)"
+        }
+
+        if enabled, SMAppService.mainApp.status == .requiresApproval {
+            return "Metria was added, but macOS requires approval. Open System Settings > General > Login Items and allow Metria."
+        }
+        return nil
+    }
+}
+
 private enum SettingsSection: String, CaseIterable, Identifiable {
     case general
     case providers
@@ -615,6 +647,8 @@ struct SettingsView: View {
     let onSelectDisplayMode: (DisplayMode) -> Void
     @State private var sidebarOpacity: Double
     let onChangeSidebarOpacity: (Double) -> Void
+    @State private var launchAtLoginEnabled: Bool
+    let onChangeLaunchAtLogin: (Bool) -> String?
     let onQuit: () -> Void
     let onReconnect: (ProviderKind) -> Void
     @State private var ntfyServer: String
@@ -625,6 +659,7 @@ struct SettingsView: View {
     @State private var diagnosticMessage = ""
     @State private var isReconnectShown = false
     @State private var reconnectMessage = ""
+    @State private var launchAtLoginMessage: String?
     @State private var selectedSection: SettingsSection = .general
 
     init(
@@ -634,6 +669,8 @@ struct SettingsView: View {
         onSelectDisplayMode: @escaping (DisplayMode) -> Void,
         sidebarOpacity: Double,
         onChangeSidebarOpacity: @escaping (Double) -> Void,
+        launchAtLoginEnabled: Bool,
+        onChangeLaunchAtLogin: @escaping (Bool) -> String?,
         onQuit: @escaping () -> Void,
         onReconnect: @escaping (ProviderKind) -> Void,
         ntfyServer: String,
@@ -645,6 +682,8 @@ struct SettingsView: View {
         self.onSelectDisplayMode = onSelectDisplayMode
         _sidebarOpacity = State(initialValue: sidebarOpacity)
         self.onChangeSidebarOpacity = onChangeSidebarOpacity
+        _launchAtLoginEnabled = State(initialValue: launchAtLoginEnabled)
+        self.onChangeLaunchAtLogin = onChangeLaunchAtLogin
         self.onQuit = onQuit
         self.onReconnect = onReconnect
         _ntfyServer = State(initialValue: ntfyServer)
@@ -706,6 +745,21 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Startup") {
+                Toggle("Launch at login", isOn: Binding(
+                    get: { launchAtLoginEnabled },
+                    set: { enabled in
+                        if let message = onChangeLaunchAtLogin(enabled) {
+                            launchAtLoginMessage = message
+                        } else {
+                            launchAtLoginEnabled = enabled
+                        }
+                    }
+                ))
+                Text("Metria will start automatically and remain available in the menu bar.")
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Button("Exit", role: .destructive, action: onQuit)
             }
@@ -713,6 +767,14 @@ struct SettingsView: View {
         .formStyle(.columns)
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert("Launch at login", isPresented: Binding(
+            get: { launchAtLoginMessage != nil },
+            set: { if !$0 { launchAtLoginMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { launchAtLoginMessage = nil }
+        } message: {
+            Text(launchAtLoginMessage ?? "")
+        }
     }
 
     private var providersView: some View {
@@ -1048,9 +1110,11 @@ struct SettingsView: View {
             },
             sidebarOpacity: sidebarOpacity,
             onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
-             onQuit: { [weak self] in self?.quit() },
-             onReconnect: { [weak self] kind in self?.reconnectProvider(kind) },
-             ntfyServer: ntfyServer,
+            launchAtLoginEnabled: LaunchAtLoginManager.isEnabled,
+            onChangeLaunchAtLogin: { enabled in LaunchAtLoginManager.setEnabled(enabled) },
+            onQuit: { [weak self] in self?.quit() },
+            onReconnect: { [weak self] kind in self?.reconnectProvider(kind) },
+            ntfyServer: ntfyServer,
             onChangeServer: { [weak self] server in
                 guard let self else { return }
                 self.ntfyServer = server.trimmingCharacters(in: .whitespacesAndNewlines)
