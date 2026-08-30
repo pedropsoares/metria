@@ -37,14 +37,19 @@ Credentials are never committed. They are read at runtime from the Keychain and 
 
 Metria serves the iPhone companion locally from your Mac by default. Start Metria, then scan the QR code in **Settings > iPhone** while the iPhone and Mac are on the same Wi-Fi network. The local server port defaults to `8973` and can be changed in Settings; if it is in use, Metria tries subsequent ports automatically.
 
-Local HTTP access works in Safari but cannot be installed as an offline PWA because iOS requires HTTPS for that capability. To keep remote access and PWA installation, deploy the static files in `MetriaPWA/` to an HTTPS host and enter its URL in **Settings > iPhone > Custom PWA URL**. Build its Tailwind stylesheet before deploying:
+Local HTTP access works in Safari but cannot be installed as an offline PWA because iOS requires HTTPS for that capability. Metria uses the hosted Cloudflare PWA by default at `https://metria-pwa.yuriramos2406.workers.dev`. Clear **Settings > iPhone > Custom PWA URL** to pair through the local server instead. Build and deploy the static files with:
 
 ```sh
 npm ci
 npm run build
+npm run deploy
 ```
 
-The PWA can be deployed to any HTTPS static host.
+You can replace the Cloudflare URL in **Settings > iPhone > Custom PWA URL** with any HTTPS static host.
+
+### iPhone alerts
+
+Install the Cloudflare-hosted PWA on your iPhone with **Add to Home Screen**, open it, and select **Enable alerts**. Metria sends the current provider usage whenever the Mac app publishes a new snapshot. The local HTTP server cannot provide system notifications because iOS requires HTTPS for Web Push.
 
 ## Requirements
 

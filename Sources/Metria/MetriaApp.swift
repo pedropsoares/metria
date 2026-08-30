@@ -91,6 +91,8 @@ private extension Data {
 /// Owns the pairing secret's presentation: the QR code and the 12-word phrase shown in
 /// Settings, plus the shareable link. The secret itself lives in `PairingKeychain`.
 @MainActor final class PairingManager: ObservableObject {
+    static let defaultRemotePWAURL = "https://metria-pwa.yuriramos2406.workers.dev"
+
     @Published private(set) var words: [String] = []
     @Published private(set) var qrImage: NSImage?
     private var secret: Data = Data()
@@ -164,6 +166,24 @@ private extension Data {
         Task {
             _ = try? await URLSession.shared.data(for: request)
         }
+    }
+}
+
+@MainActor private final class CloudflarePushPublisher {
+    private static let endpoint = URL(string: "https://metria-pwa.yuriramos2406.workers.dev/api/usage")!
+
+    func publish(snapshot: Data, secret: Data) {
+        guard let snapshotObject = try? JSONSerialization.jsonObject(with: snapshot),
+              let payload = try? JSONSerialization.data(withJSONObject: [
+                "secret": secret.base64URLEncodedString,
+                "snapshot": snapshotObject
+              ]) else { return }
+
+        var request = URLRequest(url: Self.endpoint)
+        request.httpMethod = "POST"
+        request.httpBody = payload
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        Task { _ = try? await URLSession.shared.data(for: request) }
     }
 }
 
@@ -942,7 +962,7 @@ struct SettingsView: View {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager(); private let updater = AppUpdater(); private let localPWAServer = LocalPWAServer()
+    let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); private let cloudflarePushPublisher = CloudflarePushPublisher(); let pairing = PairingManager(); private let updater = AppUpdater(); private let localPWAServer = LocalPWAServer()
     private var isSidebarHovered = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -952,7 +972,11 @@ struct SettingsView: View {
         configurePopover()
         configureSidebar()
         localPWAServer.setSnapshotToken(pairing.currentSnapshotToken)
-        ntfyPublisher.onSnapshot = { [weak self] snapshot in self?.localPWAServer.updateSnapshot(snapshot) }
+        ntfyPublisher.onSnapshot = { [weak self] snapshot in
+            guard let self else { return }
+            self.localPWAServer.updateSnapshot(snapshot)
+            self.cloudflarePushPublisher.publish(snapshot: snapshot, secret: self.pairing.currentSecret)
+        }
         ntfyPublisher.publish(store.providers, secret: pairing.currentSecret)
         localPWAServer.onURLChange = { [weak self] in self?.refreshPairingQRCode() }
         localPWAServer.start(preferredPort: localServerPort)
@@ -978,7 +1002,7 @@ struct SettingsView: View {
     }
 
     private var customPWAURL: String {
-        get { UserDefaults.standard.string(forKey: "customPWAURL") ?? "" }
+        get { UserDefaults.standard.object(forKey: "customPWAURL") as? String ?? PairingManager.defaultRemotePWAURL }
         set { UserDefaults.standard.set(newValue, forKey: "customPWAURL") }
     }
 

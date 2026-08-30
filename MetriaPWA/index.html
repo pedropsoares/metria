@@ -54,7 +54,10 @@
           <p class="m-0 text-base font-medium">Providers</p>
           <p id="lastUpdated" class="mb-0 mt-1 text-sm text-[#8e8e93]">Waiting for Metria</p>
         </div>
-        <button id="changeTopic" class="min-h-11 cursor-pointer rounded-xl border border-white/15 bg-transparent px-3 text-sm text-[#aeaeb2] active:bg-white/10" type="button">Change pairing</button>
+        <div class="flex items-center gap-2">
+          <button id="notificationButton" class="min-h-11 cursor-pointer rounded-xl border border-white/15 bg-transparent px-3 text-sm text-[#aeaeb2] active:bg-white/10" type="button" hidden>Enable notifications</button>
+          <button id="changeTopic" class="min-h-11 cursor-pointer rounded-xl border border-white/15 bg-transparent px-3 text-sm text-[#aeaeb2] active:bg-white/10" type="button">Change pairing</button>
+        </div>
       </div>
       <div id="providerGrid" class="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]"></div>
       <div id="emptyState" class="mt-3 grid gap-2 rounded-2xl border border-white/10 bg-black p-5" hidden>

@@ -3,6 +3,7 @@ const SNAPSHOT_KEY = "metriaPwaSnapshot";
 let eventSource;
 let activeCryptoKey;
 let snapshotPollingTimer;
+let activeConfig;
 
 const setup = document.querySelector("#setup");
 const dashboard = document.querySelector("#dashboard");
@@ -22,6 +23,7 @@ const scannerVideo = document.querySelector("#scannerVideo");
 const scannerCanvas = document.querySelector("#scannerCanvas");
 const scannerError = document.querySelector("#scannerError");
 const scannerCancel = document.querySelector("#scannerCancel");
+const notificationButton = document.querySelector("#notificationButton");
 
 function setStatus(label, state) {
   connectionLabel.textContent = label;
@@ -84,9 +86,11 @@ function escapeHtml(value) {
 async function connect(config) {
   eventSource?.close();
   clearInterval(snapshotPollingTimer);
+  activeConfig = config;
   setup.hidden = true;
   dashboard.hidden = false;
   setStatus("Connecting", "connecting");
+  void updateNotificationButton(config);
 
   if (location.protocol === "http:") {
     await restoreLocalSnapshot(config.secretBase64);
@@ -112,6 +116,44 @@ async function connect(config) {
       // Not a valid encrypted snapshot for our key — ignore it.
     }
   };
+}
+
+async function updateNotificationButton(config) {
+  if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    notificationButton.hidden = true;
+    return;
+  }
+
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  notificationButton.hidden = false;
+  notificationButton.textContent = subscription ? "Refresh notifications" : "Enable notifications";
+  notificationButton.disabled = false;
+}
+
+async function enableNotifications() {
+  if (!activeConfig) return;
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return;
+
+  const registration = await navigator.serviceWorker.ready;
+  const keyResponse = await fetch("/api/push-key");
+  if (!keyResponse.ok) throw new Error("Notifications are unavailable.");
+  const { publicKey } = await keyResponse.json();
+  const existingSubscription = await registration.pushManager.getSubscription();
+  if (existingSubscription) await existingSubscription.unsubscribe();
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: window.MetriaPairing.base64UrlToBytes(publicKey)
+  });
+  const response = await fetch("/api/subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret: activeConfig.secretBase64, subscription })
+  });
+  if (!response.ok) throw new Error("Notifications are unavailable.");
+  notificationButton.textContent = "Notifications enabled";
+  notificationButton.disabled = false;
 }
 
 async function loadLocalSnapshot(secretBase64) {
@@ -180,6 +222,16 @@ document.querySelector("#changeTopic").addEventListener("click", () => {
   dashboard.hidden = true;
   setup.hidden = false;
   setStatus("Not connected", "idle");
+  notificationButton.hidden = true;
+});
+
+notificationButton.addEventListener("click", async () => {
+  try {
+    await enableNotifications();
+  } catch (error) {
+    notificationButton.textContent = error.message;
+    notificationButton.disabled = true;
+  }
 });
 
 // Extracts { secretBase64, server } from a pairing link's fragment, whether that link
@@ -266,4 +318,4 @@ async function init() {
 
 init();
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+if (window.isSecureContext && "serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");

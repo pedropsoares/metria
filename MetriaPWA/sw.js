@@ -2,7 +2,7 @@
 // handler below is network-first, freshness never depends on the cache name changing;
 // it only exists so the cache has a stable place to live and so the `activate` cleanup
 // below can sweep out old-named caches left over from versions before this comment.
-const CACHE_NAME = "metria-pwa";
+const CACHE_NAME = "metria-pwa-v3";
 const ASSETS = ["./", "./index.html", "./app.css", "./app.js", "./pairing.js", "./wordlist.js", "./scanner.js", "./jsQR.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -34,4 +34,18 @@ self.addEventListener("fetch", (event) => {
       })
       .catch(() => caches.match(event.request))
   );
+});
+
+self.addEventListener("push", (event) => {
+  const payload = event.data?.json() || { title: "Metria usage alert", body: "Your usage has changed.", url: "/" };
+  event.waitUntil(self.registration.showNotification(payload.title, {
+    body: payload.body,
+    data: { url: payload.url },
+    tag: "metria-usage"
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(clients.openWindow(event.notification.data.url));
 });

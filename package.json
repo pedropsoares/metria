@@ -2,9 +2,13 @@
   "name": "metria-pwa",
   "private": true,
   "scripts": {
-    "build": "tailwindcss -i ./MetriaPWA/tailwind.input.css -o ./MetriaPWA/app.css --minify"
+    "build": "cp Assets/claude-logo.png Assets/codex-logo.png Assets/opencode-logo.png MetriaPWA/ && tailwindcss -i ./MetriaPWA/tailwind.input.css -o ./MetriaPWA/app.css --minify",
+    "deploy": "npm run build && wrangler deploy",
+    "preview": "wrangler dev"
   },
   "devDependencies": {
-    "tailwindcss": "^3.4.17"
+    "@pushforge/builder": "^2.0.5",
+    "tailwindcss": "^3.4.17",
+    "wrangler": "^4.127.1"
   }
 }
