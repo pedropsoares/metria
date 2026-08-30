@@ -454,24 +454,6 @@ struct NotchContent: View {
                     : isHovered ? metrics.hoverHeight : metrics.compactHeight,
                 alignment: .topTrailing
             )
-            .onHover { isInside in
-                pendingHoverCollapse?.cancel()
-                if isInside {
-                    withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
-                        isHovered = true
-                    }
-                    onNotchHover(true)
-                } else {
-                    let collapse = DispatchWorkItem {
-                        withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
-                            isHovered = false
-                        }
-                        onNotchHover(false)
-                    }
-                    pendingHoverCollapse = collapse
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: collapse)
-                }
-            }
 
             if !isHiddenMode || isHovered {
                 compactProviders
@@ -485,7 +467,41 @@ struct NotchContent: View {
                     .transition(.opacity)
             }
         }
+        .frame(
+            width: metrics.idleWidth,
+            height: isHiddenMode && !isHovered
+                ? metrics.hiddenHeight
+                : isHovered ? metrics.hoverHeight : metrics.compactHeight,
+            alignment: .topTrailing
+        )
+        .contentShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: metrics.cornerRadius,
+                bottomLeadingRadius: metrics.cornerRadius,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+        )
         .frame(width: metrics.idleWidth, height: metrics.hoverHeight, alignment: .topTrailing)
+        .onHover { isInside in
+            pendingHoverCollapse?.cancel()
+            if isInside {
+                withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
+                    isHovered = true
+                }
+                onNotchHover(true)
+            } else {
+                let collapse = DispatchWorkItem {
+                    withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
+                        isHovered = false
+                    }
+                    onNotchHover(false)
+                }
+                pendingHoverCollapse = collapse
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: collapse)
+            }
+        }
     }
 
     private var compactProviders: some View {
@@ -1168,6 +1184,7 @@ struct SettingsView: View {
     private var cardWindow: NSPanel?
     private var activeCardProvider: ProviderKind?
     private var activeCardIndex = 0
+    private var hoveredProvider: ProviderKind?
     private var isRailHovered = false
     private var isCardHovered = false
     private var pendingCardDismiss: DispatchWorkItem?
@@ -1260,6 +1277,7 @@ struct SettingsView: View {
         guard notchMode.isHiddenMode != isHidden else { return }
         notchMode.isHiddenMode = isHidden
         isCardHovered = false
+        hoveredProvider = nil
         activeCardProvider = nil
         cardWindow?.orderOut(nil)
         if isHidden {
@@ -1286,10 +1304,12 @@ struct SettingsView: View {
 
     private func setProviderHovered(_ provider: ProviderKind, index: Int, isHovered: Bool) {
         if isHovered {
+            hoveredProvider = provider
             isRailHovered = true
             pendingCardDismiss?.cancel()
             showCard(for: provider, index: index)
-        } else {
+        } else if hoveredProvider == provider {
+            hoveredProvider = nil
             scheduleCardDismiss()
         }
     }
