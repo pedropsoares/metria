@@ -799,29 +799,35 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Group {
-            if #available(macOS 14.0, *) {
-                navigationContent
-                    .toolbar(removing: .sidebarToggle)
-            } else {
-                navigationContent
-            }
-        }
+        navigationContent
         .frame(minWidth: 680, idealWidth: 720, minHeight: 500, idealHeight: 580)
     }
 
     private var navigationContent: some View {
-        NavigationSplitView {
-            List(SettingsSection.allCases, selection: $selectedSection) { section in
-                Label(section.title, systemImage: section.symbol)
-                    .tag(section)
+        HSplitView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Metria")
+                    .font(.headline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+
+                List(SettingsSection.allCases, selection: $selectedSection) { section in
+                    Label(section.title, systemImage: section.symbol)
+                        .tag(section)
+                }
+                .listStyle(.sidebar)
             }
-            .listStyle(.sidebar)
-            .navigationTitle("Metria")
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-        } detail: {
-            detailView
-                .navigationTitle(selectedSection.title)
+            .frame(minWidth: 160, idealWidth: 180, maxWidth: 220)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(selectedSection.title)
+                    .font(.title2.weight(.semibold))
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                Divider()
+                detailView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
