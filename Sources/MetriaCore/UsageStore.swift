@@ -146,7 +146,11 @@ public final class UsageStore: ObservableObject {
     }
 
     public func refresh() {
-        let providers = sources.filter { enabledProviderKinds.contains($0.kind) && $0.isAvailable }
+        let providers = sources.filter {
+            enabledProviderKinds.contains($0.kind) &&
+            $0.isAvailable &&
+            retryTasks[$0.kind] == nil
+        }
         refresh(providers: providers)
     }
 
