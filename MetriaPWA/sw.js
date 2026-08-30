@@ -37,7 +37,7 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  const payload = event.data?.json() || { title: "Metria usage alert", body: "Your usage has changed.", url: "/" };
+  const payload = event.data?.json() || { title: "AI Usage", body: "Your usage has changed.", url: "/" };
   event.waitUntil(self.registration.showNotification(payload.title, {
     body: payload.body,
     data: { url: payload.url },

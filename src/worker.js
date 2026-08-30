@@ -58,7 +58,7 @@ function usageNotification(snapshot) {
   const body = snapshot.providers
     .map((provider) => `${provider.name} ${Math.round(Number(provider.percent) || 0)}%`)
     .join(" · ");
-  return { title: "Metria usage", body: body || "No provider usage available.", url: "/", tag: NOTIFICATION_TAG };
+  return { title: "AI Usage", body: body || "No provider usage available.", url: "/", tag: NOTIFICATION_TAG };
 }
 
 async function rememberTopic(env, topic) {
@@ -114,7 +114,7 @@ async function subscribe(request, env) {
   const latestSnapshot = JSON.parse((await env.METRIA_PUSH_SUBSCRIPTIONS.get(`snapshot:${topic}`)) || "null");
   const payload = Array.isArray(latestSnapshot?.providers)
     ? usageNotification(latestSnapshot)
-    : { title: "Metria notifications enabled", body: "Waiting for the latest usage from your Mac.", url: "/" };
+    : { title: "AI Usage", body: "Waiting for the latest usage from your Mac.", url: "/" };
   await sendPush(env, body.subscription, payload, NOTIFICATION_TAG);
   return jsonResponse({ ok: true });
 }
