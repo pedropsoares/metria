@@ -210,7 +210,7 @@ form.addEventListener("submit", async (event) => {
 
 async function saveAndConnect(config) {
   const connectedConfig = { ...config, server: normalizeServer(config.server) };
-  sessionStorage.setItem(CONFIG_KEY, JSON.stringify(connectedConfig));
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(connectedConfig));
   serverInput.value = connectedConfig.server;
   await connect(connectedConfig);
 }
@@ -218,7 +218,7 @@ async function saveAndConnect(config) {
 document.querySelector("#changeTopic").addEventListener("click", () => {
   eventSource?.close();
   clearInterval(snapshotPollingTimer);
-  sessionStorage.removeItem(CONFIG_KEY);
+  localStorage.removeItem(CONFIG_KEY);
   dashboard.hidden = true;
   setup.hidden = false;
   setStatus("Not connected", "idle");
@@ -304,7 +304,7 @@ async function init() {
     return;
   }
 
-  const savedConfig = JSON.parse(sessionStorage.getItem(CONFIG_KEY) || "null");
+  const savedConfig = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
   if (savedConfig?.secretBase64) {
     serverInput.value = savedConfig.server;
     try {
