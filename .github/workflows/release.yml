@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, for example v0.1.0"
+        required: true
+        default: "v0.1.0"
 
 permissions:
   contents: write
@@ -60,7 +66,7 @@ jobs:
 
       - name: Package app
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version || github.ref_name }}
           SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
         run: |
@@ -69,15 +75,17 @@ jobs:
           bash scripts/package-macos.sh
 
       - name: Rename archive
-        run: mv "dist/Metria-${{ github.ref_name }}-$(uname -m).zip" "dist/Metria-${{ github.ref_name }}-${{ matrix.arch }}.zip"
+        run: mv "dist/Metria-${{ inputs.version || github.ref_name }}-$(uname -m).zip" "dist/Metria-${{ inputs.version || github.ref_name }}-${{ matrix.arch }}.zip"
+      - name: Rename disk image
+        run: mv "dist/Metria-${{ inputs.version || github.ref_name }}-$(uname -m).dmg" "dist/Metria-${{ inputs.version || github.ref_name }}-${{ matrix.arch }}.dmg"
 
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
           name: Metria-${{ matrix.arch }}
           path: |
-            dist/Metria-${{ github.ref_name }}-${{ matrix.arch }}.zip
-            dist/Metria-${{ github.ref_name }}-${{ matrix.arch }}.dmg
+            dist/Metria-${{ inputs.version || github.ref_name }}-${{ matrix.arch }}.zip
+            dist/Metria-${{ inputs.version || github.ref_name }}-${{ matrix.arch }}.dmg
 
   publish:
     needs: package
@@ -101,11 +109,11 @@ jobs:
           sparkle_bin=".build/artifacts/sparkle/Sparkle/bin/generate_appcast"
           printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sparkle_bin" \
             --ed-key-file - \
-            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/" \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ inputs.version || github.ref_name }}/" \
             --link "https://github.com/${{ github.repository }}" \
             dist
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/* --generate-notes --repo "${{ github.repository }}"
+        run: gh release create "${{ inputs.version || github.ref_name }}" dist/* --generate-notes --repo "${{ github.repository }}"
