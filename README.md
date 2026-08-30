@@ -53,7 +53,7 @@ To create a local macOS application archive:
 bash scripts/package-macos.sh
 ```
 
-This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. For local signed distribution, set `CODESIGN_IDENTITY` to an installed Developer ID certificate. To notarize locally, also set `NOTARY_PROFILE` to a stored `notarytool` keychain profile. GitHub Releases build Intel and Apple Silicon archives automatically when a `v*` tag is pushed, then publish the signed Sparkle appcast as `releases/latest/download/appcast.xml`. Configure the Apple signing/notarization secrets and `SPARKLE_PUBLIC_ED_KEY` plus `SPARKLE_PRIVATE_ED_KEY` for automatic updates; without them, the app is intentionally built without a production update feed.
+This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `v*` tag is pushed, then publish the signed Sparkle appcast as `releases/latest/download/appcast.xml`. Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is unsigned and macOS may show a Gatekeeper warning.
 
 ## Project layout
 

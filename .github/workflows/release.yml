@@ -71,7 +71,6 @@ jobs:
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
         run: |
           test -n "$SPARKLE_PUBLIC_ED_KEY"
-          test -n "${CODESIGN_IDENTITY:-}"
           bash scripts/package-macos.sh
 
       - name: Rename archive
