@@ -8,6 +8,10 @@ let isScanning = false;
 
 async function startQrScanner({ video, canvas, onDecode, onError }) {
   if (isScanning) return;
+  if (!window.isSecureContext) {
+    onError("Camera access requires HTTPS. Scan the QR code with the iPhone Camera app instead.");
+    return;
+  }
   if (!navigator.mediaDevices?.getUserMedia) {
     onError("Camera access isn't available on this device or browser.");
     return;

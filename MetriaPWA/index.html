@@ -12,53 +12,54 @@
   <title>Metria</title>
 </head>
 <body>
-  <main class="mx-auto w-full max-w-3xl px-5 pb-10 pt-[max(28px,env(safe-area-inset-top))]">
-    <header class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+  <main class="mx-auto w-full max-w-xl bg-black px-5 pb-10 pt-[max(28px,env(safe-area-inset-top))] text-[#f5f5f7]">
+    <header class="flex items-center justify-between gap-4">
       <div>
-        <p class="m-0 text-[11px] font-bold tracking-[0.14em] text-[#92b9a5]">LIVE USAGE</p>
-        <h1 class="m-0 mt-1 text-4xl font-bold tracking-[-0.05em]">Metria</h1>
+        <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-[#8e8e93]">Live usage</p>
+        <h1 class="m-0 mt-1 text-2xl font-semibold tracking-[-0.03em]">Metria</h1>
       </div>
-      <span id="connectionStatus" class="rounded-full border border-[#34383d] px-2.5 py-1.5 text-[11px] font-bold text-[#9b9da5]">Not connected</span>
+      <span id="connectionStatus" class="flex items-center gap-2 text-xs text-[#8e8e93]" role="status"><i id="connectionIndicator" class="h-2 w-2 rounded-full bg-[#636366]"></i><span id="connectionLabel">Not connected</span></span>
     </header>
 
-    <section id="setup" class="mt-10 rounded-[18px] border border-[#2a2d32] bg-[#181a1ed1] p-[22px] shadow-[0_18px_60px_rgba(0,0,0,.16)]">
-      <p class="m-0 text-[11px] font-bold tracking-[0.14em] text-[#92b9a5]">Pair with your Mac</p>
-      <p class="text-[13px] leading-6 text-[#92959e]">Scan the QR code from Metria's Settings, or type the 12-word phrase below.</p>
-      <button id="scanButton" type="button" class="mt-[18px] w-full cursor-pointer rounded-[10px] border border-[#3a6650] bg-transparent px-4 py-3 font-bold text-[#a6e4ba]">Scan QR code</button>
-      <form id="topicForm" class="mt-[22px] grid gap-3">
-        <label class="grid gap-2 text-xs text-[#b9bbc2]">
+    <section id="setup" class="mt-8 rounded-2xl border border-white/10 bg-black p-5">
+      <p class="m-0 text-base font-medium">Pair your iPhone</p>
+      <p class="mb-0 mt-2 text-sm leading-6 text-[#8e8e93]">Scan the QR code in Metria's Settings, or enter the pairing phrase.</p>
+      <button id="scanButton" type="button" class="mt-5 min-h-11 w-full cursor-pointer rounded-xl border border-white/15 bg-transparent px-4 py-3 text-sm font-medium text-white active:bg-white/10">Scan QR code</button>
+      <p id="cameraUnavailable" class="mb-0 mt-4 text-sm leading-6 text-[#8e8e93]" hidden>Local Metria pages cannot access the iPhone camera. Scan the QR code with the iPhone Camera app instead.</p>
+      <form id="topicForm" class="mt-5 grid gap-4">
+        <label class="grid gap-2 text-sm text-[#aeaeb2]">
           <span>Pairing phrase (12 words)</span>
-          <textarea id="phraseInput" rows="2" placeholder="apple giraffe mountain ..." autocomplete="off" spellcheck="false" required class="w-full resize-none rounded-[10px] border border-[#383b41] bg-[#131519] p-3 text-white outline-none focus:border-[#77b58e]"></textarea>
+          <textarea id="phraseInput" rows="2" placeholder="apple giraffe mountain ..." autocomplete="off" spellcheck="false" required class="w-full resize-none rounded-xl border border-white/15 bg-black p-3 text-white outline-none focus:border-white/50"></textarea>
         </label>
-        <p id="pairingError" class="text-xs text-[#ff9e98]" hidden>Those words don't match — check for typos and try again.</p>
-        <label class="grid gap-2 text-xs text-[#b9bbc2]">
+        <p id="pairingError" class="m-0 text-sm text-[#ff453a]" hidden>Those words don't match. Check for typos and try again.</p>
+        <label class="grid gap-2 text-sm text-[#aeaeb2]">
           <span>ntfy server</span>
-          <input id="serverInput" type="url" value="https://ntfy.sh" inputmode="url" required class="w-full rounded-[10px] border border-[#383b41] bg-[#131519] p-3 text-white outline-none focus:border-[#77b58e]">
+          <input id="serverInput" type="url" value="https://ntfy.sh" inputmode="url" required class="w-full rounded-xl border border-white/15 bg-black p-3 text-white outline-none focus:border-white/50">
         </label>
-        <button type="submit" class="cursor-pointer rounded-[10px] bg-[#a6e4ba] px-4 py-3 font-bold text-[#101114]">Connect</button>
+        <button type="submit" class="min-h-11 cursor-pointer rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black active:bg-[#d1d1d6]">Connect</button>
       </form>
     </section>
 
     <div id="scannerOverlay" class="fixed inset-0 z-10 grid place-items-center gap-4 bg-[#060708f0] p-6" hidden>
-      <video id="scannerVideo" class="aspect-square w-[min(340px,90vw)] rounded-[20px] bg-black object-cover" playsinline muted></video>
+      <video id="scannerVideo" class="aspect-square w-[min(340px,90vw)] rounded-2xl bg-black object-cover" playsinline muted></video>
       <canvas id="scannerCanvas" hidden></canvas>
-      <p class="m-0 text-center text-[13px] text-[#c7c9cf]">Point the camera at the QR code in Metria's Settings.</p>
-      <p id="scannerError" class="text-xs text-[#ff9e98]" hidden></p>
-      <button id="scannerCancel" type="button" class="cursor-pointer rounded-[10px] bg-[#24272c] px-4 py-3 font-bold text-[#f5f5f7]">Cancel</button>
+      <p class="m-0 text-center text-sm text-[#aeaeb2]">Point the camera at the QR code in Metria's Settings.</p>
+      <p id="scannerError" class="text-sm text-[#ff453a]" hidden></p>
+      <button id="scannerCancel" type="button" class="min-h-11 cursor-pointer rounded-xl border border-white/15 bg-transparent px-4 py-3 text-sm font-medium text-white active:bg-white/10">Cancel</button>
     </div>
 
-    <section id="dashboard" class="mt-10" hidden>
-      <div class="mb-[18px] flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+    <section id="dashboard" class="mt-8" hidden>
+      <div class="mb-5 flex items-end justify-between gap-4">
         <div>
-          <p class="m-0 text-[11px] font-bold tracking-[0.14em] text-[#92b9a5]">Current snapshot</p>
-          <p id="lastUpdated" class="mb-0 mt-1 text-[13px] leading-6 text-[#92959e]">Waiting for the Mac app</p>
+          <p class="m-0 text-base font-medium">Providers</p>
+          <p id="lastUpdated" class="mb-0 mt-1 text-sm text-[#8e8e93]">Waiting for Metria</p>
         </div>
-        <button id="changeTopic" class="cursor-pointer bg-transparent p-0 text-xs font-bold text-[#a6e4ba]" type="button">Change pairing</button>
+        <button id="changeTopic" class="min-h-11 cursor-pointer rounded-xl border border-white/15 bg-transparent px-3 text-sm text-[#aeaeb2] active:bg-white/10" type="button">Change pairing</button>
       </div>
       <div id="providerGrid" class="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]"></div>
-      <div id="emptyState" class="mt-3 grid gap-2 rounded-[18px] border border-[#2a2d32] bg-[#181a1ed1] p-5 shadow-[0_18px_60px_rgba(0,0,0,.16)]" hidden>
+      <div id="emptyState" class="mt-3 grid gap-2 rounded-2xl border border-white/10 bg-black p-5" hidden>
         <strong>No snapshot received yet</strong>
-        <span class="text-[13px] text-[#92959e]">Leave Metria running on your Mac to publish usage updates.</span>
+        <span class="text-sm text-[#8e8e93]">Leave Metria running on your Mac to publish usage updates.</span>
       </div>
     </section>
   </main>

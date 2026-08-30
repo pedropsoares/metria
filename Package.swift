@@ -15,9 +15,11 @@ let package = Package(
             name: "Metria",
             dependencies: ["MetriaCore", .product(name: "Sparkle", package: "Sparkle")],
             path: ".",
-            exclude: ["Sources/MetriaCore", "AGENTS.md", "README.md", "LICENSE", "MetriaPWA", ".build", "dist", "node_modules", ".github", "scripts", "package.json", "package-lock.json", "tailwind.config.js"],
+            exclude: ["Sources/MetriaCore", "AGENTS.md", "README.md", "LICENSE", ".build", "dist", "node_modules", ".github", "scripts", "package.json", "package-lock.json", "tailwind.config.js", "MetriaPWA/tailwind.input.css"],
             sources: [
                 "Sources/Metria/MetriaApp.swift",
+                "Sources/Metria/LocalNetwork.swift",
+                "Sources/Metria/LocalPWAServer.swift",
                 "Sources/Metria/Providers/ClaudeProvider.swift",
                 "Sources/Metria/Providers/CodexProvider.swift",
                 "Sources/Metria/Providers/KeychainReader.swift",
@@ -30,7 +32,17 @@ let package = Package(
             resources: [
                 .copy("Assets/claude-logo.png"),
                 .copy("Assets/codex-logo.png"),
-                .copy("Assets/opencode-logo.png")
+                .copy("Assets/opencode-logo.png"),
+                .copy("MetriaPWA/app.css"),
+                .copy("MetriaPWA/app.js"),
+                .copy("MetriaPWA/icon.svg"),
+                .copy("MetriaPWA/index.html"),
+                .copy("MetriaPWA/jsQR.js"),
+                .copy("MetriaPWA/manifest.json"),
+                .copy("MetriaPWA/pairing.js"),
+                .copy("MetriaPWA/scanner.js"),
+                .copy("MetriaPWA/sw.js"),
+                .copy("MetriaPWA/wordlist.js")
             ]
         )
     ]

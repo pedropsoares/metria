@@ -2,6 +2,7 @@ const CONFIG_KEY = "metriaPwaConfig";
 const SNAPSHOT_KEY = "metriaPwaSnapshot";
 let eventSource;
 let activeCryptoKey;
+let snapshotPollingTimer;
 
 const setup = document.querySelector("#setup");
 const dashboard = document.querySelector("#dashboard");
@@ -9,11 +10,13 @@ const form = document.querySelector("#topicForm");
 const serverInput = document.querySelector("#serverInput");
 const phraseInput = document.querySelector("#phraseInput");
 const pairingError = document.querySelector("#pairingError");
-const status = document.querySelector("#connectionStatus");
+const connectionIndicator = document.querySelector("#connectionIndicator");
+const connectionLabel = document.querySelector("#connectionLabel");
 const providerGrid = document.querySelector("#providerGrid");
 const emptyState = document.querySelector("#emptyState");
 const lastUpdated = document.querySelector("#lastUpdated");
 const scanButton = document.querySelector("#scanButton");
+const cameraUnavailable = document.querySelector("#cameraUnavailable");
 const scannerOverlay = document.querySelector("#scannerOverlay");
 const scannerVideo = document.querySelector("#scannerVideo");
 const scannerCanvas = document.querySelector("#scannerCanvas");
@@ -21,14 +24,14 @@ const scannerError = document.querySelector("#scannerError");
 const scannerCancel = document.querySelector("#scannerCancel");
 
 function setStatus(label, state) {
-  status.textContent = label;
-  const classes = {
-    idle: "border-[#34383d] text-[#9b9da5]",
-    connecting: "border-[#34383d] text-[#f3cb86]",
-    live: "border-[#326847] text-[#9be8b9]",
-    offline: "border-[#34383d] text-[#ff9e98]"
+  connectionLabel.textContent = label;
+  const colors = {
+    idle: "bg-[#636366]",
+    connecting: "bg-[#ff9f0a]",
+    live: "bg-[#30d158]",
+    offline: "bg-[#ff453a]"
   };
-  status.className = `rounded-full border px-2.5 py-1.5 text-[11px] font-bold ${classes[state]}`;
+  connectionIndicator.className = `h-2 w-2 rounded-full ${colors[state]}`;
 }
 
 function normalizeServer(server) {
@@ -42,16 +45,28 @@ function renderSnapshot(snapshot) {
   const providers = Array.isArray(snapshot?.providers) ? snapshot.providers : [];
   providerGrid.innerHTML = providers.map((provider) => {
     const percent = Math.max(0, Math.min(100, Number(provider.percent) || 0));
-    return `<article class="rounded-[18px] border border-[#2a2d32] bg-[#181a1ed1] p-[18px] shadow-[0_18px_60px_rgba(0,0,0,.16)]">
-      <div class="flex items-center justify-between gap-4"><span>${escapeHtml(provider.name)}</span><strong class="text-[26px] tracking-[-0.05em]">${Math.round(percent)}%</strong></div>
-      <div class="mt-[18px] h-[7px] overflow-hidden rounded-full bg-[#34373b]"><div class="h-full rounded-full bg-gradient-to-r from-[#78c291] to-[#d8ef9d]" style="width: ${percent}%"></div></div>
-      <p class="mb-0 mt-[13px] text-[11px] text-[#92959e]">${provider.resetDate ? `Resets ${formatDate(provider.resetDate)}` : "No reset date"}</p>
+    const logo = providerLogo(provider.name);
+    return `<article class="rounded-2xl border border-white/10 bg-black p-5">
+      <div class="flex items-center justify-between gap-4"><div class="flex min-w-0 items-center gap-3">${logo ? `<img src="${logo}" alt="" class="h-6 w-6 shrink-0 object-contain">` : ""}<span class="truncate text-base font-medium">${escapeHtml(provider.name)}</span></div><strong class="shrink-0 text-[28px] font-medium tracking-[-0.05em]" style="color: ${usageColor(percent)}">${Math.round(percent)}%</strong></div>
+      <div class="mt-5 h-[5px] overflow-hidden rounded-full bg-[#2c2c2e]"><div class="h-full rounded-full" style="width: ${percent}%; background-color: ${usageColor(percent)}"></div></div>
+      <p class="mb-0 mt-3 text-xs text-[#8e8e93]">${provider.resetDate ? `Resets ${formatDate(provider.resetDate)}` : "No reset date"}</p>
     </article>`;
   }).join("");
   emptyState.hidden = providers.length > 0;
   if (snapshot?.updatedAt) {
     lastUpdated.textContent = `Updated ${formatDate(snapshot.updatedAt)}`;
   }
+}
+
+function usageColor(percent) {
+  if (percent >= 85) return "#ff453a";
+  if (percent >= 65) return "#ff9f0a";
+  if (percent >= 40) return "#ffd60a";
+  return "#30d158";
+}
+
+function providerLogo(name) {
+  return { Claude: "claude-logo.png", Codex: "codex-logo.png", "OpenCode Go": "opencode-logo.png" }[name] || "";
 }
 
 function formatDate(value) {
@@ -68,9 +83,15 @@ function escapeHtml(value) {
 // someone who merely guessed the topic name) is silently ignored.
 async function connect(config) {
   eventSource?.close();
+  clearInterval(snapshotPollingTimer);
   setup.hidden = true;
   dashboard.hidden = false;
   setStatus("Connecting", "connecting");
+
+  if (location.protocol === "http:") {
+    await restoreLocalSnapshot(config.secretBase64);
+    return;
+  }
 
   const secretBytes = window.MetriaPairing.base64UrlToBytes(config.secretBase64);
   const { topic, cryptoKey } = await window.MetriaPairing.deriveFromSecret(secretBytes);
@@ -91,6 +112,32 @@ async function connect(config) {
       // Not a valid encrypted snapshot for our key — ignore it.
     }
   };
+}
+
+async function loadLocalSnapshot(secretBase64) {
+  try {
+    const response = await fetch("snapshot", {
+      cache: "no-store",
+      headers: { "X-Metria-Secret": secretBase64 }
+    });
+    if (!response.ok) return false;
+    const snapshot = await response.json();
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
+    renderSnapshot(snapshot);
+    setStatus("Current", "live");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function restoreLocalSnapshot(secretBase64) {
+  clearInterval(snapshotPollingTimer);
+  if (await loadLocalSnapshot(secretBase64)) return;
+  setStatus("Waiting", "connecting");
+  snapshotPollingTimer = setInterval(async () => {
+    if (await loadLocalSnapshot(secretBase64)) clearInterval(snapshotPollingTimer);
+  }, 3000);
 }
 
 form.addEventListener("submit", async (event) => {
@@ -116,12 +163,19 @@ form.addEventListener("submit", async (event) => {
     pairingError.hidden = false;
     return;
   }
-  sessionStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-  await connect(config);
+  await saveAndConnect(config);
 });
+
+async function saveAndConnect(config) {
+  const connectedConfig = { ...config, server: normalizeServer(config.server) };
+  sessionStorage.setItem(CONFIG_KEY, JSON.stringify(connectedConfig));
+  serverInput.value = connectedConfig.server;
+  await connect(connectedConfig);
+}
 
 document.querySelector("#changeTopic").addEventListener("click", () => {
   eventSource?.close();
+  clearInterval(snapshotPollingTimer);
   sessionStorage.removeItem(CONFIG_KEY);
   dashboard.hidden = true;
   setup.hidden = false;
@@ -136,16 +190,6 @@ function parsePairingParams(hashString) {
   if (!secretBase64) return null;
   const server = params.get("server") || "https://ntfy.sh";
   return { secretBase64, server };
-}
-
-// Autofills the setup form with the words the secret encodes to, so the user can see
-// and confirm what they're pairing with instead of the app silently connecting behind
-// the scenes. Mirrors the manual "type the phrase" flow rather than bypassing it.
-async function fillPairingFields(config) {
-  const secretBytes = window.MetriaPairing.base64UrlToBytes(config.secretBase64);
-  const words = await window.MetriaPairing.secretToWords(secretBytes);
-  phraseInput.value = words.join(" ");
-  serverInput.value = config.server;
 }
 
 // Reads a pairing link's fragment (e.g. from opening the QR code in the system Camera
@@ -170,7 +214,7 @@ scanButton?.addEventListener("click", () => {
       try {
         const parsed = parsePairingParams(new URL(text).hash.slice(1));
         if (!parsed) throw new Error("not a pairing link");
-        await fillPairingFields(parsed);
+        await saveAndConnect(parsed);
       } catch {
         pairingError.textContent = "That QR code isn't a Metria pairing code.";
         pairingError.hidden = false;
@@ -189,13 +233,22 @@ scannerCancel.addEventListener("click", () => {
 });
 
 async function init() {
-  localStorage.removeItem(CONFIG_KEY);
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    scanButton.hidden = true;
+    cameraUnavailable.hidden = false;
+  }
+
   const hashConfig = readPairingFromHash();
   const savedSnapshot = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "null");
   if (savedSnapshot) renderSnapshot(savedSnapshot);
 
   if (hashConfig) {
-    await fillPairingFields(hashConfig);
+    try {
+      await saveAndConnect(hashConfig);
+    } catch (error) {
+      pairingError.textContent = error.message;
+      pairingError.hidden = false;
+    }
     return;
   }
 
@@ -203,7 +256,7 @@ async function init() {
   if (savedConfig?.secretBase64) {
     serverInput.value = savedConfig.server;
     try {
-      await connect(savedConfig);
+      await saveAndConnect(savedConfig);
     } catch (error) {
       pairingError.textContent = error.message;
       pairingError.hidden = false;

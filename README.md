@@ -35,14 +35,16 @@ Credentials are never committed. They are read at runtime from the Keychain and 
 
 ## iPhone PWA
 
-The iPhone companion is a static PWA in `MetriaPWA/`. Build its Tailwind stylesheet before deploying:
+Metria serves the iPhone companion locally from your Mac by default. Start Metria, then scan the QR code in **Settings > iPhone** while the iPhone and Mac are on the same Wi-Fi network. The local server port defaults to `8973` and can be changed in Settings; if it is in use, Metria tries subsequent ports automatically.
+
+Local HTTP access works in Safari but cannot be installed as an offline PWA because iOS requires HTTPS for that capability. To keep remote access and PWA installation, deploy the static files in `MetriaPWA/` to an HTTPS host and enter its URL in **Settings > iPhone > Custom PWA URL**. Build its Tailwind stylesheet before deploying:
 
 ```sh
 npm ci
 npm run build
 ```
 
-The PWA can be deployed to any HTTPS static host. The Mac app currently uses the hosted pairing URL configured in `PairingManager`.
+The PWA can be deployed to any HTTPS static host.
 
 ## Requirements
 

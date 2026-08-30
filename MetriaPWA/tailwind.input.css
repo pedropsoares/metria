@@ -7,3 +7,5 @@
    layer than the base [hidden] rule. Put this outside any layer so it always wins
    and keeps hidden elements hidden (scanner overlay, empty state, dashboards). */
 [hidden] { display: none !important; }
+
+html, body { min-height: 100%; background: #000; }

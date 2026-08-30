@@ -91,12 +91,11 @@ private extension Data {
 /// Owns the pairing secret's presentation: the QR code and the 12-word phrase shown in
 /// Settings, plus the shareable link. The secret itself lives in `PairingKeychain`.
 @MainActor final class PairingManager: ObservableObject {
-    /// Change this if you deploy your own fork of MetriaPWA elsewhere.
-    static let pwaBaseURL = "https://metria-pwa.vercel.app"
-
     @Published private(set) var words: [String] = []
     @Published private(set) var qrImage: NSImage?
     private var secret: Data = Data()
+    var currentSecret: Data { secret }
+    var currentSnapshotToken: String { secret.base64URLEncodedString }
 
     init() {
         secret = PairingKeychain.loadOrGenerate()
@@ -108,13 +107,13 @@ private extension Data {
         words = PairingSecret.words(from: secret)
     }
 
-    func pairingLink(server: String) -> String {
-        let encodedServer = server.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? server
-        return "\(Self.pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
+    func pairingLink(pwaBaseURL: String, ntfyServer: String) -> String {
+        let encodedServer = ntfyServer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ntfyServer
+        return "\(pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
     }
 
-    func refreshQRCode(server: String) {
-        qrImage = Self.renderQRCode(for: pairingLink(server: server))
+    func refreshQRCode(pwaBaseURL: String, ntfyServer: String) {
+        qrImage = Self.renderQRCode(for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer))
     }
 
     private static func renderQRCode(for string: String) -> NSImage? {
@@ -130,14 +129,14 @@ private extension Data {
     }
 }
 
-private final class NtfyPublisher {
+@MainActor private final class NtfyPublisher {
     private let defaults = UserDefaults.standard
     private var lastPayload: Data?
+    var onSnapshot: ((Data) -> Void)?
 
-    func publish(_ providers: [ProviderUsage]) {
+    func publish(_ providers: [ProviderUsage], secret: Data) {
         guard let server = URL(string: defaults.string(forKey: "ntfyServer") ?? "https://ntfy.sh"),
-              server.scheme == "https", server.host != nil,
-              let secret = PairingKeychain.load() else { return }
+              server.scheme == "https", server.host != nil else { return }
 
         let snapshot = MetriaSnapshot(
             updatedAt: Date(),
@@ -149,15 +148,17 @@ private final class NtfyPublisher {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let payload = try? encoder.encode(snapshot), payload != lastPayload else { return }
+        onSnapshot?(payload)
 
         let topic = PairingSecret.topic(from: secret)
         let key = PairingSecret.encryptionKey(from: secret)
         guard let sealed = try? AES.GCM.seal(payload, using: key), let combined = sealed.combined else { return }
         lastPayload = payload
+        let encryptedSnapshot = combined.base64EncodedData()
 
         var request = URLRequest(url: server.appendingPathComponent(topic))
         request.httpMethod = "POST"
-        request.httpBody = combined.base64EncodedData()
+        request.httpBody = encryptedSnapshot
         request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
         request.setValue("low", forHTTPHeaderField: "Priority")
         Task {
@@ -653,6 +654,12 @@ struct SettingsView: View {
     let onReconnect: (ProviderKind) -> Void
     @State private var ntfyServer: String
     let onChangeServer: (String) -> Void
+    let localPWAURL: () -> String?
+    @State private var localServerPort: String
+    let onChangeLocalServerPort: (UInt16) -> Void
+    @State private var customPWAURL: String
+    let onChangeCustomPWAURL: (String) -> Void
+    let onRegeneratePairing: () -> Void
     @State private var isPhraseRevealed = false
     @State private var isRegenerateConfirmationShown = false
     @State private var isDiagnosticShown = false
@@ -674,7 +681,13 @@ struct SettingsView: View {
         onQuit: @escaping () -> Void,
         onReconnect: @escaping (ProviderKind) -> Void,
         ntfyServer: String,
-        onChangeServer: @escaping (String) -> Void
+        onChangeServer: @escaping (String) -> Void,
+        localPWAURL: @escaping () -> String?,
+        localServerPort: UInt16,
+        onChangeLocalServerPort: @escaping (UInt16) -> Void,
+        customPWAURL: String,
+        onChangeCustomPWAURL: @escaping (String) -> Void,
+        onRegeneratePairing: @escaping () -> Void
     ) {
         self.store = store
         self.pairing = pairing
@@ -688,6 +701,12 @@ struct SettingsView: View {
         self.onReconnect = onReconnect
         _ntfyServer = State(initialValue: ntfyServer)
         self.onChangeServer = onChangeServer
+        self.localPWAURL = localPWAURL
+        _localServerPort = State(initialValue: String(localServerPort))
+        self.onChangeLocalServerPort = onChangeLocalServerPort
+        _customPWAURL = State(initialValue: customPWAURL)
+        self.onChangeCustomPWAURL = onChangeCustomPWAURL
+        self.onRegeneratePairing = onRegeneratePairing
     }
 
     var body: some View {
@@ -873,8 +892,9 @@ struct SettingsView: View {
                         NSPasteboard.general.setString(pairing.words.joined(separator: " "), forType: .string)
                     }
                     Button("Copy link") {
+                        guard let pwaBaseURL = localPWAURL() else { return }
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(pairing.pairingLink(server: ntfyServer), forType: .string)
+                        NSPasteboard.general.setString(pairing.pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer), forType: .string)
                     }
                     Spacer()
                     Button("Regenerate", role: .destructive) { isRegenerateConfirmationShown = true }
@@ -887,7 +907,24 @@ struct SettingsView: View {
                     .onSubmit { onChangeServer(ntfyServer) }
             }
 
-            Text("Scan the QR code with your iPhone camera, or open the PWA and enter the phrase.")
+            Section("PWA hosting") {
+                LabeledContent("Local address") {
+                    Text(localPWAURL() ?? "Starting local server…")
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                TextField("Local server port", text: $localServerPort)
+                    .onSubmit {
+                        guard let port = UInt16(localServerPort), port > 0 else { return }
+                        onChangeLocalServerPort(port)
+                    }
+                TextField("Custom PWA URL", text: $customPWAURL)
+                    .onSubmit { onChangeCustomPWAURL(customPWAURL) }
+                Text("Leave Custom PWA URL empty to pair through this Mac on the same Wi-Fi network. Use an HTTPS URL to keep remote access and PWA installation.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Scan the QR code with your iPhone camera, or open the PWA and enter the phrase. The local address must be reachable from your iPhone.")
                 .foregroundStyle(.secondary)
         }
         .formStyle(.columns)
@@ -896,8 +933,7 @@ struct SettingsView: View {
         .alert("Regenerate pairing?", isPresented: $isRegenerateConfirmationShown) {
             Button("Cancel", role: .cancel) {}
             Button("Regenerate", role: .destructive) {
-                pairing.regenerate()
-                pairing.refreshQRCode(server: ntfyServer)
+                onRegeneratePairing()
             }
         } message: {
             Text("Any iPhone using the current QR code or phrase will stop receiving updates.")
@@ -906,7 +942,7 @@ struct SettingsView: View {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager(); private let updater = AppUpdater()
+    let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager(); private let updater = AppUpdater(); private let localPWAServer = LocalPWAServer()
     private var isSidebarHovered = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -915,10 +951,15 @@ struct SettingsView: View {
         configureStatusItem()
         configurePopover()
         configureSidebar()
-        pairing.refreshQRCode(server: ntfyServer)
+        localPWAServer.setSnapshotToken(pairing.currentSnapshotToken)
+        ntfyPublisher.onSnapshot = { [weak self] snapshot in self?.localPWAServer.updateSnapshot(snapshot) }
+        ntfyPublisher.publish(store.providers, secret: pairing.currentSecret)
+        localPWAServer.onURLChange = { [weak self] in self?.refreshPairingQRCode() }
+        localPWAServer.start(preferredPort: localServerPort)
         observation = store.$providers.sink { [weak self] providers in
             self?.updateStatusItem(providers)
-            self?.ntfyPublisher.publish(providers)
+            guard let self else { return }
+            self.ntfyPublisher.publish(providers, secret: self.pairing.currentSecret)
         }
         applyDisplayMode()
     }
@@ -926,6 +967,39 @@ struct SettingsView: View {
     private var ntfyServer: String {
         get { UserDefaults.standard.string(forKey: "ntfyServer") ?? "https://ntfy.sh" }
         set { UserDefaults.standard.set(newValue, forKey: "ntfyServer") }
+    }
+
+    private var localServerPort: UInt16 {
+        get {
+            let port = UserDefaults.standard.integer(forKey: "localPWAServerPort")
+            return UInt16(port == 0 ? 8973 : port)
+        }
+        set { UserDefaults.standard.set(Int(newValue), forKey: "localPWAServerPort") }
+    }
+
+    private var customPWAURL: String {
+        get { UserDefaults.standard.string(forKey: "customPWAURL") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "customPWAURL") }
+    }
+
+    private var pwaBaseURL: String? {
+        let customURL = customPWAURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: customURL), url.scheme == "https", url.host != nil {
+            return customURL.hasSuffix("/") ? String(customURL.dropLast()) : customURL
+        }
+        return localPWAServer.baseURL?.absoluteString
+    }
+
+    private func refreshPairingQRCode() {
+        guard let pwaBaseURL else { return }
+        pairing.refreshQRCode(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer)
+    }
+
+    private func regeneratePairing() {
+        pairing.regenerate()
+        localPWAServer.setSnapshotToken(pairing.currentSnapshotToken)
+        refreshPairingQRCode()
+        ntfyPublisher.publish(store.providers, secret: pairing.currentSecret)
     }
 
     private func updateStatusItem(_ providers: [ProviderUsage]) {
@@ -1118,9 +1192,23 @@ struct SettingsView: View {
             onChangeServer: { [weak self] server in
                 guard let self else { return }
                 self.ntfyServer = server.trimmingCharacters(in: .whitespacesAndNewlines)
-                self.pairing.refreshQRCode(server: self.ntfyServer)
+                self.refreshPairingQRCode()
                 self.store.refresh()
-            }
+            },
+            localPWAURL: { [weak self] in self?.pwaBaseURL },
+            localServerPort: localServerPort,
+            onChangeLocalServerPort: { [weak self] port in
+                guard let self else { return }
+                self.localServerPort = port
+                self.localPWAServer.start(preferredPort: port)
+            },
+            customPWAURL: customPWAURL,
+            onChangeCustomPWAURL: { [weak self] url in
+                guard let self else { return }
+                self.customPWAURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.refreshPairingQRCode()
+            },
+            onRegeneratePairing: { [weak self] in self?.regeneratePairing() }
         ))
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
