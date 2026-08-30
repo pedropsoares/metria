@@ -1,6 +1,8 @@
 import { buildPushHTTPRequest } from "@pushforge/builder";
 
 const encoder = new TextEncoder();
+const PUSH_INTERVAL_MS = 5 * 60 * 1000;
+const NOTIFICATION_TAG = "metria-usage";
 
 function jsonResponse(value, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -56,7 +58,45 @@ function usageNotification(snapshot) {
   const body = snapshot.providers
     .map((provider) => `${provider.name} ${Math.round(Number(provider.percent) || 0)}%`)
     .join(" · ");
-  return { title: "Metria usage", body: body || "No provider usage available.", url: "/" };
+  return { title: "Metria usage", body: body || "No provider usage available.", url: "/", tag: NOTIFICATION_TAG };
+}
+
+async function rememberTopic(env, topic) {
+  const topics = String(await env.METRIA_PUSH_SUBSCRIPTIONS.get("topics") || "").split(",").filter(Boolean);
+  if (!topics.includes(topic)) {
+    await env.METRIA_PUSH_SUBSCRIPTIONS.put("topics", [...topics, topic].join(","));
+  }
+}
+
+async function sendUsageToTopic(env, topic, snapshot) {
+  const now = Date.now();
+  const lastPush = Number(await env.METRIA_PUSH_SUBSCRIPTIONS.get(`push:${topic}`) || 0);
+  if (now - lastPush < PUSH_INTERVAL_MS) return 0;
+
+  const subscriptionKey = `subscriptions:${topic}`;
+  const subscriptions = JSON.parse((await env.METRIA_PUSH_SUBSCRIPTIONS.get(subscriptionKey)) || "[]");
+  if (subscriptions.length === 0) return 0;
+
+  const payload = usageNotification(snapshot);
+  const results = await Promise.allSettled(subscriptions.map((subscription) => sendPush(env, subscription, payload, NOTIFICATION_TAG)));
+  const activeSubscriptions = subscriptions.filter((_, index) => {
+    const result = results[index];
+    return result.status === "fulfilled" || ![404, 410].includes(result.reason?.status);
+  });
+  if (activeSubscriptions.length !== subscriptions.length) {
+    await env.METRIA_PUSH_SUBSCRIPTIONS.put(subscriptionKey, JSON.stringify(activeSubscriptions));
+  }
+  await env.METRIA_PUSH_SUBSCRIPTIONS.put(`push:${topic}`, String(now));
+  return results.filter((result) => result.status === "fulfilled").length;
+}
+
+async function notifyStoredSnapshots(env) {
+  const topics = String(await env.METRIA_PUSH_SUBSCRIPTIONS.get("topics") || "").split(",").filter(Boolean);
+  for (const topic of topics) {
+    const snapshot = JSON.parse((await env.METRIA_PUSH_SUBSCRIPTIONS.get(`snapshot:${topic}`)) || "null");
+    if (!Array.isArray(snapshot?.providers)) continue;
+    await sendUsageToTopic(env, topic, snapshot);
+  }
 }
 
 async function subscribe(request, env) {
@@ -70,11 +110,12 @@ async function subscribe(request, env) {
   const subscriptions = JSON.parse((await env.METRIA_PUSH_SUBSCRIPTIONS.get(key)) || "[]");
   const updated = [...subscriptions.filter((subscription) => subscription.endpoint !== body.subscription.endpoint), body.subscription];
   await env.METRIA_PUSH_SUBSCRIPTIONS.put(key, JSON.stringify(updated));
+  await rememberTopic(env, topic);
   const latestSnapshot = JSON.parse((await env.METRIA_PUSH_SUBSCRIPTIONS.get(`snapshot:${topic}`)) || "null");
   const payload = Array.isArray(latestSnapshot?.providers)
     ? usageNotification(latestSnapshot)
     : { title: "Metria notifications enabled", body: "Waiting for the latest usage from your Mac.", url: "/" };
-  await sendPush(env, body.subscription, payload, "metria-usage");
+  await sendPush(env, body.subscription, payload, NOTIFICATION_TAG);
   return jsonResponse({ ok: true });
 }
 
@@ -84,20 +125,9 @@ async function publishUsage(request, env) {
 
   const topic = await topicFor(body.secret);
   await env.METRIA_PUSH_SUBSCRIPTIONS.put(`snapshot:${topic}`, JSON.stringify(body.snapshot));
-  const subscriptionKey = `subscriptions:${topic}`;
-  const subscriptions = JSON.parse((await env.METRIA_PUSH_SUBSCRIPTIONS.get(subscriptionKey)) || "[]");
-  if (subscriptions.length === 0) return jsonResponse({ ok: true, notifications: 0 });
-
-  const payload = usageNotification(body.snapshot);
-  const results = await Promise.allSettled(subscriptions.map((subscription) => sendPush(env, subscription, payload, "metria-usage")));
-  const activeSubscriptions = subscriptions.filter((_, index) => {
-    const result = results[index];
-    return result.status === "fulfilled" || ![404, 410].includes(result.reason?.status);
-  });
-  if (activeSubscriptions.length !== subscriptions.length) {
-    await env.METRIA_PUSH_SUBSCRIPTIONS.put(subscriptionKey, JSON.stringify(activeSubscriptions));
-  }
-  return jsonResponse({ ok: true, notifications: results.filter((result) => result.status === "fulfilled").length });
+  await rememberTopic(env, topic);
+  const notifications = await sendUsageToTopic(env, topic, body.snapshot);
+  return jsonResponse({ ok: true, notifications });
 }
 
 export default {
@@ -117,5 +147,8 @@ export default {
     } catch {
       return jsonResponse({ error: "Request failed" }, 500);
     }
+  },
+  async scheduled(controller, env) {
+    await notifyStoredSnapshots(env);
   }
 };

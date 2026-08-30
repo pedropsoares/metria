@@ -11,6 +11,9 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
   },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
   "kv_namespaces": [
     {
       "binding": "METRIA_PUSH_SUBSCRIPTIONS",
