@@ -15,9 +15,10 @@ let package = Package(
             name: "Metria",
             dependencies: ["MetriaCore", .product(name: "Sparkle", package: "Sparkle")],
             path: ".",
-            exclude: ["Sources/MetriaCore", "AGENTS.md", "README.md", "LICENSE", ".build", "dist", "node_modules", ".github", "scripts", "src", "package.json", "package-lock.json", "tailwind.config.js", "wrangler.jsonc", "MetriaPWA/tailwind.input.css", "MetriaPWA/claude-logo.png", "MetriaPWA/codex-logo.png", "MetriaPWA/opencode-logo.png"],
+            exclude: ["Sources/MetriaCore", "AGENTS.md", "README.md", "LICENSE", ".build", "dist", "node_modules", ".github", ".agents", ".claude", "scripts", "src", "plans", "project.yml", "Metria.xcodeproj", "skills-lock.json", "package.json", "package-lock.json", "tailwind.config.js", "wrangler.jsonc", "MetriaPWA/tailwind.input.css", "MetriaPWA/claude-logo.png", "MetriaPWA/codex-logo.png", "MetriaPWA/opencode-logo.png"],
             sources: [
                 "Sources/Metria/MetriaApp.swift",
+                "Sources/Metria/MetriaResources.swift",
                 "Sources/Metria/LocalNetwork.swift",
                 "Sources/Metria/LocalPWAServer.swift",
                 "Sources/Metria/Providers/ClaudeProvider.swift",

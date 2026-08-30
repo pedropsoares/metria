@@ -1,0 +1,68 @@
+name: Metria
+options:
+  deploymentTarget:
+    macOS: "13.0"
+  bundleIdPrefix: com.metria
+  createIntermediateGroups: true
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    from: 2.6.0
+targets:
+  MetriaCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/MetriaCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.metria.core
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+  Metria:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Metria
+    dependencies:
+      - target: MetriaCore
+      - package: Sparkle
+    postbuildScripts:
+      - name: Copy bundled resources
+        basedOnDependencyAnalysis: false
+        script: |
+          RESOURCE_DIRECTORY="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          mkdir -p "${RESOURCE_DIRECTORY}"
+          cp "${SRCROOT}"/Assets/*.png "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/app.css "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/app.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/icon.svg "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/index.html "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/jsQR.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/manifest.json "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/pairing.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/scanner.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/sw.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/MetriaPWA/wordlist.js "${RESOURCE_DIRECTORY}/"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.metria.app
+        PRODUCT_NAME: Metria
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Metria
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSHighResolutionCapable: YES
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Metria serves the iPhone companion on your local network.
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+      configs:
+        Debug:
+          SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"

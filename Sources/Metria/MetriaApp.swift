@@ -799,6 +799,18 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        Group {
+            if #available(macOS 14.0, *) {
+                navigationContent
+                    .toolbar(removing: .sidebarToggle)
+            } else {
+                navigationContent
+            }
+        }
+        .frame(minWidth: 680, idealWidth: 720, minHeight: 500, idealHeight: 580)
+    }
+
+    private var navigationContent: some View {
         NavigationSplitView {
             List(SettingsSection.allCases, selection: $selectedSection) { section in
                 Label(section.title, systemImage: section.symbol)
@@ -812,7 +824,6 @@ struct SettingsView: View {
                 .navigationTitle(selectedSection.title)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(minWidth: 680, idealWidth: 720, minHeight: 500, idealHeight: 580)
     }
 
     @ViewBuilder private var detailView: some View {

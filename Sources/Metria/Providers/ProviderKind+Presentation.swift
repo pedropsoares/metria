@@ -22,7 +22,7 @@ extension ProviderKind {
     }
 
     var logo: NSImage? {
-        guard let logoName, let url = Bundle.module.url(forResource: logoName, withExtension: "png") else { return nil }
+        guard let logoName, let url = MetriaResources.bundle.url(forResource: logoName, withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
     }
 

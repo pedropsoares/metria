@@ -117,7 +117,7 @@ import Network
             resourceName = String(rawPath.drop(while: { $0 == "/" }))
         }
         guard !resourceName.contains(".."),
-              let resourceURL = Bundle.module.url(forResource: resourceName, withExtension: nil),
+              let resourceURL = MetriaResources.bundle.url(forResource: resourceName, withExtension: nil),
               let body = try? Data(contentsOf: resourceURL) else {
             return Self.response(status: "404 Not Found", body: Data("Not Found".utf8), contentType: "text/plain")
         }

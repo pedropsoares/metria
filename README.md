@@ -55,6 +55,7 @@ Install the Cloudflare-hosted PWA on your iPhone with **Add to Home Screen**, op
 
 - macOS 13 or later
 - A Swift toolchain (Swift 5.9+)
+- Xcode 26.0+ and XcodeGen for opening and building the Xcode project
 
 ## Quick start
 
@@ -85,6 +86,18 @@ To create a local macOS application archive for installation:
 ```sh
 bash scripts/package-macos.sh
 ```
+
+To build the Xcode application without Apple Developer signing credentials:
+
+```sh
+xcodegen generate
+xcodebuild -project Metria.xcodeproj -scheme Metria -configuration Release -derivedDataPath .build/xcode CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+```
+
+The generated `Metria.app` is at `.build/xcode/Build/Products/Release/Metria.app`.
+The Xcode project disables signing by default for local development. A future
+Developer ID build can override `CODE_SIGNING_ALLOWED`, `CODE_SIGNING_REQUIRED`,
+and `CODE_SIGN_IDENTITY` from the command line or an xcconfig.
 
 This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `v*` tag is pushed, then publish the signed Sparkle appcast as `releases/latest/download/appcast.xml`. Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is unsigned and macOS may show a Gatekeeper warning.
 
