@@ -32,7 +32,10 @@ function setStatus(label, state) {
 }
 
 function normalizeServer(server) {
-  return server.replace(/\/+$/, "");
+  const normalizedServer = server.replace(/\/+$/, "");
+  const url = new URL(normalizedServer);
+  if (url.protocol !== "https:") throw new Error("The ntfy server must use HTTPS.");
+  return normalizedServer;
 }
 
 function renderSnapshot(snapshot) {
@@ -102,16 +105,24 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  const config = {
-    secretBase64: window.MetriaPairing.bytesToBase64Url(secretBytes),
-    server: normalizeServer(serverInput.value.trim() || "https://ntfy.sh")
-  };
-  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-  connect(config);
+  let config;
+  try {
+    config = {
+      secretBase64: window.MetriaPairing.bytesToBase64Url(secretBytes),
+      server: normalizeServer(serverInput.value.trim() || "https://ntfy.sh")
+    };
+  } catch (error) {
+    pairingError.textContent = error.message;
+    pairingError.hidden = false;
+    return;
+  }
+  sessionStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+  await connect(config);
 });
 
 document.querySelector("#changeTopic").addEventListener("click", () => {
   eventSource?.close();
+  sessionStorage.removeItem(CONFIG_KEY);
   dashboard.hidden = true;
   setup.hidden = false;
   setStatus("Not connected", "idle");
@@ -123,7 +134,7 @@ function parsePairingParams(hashString) {
   const params = new URLSearchParams(hashString);
   const secretBase64 = params.get("s");
   if (!secretBase64) return null;
-  const server = params.get("server") ? decodeURIComponent(params.get("server")) : "https://ntfy.sh";
+  const server = params.get("server") || "https://ntfy.sh";
   return { secretBase64, server };
 }
 
@@ -178,6 +189,7 @@ scannerCancel.addEventListener("click", () => {
 });
 
 async function init() {
+  localStorage.removeItem(CONFIG_KEY);
   const hashConfig = readPairingFromHash();
   const savedSnapshot = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "null");
   if (savedSnapshot) renderSnapshot(savedSnapshot);
@@ -187,10 +199,15 @@ async function init() {
     return;
   }
 
-  const savedConfig = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
+  const savedConfig = JSON.parse(sessionStorage.getItem(CONFIG_KEY) || "null");
   if (savedConfig?.secretBase64) {
     serverInput.value = savedConfig.server;
-    connect(savedConfig);
+    try {
+      await connect(savedConfig);
+    } catch (error) {
+      pairingError.textContent = error.message;
+      pairingError.hidden = false;
+    }
   }
 }
 

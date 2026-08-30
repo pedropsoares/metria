@@ -3,7 +3,7 @@
 // it only exists so the cache has a stable place to live and so the `activate` cleanup
 // below can sweep out old-named caches left over from versions before this comment.
 const CACHE_NAME = "metria-pwa";
-const ASSETS = ["./", "./index.html", "./app.css", "./app.js", "./pairing.js", "./wordlist.js", "./scanner.js", "./jsQR.js", "./manifest.json"];
+const ASSETS = ["./", "./index.html", "./app.css", "./app.js", "./pairing.js", "./wordlist.js", "./scanner.js", "./jsQR.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
@@ -22,12 +22,14 @@ self.addEventListener("activate", (event) => {
 // cache only when offline. This prevents stale JS/CSS from getting stuck on a device
 // after a deploy, which previously kept an outdated ntfy endpoint cached indefinitely.
 self.addEventListener("fetch", (event) => {
-  if (new URL(event.request.url).origin !== self.location.origin) return;
+  if (new URL(event.request.url).origin !== self.location.origin || event.request.method !== "GET") return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
         return response;
       })
       .catch(() => caches.match(event.request))

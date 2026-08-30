@@ -4,16 +4,20 @@
 // is inconsistent.
 let activeStream;
 let scanLoopHandle;
+let isScanning = false;
 
 async function startQrScanner({ video, canvas, onDecode, onError }) {
+  if (isScanning) return;
   if (!navigator.mediaDevices?.getUserMedia) {
     onError("Camera access isn't available on this device or browser.");
     return;
   }
 
+  isScanning = true;
   try {
     activeStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   } catch {
+    isScanning = false;
     onError("Camera access was denied. You can still type the phrase manually.");
     return;
   }
@@ -44,6 +48,12 @@ function stopQrScanner() {
   scanLoopHandle = null;
   activeStream?.getTracks().forEach((track) => track.stop());
   activeStream = null;
+  isScanning = false;
 }
+
+window.addEventListener("pagehide", stopQrScanner);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopQrScanner();
+});
 
 window.MetriaScanner = { startQrScanner, stopQrScanner };

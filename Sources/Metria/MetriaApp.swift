@@ -6,216 +6,6 @@ import Foundation
 import SwiftUI
 import MetriaCore
 
-enum ProviderError: Error {
-    case unavailable
-    case http(Int)
-}
-
-extension ProviderKind {
-    var symbol: String {
-        switch self { case .claude: "sparkles"; case .codex: "hexagon"; case .openCodeGo: "globe.americas.fill" }
-    }
-    var logoName: String? {
-        switch self { case .claude: "claude-logo"; case .codex: "codex-logo"; case .openCodeGo: "opencode-logo" }
-    }
-}
-
-struct ClaudeProvider: UsageProvider {
-    let kind = ProviderKind.claude
-    func fetch() async -> ProviderFetchResult {
-        do {
-            let token = try await KeychainReader.readClaudeToken()
-            let data = try await requestUsage(token: token)
-            let value = try JSONDecoder().decode(ClaudeResponse.self, from: data)
-            return .loaded(ProviderUsage(kind: kind, windows: [
-                UsageWindow(title: "Current session", percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
-                UsageWindow(title: "All models", percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
-            ], updatedAt: Date(), error: nil))
-        } catch { FileHandle.standardError.write("[Claude] error: \(error)\n".data(using: .utf8)!); return .failed(kind, error.localizedDescription) }
-    }
-    private func requestUsage(token: String) async throws -> Data {
-        for attempt in 0..<3 {
-            var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-            request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let httpResponse = response as? HTTPURLResponse
-            let status = httpResponse?.statusCode ?? -1
-            guard status == 429 else {
-                guard status == 200 else { throw ProviderError.http(status) }
-                return data
-            }
-            guard attempt < 2 else { throw ProviderError.http(status) }
-            let retryAfter = httpResponse?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? pow(2, Double(attempt + 1))
-            try? await Task.sleep(for: .seconds(min(retryAfter, 30)))
-        }
-        throw ProviderError.unavailable
-    }
-    private struct ClaudeResponse: Decodable {
-        let fiveHour: Limit
-        let sevenDay: Limit
-        enum CodingKeys: String, CodingKey { case fiveHour = "five_hour"; case sevenDay = "seven_day" }
-        struct Limit: Decodable {
-            let utilization: Double
-            let resetsAt: String?
-            var resetDate: Date? {
-                guard let resetsAt else { return nil }
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                return formatter.date(from: resetsAt) ?? {
-                    formatter.formatOptions = [.withInternetDateTime]
-                    return formatter.date(from: resetsAt)
-                }()
-            }
-            enum CodingKeys: String, CodingKey { case utilization; case resetsAt = "resets_at" }
-        }
-    }
-}
-
-struct CodexProvider: UsageProvider {
-    let kind = ProviderKind.codex
-    func fetch() async -> ProviderFetchResult {
-        if let usage = await fetchOpenCodeUsage() { return usage }
-        FileHandle.standardError.write("[Codex] falling back to local session files\n".data(using: .utf8)!)
-        return fetchLocalUsage()
-    }
-    private func fetchOpenCodeUsage() async -> ProviderFetchResult? {
-        let authURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/auth.json")
-        guard let data = try? Data(contentsOf: authURL) else { FileHandle.standardError.write("[Codex] cannot read auth.json at \(authURL.path)\n".data(using: .utf8)!); return nil }
-        guard let auth = try? JSONDecoder().decode(OpenCodeAuth.self, from: data) else { FileHandle.standardError.write("[Codex] cannot decode auth.json\n".data(using: .utf8)!); return nil }
-        guard let credentials = auth.openai else { FileHandle.standardError.write("[Codex] no openai key in auth.json\n".data(using: .utf8)!); return nil }
-        var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
-        request.setValue("Bearer \(credentials.access)", forHTTPHeaderField: "Authorization")
-        request.setValue(credentials.accountId, forHTTPHeaderField: "ChatGPT-Account-Id")
-        request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            guard status == 200 else { FileHandle.standardError.write("[Codex] HTTP \(status): \(String(data: data, encoding: .utf8) ?? "")\n".data(using: .utf8)!); return nil }
-            let value = try JSONDecoder().decode(OpenAIUsageResponse.self, from: data)
-            return .loaded(ProviderUsage(kind: kind, windows: [
-                UsageWindow(title: "Current session", percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
-                UsageWindow(title: "All models", percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
-            ], updatedAt: Date(), error: nil))
-        } catch { FileHandle.standardError.write("[Codex] request/decode error: \(error)\n".data(using: .utf8)!); return nil }
-    }
-    private func fetchLocalUsage() -> ProviderFetchResult {
-        let candidates = findCandidates()
-        for candidate in candidates.sorted(by: { $0.0 > $1.0 }) {
-            guard let text = try? String(contentsOf: candidate.1, encoding: .utf8) else { continue }
-            let lines = text.split(separator: "\n").reversed()
-            for line in lines {
-                guard line.contains("rate_limits"), let data = line.data(using: .utf8), let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let payload = event["payload"] as? [String: Any] else { continue }
-                let limits = (payload["rate_limits"] as? [String: Any]) ?? ((payload["info"] as? [String: Any])?["rate_limits"] as? [String: Any])
-                guard let limits else { continue }
-                let primary = parseLimit(limits["primary"] as? [String: Any], title: "Current session")
-                let secondary = parseLimit(limits["secondary"] as? [String: Any], title: "All models")
-                return .loaded(ProviderUsage(kind: kind, windows: [primary, secondary].compactMap { $0 }, updatedAt: candidate.0, error: nil))
-            }
-        }
-        return .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil))
-    }
-    private struct OpenCodeAuth: Decodable { let openai: Credentials?; struct Credentials: Decodable { let access: String; let accountId: String } }
-    private struct OpenAIUsageResponse: Decodable {
-        let rateLimit: RateLimit
-        enum CodingKeys: String, CodingKey { case rateLimit = "rate_limit" }
-        struct RateLimit: Decodable { let primaryWindow: Window; let secondaryWindow: Window; enum CodingKeys: String, CodingKey { case primaryWindow = "primary_window"; case secondaryWindow = "secondary_window" } }
-        struct Window: Decodable { let usedPercent: Double; let resetAt: Int; enum CodingKeys: String, CodingKey { case usedPercent = "used_percent"; case resetAt = "reset_at" } }
-    }
-    private func findCandidates() -> [(Date, URL)] {
-        let fileManager = FileManager.default
-        let root = fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
-        guard let enumerator = fileManager.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else {
-            return []
-        }
-        var candidates: [(Date, URL)] = []
-        for case let url as URL in enumerator where url.pathExtension == "jsonl" {
-            if let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? nil { candidates.append((date, url)) }
-        }
-        return candidates
-    }
-    private func parseLimit(_ raw: [String: Any]?, title: String) -> UsageWindow? {
-        guard let raw, let percent = raw["used_percent"] as? Double else { return nil }
-        let reset = (raw["resets_at"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? (raw["resets_at"] as? Int).map { Date(timeIntervalSince1970: Double($0)) }
-        return UsageWindow(title: title, percent: reset.map { $0 < Date() ? 0 : percent } ?? percent, resetDate: reset)
-    }
-}
-
-struct OpenCodeGoProvider: UsageProvider {
-    let kind = ProviderKind.openCodeGo
-
-    func fetch() async -> ProviderFetchResult {
-        do {
-            let key = try readAPIKey()
-            var request = URLRequest(url: URL(string: "https://opencode.ai/zen/go/v1/usage")!)
-            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            guard status == 200 else { throw ProviderError.unavailable }
-            let usage = try JSONDecoder().decode(OpenCodeGoResponse.self, from: data).usage
-            return .loaded(ProviderUsage(kind: kind, windows: [
-                UsageWindow(title: "Current session", percent: usage.rolling.percent, resetDate: usage.rolling.resetDate),
-                UsageWindow(title: "This week", percent: usage.weekly.percent, resetDate: usage.weekly.resetDate),
-                UsageWindow(title: "This month", percent: usage.monthly.percent, resetDate: usage.monthly.resetDate)
-            ], updatedAt: Date(), error: nil))
-        } catch {
-            return .failed(kind, error.localizedDescription)
-        }
-    }
-
-    private func readAPIKey() throws -> String {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/auth.json")
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(OpenCodeAuth.self, from: data).openCodeGo.key
-    }
-
-    private struct OpenCodeAuth: Decodable {
-        let openCodeGo: Credentials
-
-        enum CodingKeys: String, CodingKey { case openCodeGo = "opencode-go" }
-    }
-
-    private struct Credentials: Decodable { let key: String }
-
-    private struct OpenCodeGoResponse: Decodable {
-        let usage: Usage
-
-        struct Usage: Decodable {
-            let rolling: Limit
-            let weekly: Limit
-            let monthly: Limit
-        }
-
-        struct Limit: Decodable {
-            let percent: Double
-            let resetsAt: String
-
-            var resetDate: Date? {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                return formatter.date(from: resetsAt)
-            }
-        }
-    }
-}
-
-enum KeychainReader {
-    static func readClaudeToken() async throws -> String {
-        let process = Process(); let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
-        process.standardOutput = output; process.standardError = Pipe()
-        try process.run(); process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw ProviderError.unavailable }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let credentials = try JSONDecoder().decode(ClaudeCredentials.self, from: data)
-        return credentials.claudeAiOauth.accessToken
-    }
-    private struct ClaudeCredentials: Decodable { let claudeAiOauth: OAuth; struct OAuth: Decodable { let accessToken: String } }
-}
-
 private struct MetriaSnapshot: Encodable {
     struct Provider: Encodable {
         let name: String
@@ -240,7 +30,8 @@ enum PairingKeychain {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseDataProtectionKeychain as String: true
         ]
         var result: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
@@ -255,7 +46,8 @@ enum PairingKeychain {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: secret,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecUseDataProtectionKeychain as String: true
         ]
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
@@ -264,7 +56,8 @@ enum PairingKeychain {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true
         ]
         SecItemDelete(query as CFDictionary)
     }
@@ -394,24 +187,6 @@ struct ProviderLogo: View {
     }
 }
 
-extension ProviderKind {
-    var logo: NSImage? {
-        guard let logoName, let url = Bundle.module.url(forResource: logoName, withExtension: "png") else { return nil }
-        return NSImage(contentsOf: url)
-    }
-
-    var sidebarProgressGradient: LinearGradient {
-        switch self {
-        case .claude:
-            LinearGradient(colors: [.orange, .orange], startPoint: .leading, endPoint: .trailing)
-        case .codex:
-            LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .openCodeGo:
-            LinearGradient(colors: [.white, .white], startPoint: .leading, endPoint: .trailing)
-        }
-    }
-}
-
 struct UsageCard: View {
     let usage: ProviderUsage
     var width: CGFloat = 390
@@ -431,7 +206,26 @@ struct UsageCard: View {
     }
 }
 
-extension UsageWindow { var resetText: String { guard let resetDate else { return "No reset data" }; let seconds = resetDate.timeIntervalSinceNow; if seconds > 0 && seconds < 86400 { return "Resets in \(Int(seconds / 60)) min" }; return "Resets \(resetDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))" } }
+extension UsageWindow {
+    var resetText: String {
+        guard let resetDate else { return "No reset data" }
+        let seconds = resetDate.timeIntervalSinceNow
+
+        if seconds > 0 && seconds < 86400 {
+            let totalMinutes = Int(seconds / 60)
+            let hours = totalMinutes / 60
+            let minutes = totalMinutes % 60
+
+            if hours > 0 {
+                return minutes > 0 ? "Resets in \(hours) hr \(minutes) min" : "Resets in \(hours) hr"
+            }
+
+            return "Resets in \(minutes) min"
+        }
+
+        return "Resets \(resetDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))"
+    }
+}
 
 struct DashboardUsageCard: View {
     let usage: ProviderUsage
@@ -532,7 +326,7 @@ struct SidebarContent: View {
     private let dockBottomPadding: CGFloat = 16
     private var visibleProviders: [ProviderUsage] {
         ProviderKind.allCases
-            .filter { store.enabledProviderKinds.contains($0) }
+            .filter { store.enabledProviderKinds.contains($0) && store.isProviderAvailable($0) }
             .map { kind in
                 store.providers.first(where: { $0.kind == kind })
                     ?? ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil)
@@ -796,110 +590,118 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Settings").font(.system(size: 18, weight: .semibold))
+        TabView {
+            Form {
+                Section("Display") {
+                    Picker("Show usage in", selection: Binding(get: { displayMode }, set: onSelectDisplayMode)) {
+                        Text("Floating sidebar").tag(DisplayMode.sidebar)
+                        Text("Menu bar").tag(DisplayMode.menuBar)
+                    }
+                    .pickerStyle(.segmented)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Display").font(.system(size: 13, weight: .medium))
-                Picker("", selection: Binding(get: { displayMode }, set: onSelectDisplayMode)) {
-                    Text("Floating sidebar").tag(DisplayMode.sidebar)
-                    Text("Menu bar").tag(DisplayMode.menuBar)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                Text("Only one option is visible at a time: the floating sidebar or the menu bar text.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Sidebar opacity").font(.system(size: 13, weight: .medium))
-                    Spacer()
-                    Text("\(Int(sidebarOpacity * 100))%")
-                        .font(.system(size: 12))
+                    Text("Only one option is visible at a time.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Slider(value: $sidebarOpacity, in: 0.35...1)
-                    .onChange(of: sidebarOpacity) { onChangeSidebarOpacity($0) }
-            }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Providers").font(.system(size: 13, weight: .medium))
-                ForEach(ProviderKind.allCases) { kind in
-                    Toggle(isOn: Binding(
-                        get: { store.enabledProviderKinds.contains(kind) },
-                        set: { store.setProviderEnabled(kind, isEnabled: $0) }
-                    )) {
-                        HStack(spacing: 8) {
-                            ProviderLogo(provider: kind, size: 18)
-                            Text(kind.rawValue).font(.system(size: 12))
+                Section("Sidebar") {
+                    HStack {
+                        Text("Opacity")
+                        Spacer()
+                        Text("\(Int(sidebarOpacity * 100))%")
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $sidebarOpacity, in: 0.35...1)
+                        .onChange(of: sidebarOpacity) { onChangeSidebarOpacity($0) }
+                }
+
+                Section("Updates") {
+                    Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
+                        Text("Refresh every \(Int(store.refreshInterval / 60)) min")
+                    }
+                }
+
+                Section {
+                    Button("Exit", role: .destructive, action: onQuit)
+                }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("General", systemImage: "gearshape") }
+
+            Form {
+                Section("Enabled providers") {
+                    ForEach(ProviderKind.allCases) { kind in
+                        Toggle(isOn: Binding(
+                            get: { store.enabledProviderKinds.contains(kind) },
+                            set: { store.setProviderEnabled(kind, isEnabled: $0) }
+                        )) {
+                            HStack(spacing: 8) {
+                                ProviderLogo(provider: kind, size: 18)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(kind.rawValue)
+                                    if !store.isProviderAvailable(kind), let hint = store.setupHint(for: kind) {
+                                        Text(hint)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
                         }
+                        .disabled(!store.isProviderAvailable(kind))
                     }
-                    .toggleStyle(.switch)
                 }
+
                 Text("At least one provider must remain enabled.")
-                    .font(.system(size: 10))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .formStyle(.grouped)
+            .tabItem { Label("Providers", systemImage: "square.stack.3d.up") }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Auto refresh").font(.system(size: 13, weight: .medium))
-                Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
-                    Text("Every \(Int(store.refreshInterval / 60)) min")
-                        .font(.system(size: 12))
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("iPhone PWA").font(.system(size: 13, weight: .medium))
-
-                if let qrImage = pairing.qrImage {
-                    Image(nsImage: qrImage)
-                        .interpolation(.none)
-                        .resizable()
-                        .frame(width: 132, height: 132)
-                        .frame(maxWidth: .infinity)
-                        .padding(6)
-                        .background(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-
-                HStack {
-                    Text(isPhraseRevealed ? pairing.words.joined(separator: " ") : String(repeating: "•", count: 44))
-                        .font(.system(size: 11, design: .monospaced))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
-                    Button(isPhraseRevealed ? "Hide" : "Show") { isPhraseRevealed.toggle() }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.blue)
-                }
-
-                HStack(spacing: 10) {
-                    Button("Copy phrase") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(pairing.words.joined(separator: " "), forType: .string)
+            Form {
+                Section("Pair your iPhone") {
+                    if let qrImage = pairing.qrImage {
+                        Image(nsImage: qrImage)
+                            .interpolation(.none)
+                            .resizable()
+                            .frame(width: 132, height: 132)
+                            .frame(maxWidth: .infinity)
                     }
-                    Button("Copy link") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(pairing.pairingLink(server: ntfyServer), forType: .string)
+
+                    HStack {
+                        Text(isPhraseRevealed ? pairing.words.joined(separator: " ") : String(repeating: "•", count: 44))
+                            .font(.system(size: 11, design: .monospaced))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button(isPhraseRevealed ? "Hide" : "Show") { isPhraseRevealed.toggle() }
                     }
-                    Spacer()
-                    Button("Regenerate", role: .destructive) { isRegenerateConfirmationShown = true }
+
+                    HStack(spacing: 10) {
+                        Button("Copy phrase") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(pairing.words.joined(separator: " "), forType: .string)
+                        }
+                        Button("Copy link") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(pairing.pairingLink(server: ntfyServer), forType: .string)
+                        }
+                        Spacer()
+                        Button("Regenerate", role: .destructive) { isRegenerateConfirmationShown = true }
+                    }
+                    .controlSize(.small)
                 }
-                .controlSize(.small)
 
-                TextField("ntfy server", text: $ntfyServer)
-                    .onSubmit { onChangeServer(ntfyServer) }
+                Section("Connection") {
+                    TextField("ntfy server", text: $ntfyServer)
+                        .onSubmit { onChangeServer(ntfyServer) }
+                }
 
-                Text("Scan the QR code with your iPhone camera, or open the PWA and type the phrase.")
-                    .font(.system(size: 10))
+                Text("Scan the QR code with your iPhone camera, or open the PWA and enter the phrase.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .formStyle(.grouped)
             .alert("Regenerate pairing?", isPresented: $isRegenerateConfirmationShown) {
                 Button("Cancel", role: .cancel) {}
                 Button("Regenerate", role: .destructive) {
@@ -909,25 +711,14 @@ struct SettingsView: View {
             } message: {
                 Text("Any iPhone using the current QR code or phrase will stop receiving updates.")
             }
-
-            Spacer(minLength: 0)
-
-            HStack {
-                Spacer()
-                Button("Exit", role: .destructive, action: onQuit)
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .foregroundStyle(.red)
-                    .font(.system(size: 12))
-            }
+            .tabItem { Label("iPhone", systemImage: "iphone") }
         }
-        .padding(24)
-        .frame(width: 360, height: 760)
+        .frame(width: 420, height: 440)
     }
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = UsageStore(providers: [ClaudeProvider(), CodexProvider(), OpenCodeGoProvider()]); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager()
+    let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager(); private let updater = AppUpdater()
     private var isSidebarHovered = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -986,6 +777,10 @@ struct SettingsView: View {
         menu.addItem(withTitle: "Floating mode", action: #selector(switchToSidebar), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        if updater.isConfigured {
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: "")
+            menu.items.last?.target = updater
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
@@ -1094,7 +889,7 @@ struct SettingsView: View {
 
     @objc private func openSettings() {
         let window = settingsWindow ?? {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 760), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 440), styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.title = "Settings"
             window.isReleasedWhenClosed = false
             window.center()

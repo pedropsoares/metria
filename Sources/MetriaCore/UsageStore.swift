@@ -46,6 +46,8 @@ public enum ProviderFetchResult: Equatable {
 
 public protocol UsageProvider {
     var kind: ProviderKind { get }
+    var isAvailable: Bool { get }
+    var setupHint: String { get }
     func fetch() async -> ProviderFetchResult
 }
 
@@ -68,7 +70,16 @@ public final class UsageStore: ObservableObject {
         self.defaults = defaults
         let savedKinds = (defaults.array(forKey: enabledProvidersKey) as? [String] ?? [])
             .compactMap(ProviderKind.init(rawValue:))
-        enabledProviderKinds = savedKinds.isEmpty ? Set(ProviderKind.allCases) : Set(savedKinds)
+        let availableKinds = Set(providers.filter(\.isAvailable).map(\.kind))
+        enabledProviderKinds = savedKinds.isEmpty ? availableKinds : Set(savedKinds)
+    }
+
+    public func isProviderAvailable(_ kind: ProviderKind) -> Bool {
+        sources.first(where: { $0.kind == kind })?.isAvailable ?? false
+    }
+
+    public func setupHint(for kind: ProviderKind) -> String? {
+        sources.first(where: { $0.kind == kind })?.setupHint
     }
 
     public func setProviderEnabled(_ kind: ProviderKind, isEnabled: Bool) {
@@ -96,7 +107,7 @@ public final class UsageStore: ObservableObject {
     }
 
     public func refresh() {
-        let providers = sources.filter { enabledProviderKinds.contains($0.kind) }
+        let providers = sources.filter { enabledProviderKinds.contains($0.kind) && $0.isAvailable }
         refresh(providers: providers)
     }
 
