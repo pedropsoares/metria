@@ -48,26 +48,29 @@ import Network
             let listener = try NWListener(using: .tcp, on: port)
             self.listener = listener
             listener.stateUpdateHandler = { [weak self, weak listener] state in
+                let owner = self
+                let currentListener = listener
                 Task { @MainActor in
-                    guard let self, self.listener === listener else { return }
+                    guard let owner, let currentListener, owner.listener === currentListener else { return }
                     switch state {
                     case .ready:
-                        self.port = listener?.port?.rawValue
-                        self.onURLChange?()
+                        owner.port = currentListener.port?.rawValue
+                        owner.onURLChange?()
                     case .failed:
-                        self.listener?.cancel()
-                        self.listener = nil
-                        self.port = nil
-                        guard self.requestedPort < UInt16.max else { return }
-                        self.requestedPort += 1
-                        self.startListener()
+                        owner.listener?.cancel()
+                        owner.listener = nil
+                        owner.port = nil
+                        guard owner.requestedPort < UInt16.max else { return }
+                        owner.requestedPort += 1
+                        owner.startListener()
                     default:
                         break
                     }
                 }
             }
             listener.newConnectionHandler = { [weak self] connection in
-                Task { @MainActor in self?.handle(connection) }
+                let owner = self
+                Task { @MainActor in owner?.handle(connection) }
             }
             listener.start(queue: queue)
         } catch {
@@ -80,12 +83,13 @@ import Network
     private func handle(_ connection: NWConnection) {
         connection.start(queue: queue)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
+            let owner = self
             Task { @MainActor in
-                guard let self else {
+                guard let owner else {
                     connection.send(content: Self.response(status: "500 Internal Server Error", body: Data()), completion: .contentProcessed { _ in connection.cancel() })
                     return
                 }
-                let response = self.response(for: data)
+                let response = owner.response(for: data)
                 connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
             }
         }
