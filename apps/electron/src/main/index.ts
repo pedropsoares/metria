@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell, Tray } from "electron";
+import { autoUpdater } from "electron-updater";
 import { join } from "node:path";
 import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { ProviderService } from "./providers";
@@ -15,6 +16,8 @@ let refreshTimer: NodeJS.Timeout | undefined;
 let isQuitting = false;
 let lastUsage: Awaited<ReturnType<ProviderService["fetch"]>> = [];
 let badgeTrays = new Map<ProviderKind, Tray>();
+let updateState: "idle" | "downloaded" = "idle";
+let updateTimer: NodeJS.Timeout | undefined;
 const settings = new SettingsStore();
 const providers = new ProviderService();
 
@@ -196,9 +199,24 @@ function buildTrayMenu(rows: UsageRow[]): Menu {
   template.push({ type: "separator" });
   template.push({ label: "Open dashboard", click: showDashboard });
   template.push({ label: "Refresh", click: () => { void usage(); } });
+  if (updateState === "downloaded") template.push({ label: "Restart & install update", click: () => { autoUpdater.quitAndInstall(); } });
+  template.push({ label: "Check for updates…", click: () => { void autoUpdater.checkForUpdates().catch(() => undefined); } });
   template.push({ type: "separator" });
   template.push({ label: "Quit Metria Desktop", click: () => { isQuitting = true; app.quit(); } });
   return Menu.buildFromTemplate(template);
+}
+
+/** Silent auto-update mirroring the native Sparkle flow: download in the
+ * background and install on quit, exposed through the tray menu only. macOS
+ * stays out because electron-updater needs a signed app there. */
+function initAutoUpdater(): void {
+  if (!app.isPackaged || process.platform === "darwin") return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.on("update-downloaded", () => { updateState = "downloaded"; updateTray(lastUsage); });
+  autoUpdater.on("error", (error) => { console.error("Metria auto-update failed:", error.message); });
+  const check = (): void => { void autoUpdater.checkForUpdates().catch(() => undefined); };
+  setTimeout(check, 20_000);
+  updateTimer = setInterval(check, 6 * 60 * 60 * 1000);
 }
 function updateTray(providers: typeof lastUsage): void {
   if (!tray) return;
@@ -296,7 +314,7 @@ if (process.platform === "linux") {
   app.disableHardwareAcceleration();
 }
 app.whenReady().then(() => {
-  createTray(); showDashboard();
+  createTray(); showDashboard(); initAutoUpdater();
   if (process.platform === "linux") {
     widgetWindow = createWidgetWindow();
     widgetWindow.setBounds(widgetBounds(displayArea(), 0));
@@ -355,4 +373,4 @@ app.whenReady().then(() => {
   refreshTimer = setInterval(() => { void usage(); }, settings.load().refreshIntervalSeconds * 1000);
 });
 app.on("window-all-closed", () => { /* Metria remains available through the tray. */ });
-app.on("before-quit", () => { isQuitting = true; if (refreshTimer) clearInterval(refreshTimer); });
+app.on("before-quit", () => { isQuitting = true; if (refreshTimer) clearInterval(refreshTimer); if (updateTimer) clearInterval(updateTimer); });

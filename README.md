@@ -25,7 +25,7 @@ Provider selection, display mode, and sidebar opacity are persisted in `UserDefa
 
 ## Download
 
-Grab the latest stable build for your platform. Every release also attaches installers to [GitHub Releases](https://github.com/yurirxmos/metria/releases).
+Pick your platform, open the installer, and you're all set—after that, Metria keeps itself up to date.
 
 <p align="center">
   <a href="https://github.com/yurirxmos/metria/releases">
@@ -36,9 +36,7 @@ Grab the latest stable build for your platform. Every release also attaches inst
   </a>
 </p>
 
-- **macOS** — native `Metria` `.dmg` (Apple Silicon and Intel, Sparkle auto-updates included).
-- **Windows** — `Metria Desktop` NSIS installer (x64).
-- **Linux** — `Metria Desktop` AppImage and `.deb` (x64).
+Prefer to see what you're getting? Browse all installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
 
 ## Providers
 

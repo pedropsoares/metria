@@ -44,6 +44,7 @@ links, or post encrypted snapshots to `ntfy.sh`.
 | Side notch | Yes | Tray badges per provider | Usage widget window; tray is unavailable to Linux apps under WSLg |
 | Hosted-PWA QR pairing | Yes | No | No |
 | Launch at login | macOS service | Electron login item | XDG desktop-autostart entry |
+| Auto-update | Sparkle, signed appcast | No (unsigned) | Yes, silent via GitHub Releases |
 | Claude credentials | macOS Keychain | Existing macOS Keychain, read-only | Unsupported until a verified platform convention is implemented |
 
 Codex discovery uses `CODEX_HOME` or `~/.codex`; OpenCode discovery uses
