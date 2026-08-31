@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Cross-platform Electron implementation of Metria",
+  "author": "Metria <metria@users.noreply.github.com>",
+  "homepage": "https://github.com/yurirxmos/metria",
+  "desktopName": "Metria Desktop",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "npm run build && electron .",

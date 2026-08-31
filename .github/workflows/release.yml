@@ -72,7 +72,7 @@ jobs:
           CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
         run: |
           test -n "$SPARKLE_PUBLIC_ED_KEY"
-          bash scripts/package-macos.sh
+          bash apps/macos-native/scripts/package-macos.sh
 
       - name: Rename archive
         run: mv "dist/Metria-${{ inputs.version || github.ref_name }}-$(uname -m).zip" "dist/Metria-${{ inputs.version || github.ref_name }}-${{ matrix.arch }}.zip"

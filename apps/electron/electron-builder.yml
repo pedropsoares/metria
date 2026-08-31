@@ -19,5 +19,6 @@ linux:
     - AppImage
     - deb
   category: Utility
+  syncDesktopName: true
   artifactName: Metria-Desktop-${version}-${arch}.${ext}
 publish: null
