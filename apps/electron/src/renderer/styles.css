@@ -1,0 +1,42 @@
+:root{color-scheme:dark;font-family:ui-rounded,"SF Pro Rounded",system-ui,sans-serif;background:#000;color:#f4f6f8}*{box-sizing:border-box}body{margin:0;min-width:320px;background:#000}main{max-width:880px;margin:auto;padding:clamp(24px,5vw,56px)}header{display:flex;align-items:end;justify-content:space-between;gap:24px;border-bottom:1px solid #1d1d1f;padding-bottom:22px}.eyebrow{color:#8e8e93;font:600 11px/1.2 ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;margin:0 0 8px}h1{font-size:clamp(38px,7vw,68px);letter-spacing:-.07em;margin:0}h1 span{color:#8e8e93;font-weight:400}.brand{width:44px;height:44px;object-fit:contain;margin-right:10px;vertical-align:-9px}button{background:#e8edf3;border:0;border-radius:999px;color:#10151b;font-weight:700;padding:10px 16px;cursor:pointer}button:focus-visible{outline:3px solid #ff8d6c;outline-offset:3px}button:disabled{opacity:.55}#status{color:#8e8e93;margin:18px 0 30px}.provider{background:#0a0a0b;border:1px solid #1f1f22;border-radius:20px;padding:22px;margin:14px 0}.provider-title{display:flex;justify-content:space-between;align-items:center;gap:18px}.provider-h{display:flex;align-items:center;gap:10px}.provider-logo{width:22px;height:22px;object-fit:contain}.status-dot{width:7px;height:7px;border-radius:50%;flex:none}.provider h2{font-size:20px;margin:0;font-weight:600}.provider-title button{background:transparent;border:1px solid #2c2c2e;color:#d8d8dc;padding:7px 12px;cursor:pointer}.hint{color:#8e8e93;line-height:1.5;margin:16px 0 0}.usage{margin-top:18px}.usage>div:first-child{display:flex;justify-content:space-between;gap:16px}.usage strong{font:700 18px ui-monospace,monospace}.track{height:8px;border-radius:99px;background:#1c1c1e;margin:9px 0;overflow:hidden}.track i{display:block;height:100%;border-radius:inherit}small{color:#8e8e93}.about{border:1px solid #1f1f22;border-radius:20px;margin-top:30px;padding:20px;color:#9a9a9e}.about h2{color:#f0f0f2;margin:0 0 10px}.toggle{display:flex;align-items:center;gap:10px;color:#f0f0f2;font-weight:650}.toggle input{width:18px;height:18px;accent-color:#f18858}#pairing-link{overflow-wrap:anywhere;font:12px/1.5 ui-monospace,monospace;color:#9a9a9e}@media(max-width:520px){header{align-items:start;flex-direction:column}header button{width:100%}.provider{padding:18px}}
+
+/* ===== Side notch ===== */
+html.notch,body.notch{height:100%;margin:0;background:transparent;overflow:hidden}
+body.notch{display:flex;align-items:flex-start;justify-content:flex-end;font-family:ui-rounded,"SF Pro Rounded",system-ui,sans-serif}
+.rail{position:relative;width:100%;height:100%;background:#000;border-radius:20px 0 0 20px;overflow:hidden;display:flex;flex-direction:column;color:#fff}
+body.rail-hovered .rail{background:#050506}
+.collapsed{display:none;position:absolute;inset:0;align-items:center;justify-content:center}
+body.rail-collapsed .collapsed{display:flex}
+body.rail-collapsed .providers,body.rail-collapsed .controls{display:none}
+.mark{opacity:.9}
+.providers{flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px 0;min-height:0}
+.provider-item{width:100%;height:64px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer}
+.ring-wrap{position:relative;width:38px;height:38px;display:block}
+.ring-wrap .ring{position:absolute;inset:0}
+.ring-logo{position:absolute;inset:0;margin:auto;width:15px;height:15px;object-fit:contain;pointer-events:none}
+.pct{font:600 11px/1 ui-rounded,"SF Pro Rounded",system-ui;color:#fff}
+.controls{display:flex;align-items:center;justify-content:center;gap:14px;padding-bottom:14px;opacity:0;transition:opacity .18s ease;pointer-events:none}
+body.rail-hovered .controls{opacity:1;pointer-events:auto}
+.control{display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:transparent;border:0;color:#949494;padding:0;cursor:pointer}
+.control:hover{color:#fff}
+
+/* ===== Usage card ===== */
+html.card,body.card{height:100%;margin:0;background:transparent;overflow:hidden}
+body.card{display:flex;font-family:ui-rounded,"SF Pro Rounded",system-ui,sans-serif;color:#fff}
+.card-wrap{position:relative;display:flex;flex-direction:column;width:316px;padding:28px 24px;background:#000;border-radius:24px}
+.card-wrap::after{content:"";position:absolute;top:0;right:-16px;width:16px;height:100%;background:#000;clip-path:polygon(0 0,100% 50%,0 100%)}
+.card-title{display:flex;align-items:center;gap:10px;font:500 22px/1 ui-rounded,"SF Pro Rounded",system-ui;margin:0 0 18px;padding:0}
+.card-title .provider-logo{width:22px;height:22px}
+.card-title .dot{width:7px;height:7px;border-radius:50%;flex:none}
+.card-sub{font:400 13px/1.4 ui-rounded,"SF Pro Rounded",system-ui;color:#9a9a9a}
+.card-error{font:400 12px/1.4 ui-rounded,"SF Pro Rounded",system-ui;color:#ff8d6c;margin-top:12px}
+.card-empty{display:flex;align-items:center;gap:8px;font:400 13px/1.4 ui-rounded,"SF Pro Rounded",system-ui;color:#9a9a9a}
+.card-window{padding:0}
+.card-window+.card-window{margin-top:18px}
+.card-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font:400 15px/1.2 ui-rounded,"SF Pro Rounded",system-ui}
+.card-reset{color:#9a9a9a;font-size:12px;white-space:nowrap}
+.card-track{height:7px;border-radius:99px;background:#2c2c2c;margin:8px 0;overflow:hidden}
+.card-track i{display:block;height:100%;border-radius:inherit}
+.card-pct{font:600 15px/1 ui-rounded,"SF Pro Rounded",system-ui;color:#e8e8e8;margin-top:8px}
+.gauge{display:inline;padding:2px 8px;border-radius:99px;background:#1c1c1e;font:600 12px/1 ui-rounded,"SF Pro Rounded",system-ui}
+.provider-logo{width:24px;height:24px;flex:none}

@@ -36,17 +36,17 @@ targets:
         script: |
           RESOURCE_DIRECTORY="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
           mkdir -p "${RESOURCE_DIRECTORY}"
-          cp "${SRCROOT}"/Assets/*.png "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/app.css "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/app.js "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/icon.svg "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/index.html "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/jsQR.js "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/manifest.json "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/pairing.js "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/scanner.js "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/sw.js "${RESOURCE_DIRECTORY}/"
-          cp "${SRCROOT}"/MetriaPWA/wordlist.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../Assets/*.png "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/app.css "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/app.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/icon.svg "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/index.html "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/jsQR.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/manifest.json "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/pairing.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/scanner.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/sw.js "${RESOURCE_DIRECTORY}/"
+          cp "${SRCROOT}"/../../MetriaPWA/wordlist.js "${RESOURCE_DIRECTORY}/"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.metria.app

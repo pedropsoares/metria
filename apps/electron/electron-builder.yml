@@ -1,0 +1,26 @@
+appId: com.metria.electron
+productName: Metria Desktop
+icon: resources/icon.png
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**
+  - package.json
+extraResources:
+  - from: ../../MetriaPWA
+    to: MetriaPWA
+mac:
+  category: public.app-category.productivity
+  artifactName: Metria-Desktop-${version}-${arch}.${ext}
+win:
+  target:
+    - nsis
+  artifactName: Metria-Desktop-Setup-${version}-${arch}.${ext}
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  artifactName: Metria-Desktop-${version}-${arch}.${ext}
+publish: null

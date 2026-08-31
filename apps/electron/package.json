@@ -1,0 +1,25 @@
+{
+  "name": "metria-electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-platform Electron implementation of Metria",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "npm run build && electron .",
+    "build": "tsc -p tsconfig.json && node scripts/copy-renderer-assets.cjs && node scripts/strip-renderer-cjs.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test dist/test/**/*.test.js",
+    "check": "npm run typecheck && npm run build && npm run test",
+    "package": "npm run build && electron-builder --config electron-builder.yml --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.6",
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

@@ -1,6 +1,6 @@
 # Metria
 
-*A macOS menu-bar app that tracks your AI coding assistant usage in real time.*
+*A native macOS app and parallel Electron app that track your AI coding assistant usage in real time.*
 
 <p align="center">
   <img src="https://i.imgur.com/JrV7abR.png" alt="Metria banner" width="480" />
@@ -31,7 +31,7 @@ Provider selection, display mode, and sidebar opacity are persisted in `UserDefa
 
 Providers are enabled automatically only when their local credentials or usage files are detected. Providers that are not installed remain available in Settings with setup guidance.
 
-Credentials are never committed. They are read at runtime from the Keychain and local config files described in [the provider sources](Sources/Metria/Providers/).
+Credentials are never committed. The native macOS app reads them at runtime from the Keychain and local config files described in [the provider sources](apps/macos-native/Sources/Metria/Providers/). Electron has its own documented provider-support boundaries in [apps/electron](apps/electron/).
 
 ## iPhone PWA
 
@@ -84,14 +84,15 @@ swift run Metria
 To create a local macOS application archive for installation:
 
 ```sh
-bash scripts/package-macos.sh
+bash apps/macos-native/scripts/package-macos.sh
 ```
 
 To build the Xcode application without Apple Developer signing credentials:
 
 ```sh
 xcodegen generate
-xcodebuild -project Metria.xcodeproj -scheme Metria -configuration Release -derivedDataPath .build/xcode CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+xcodegen generate --spec apps/macos-native/project.yml
+xcodebuild -project apps/macos-native/Metria.xcodeproj -scheme Metria -configuration Release -derivedDataPath .build/xcode CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 ```
 
 The generated `Metria.app` is at `.build/xcode/Build/Products/Release/Metria.app`.
@@ -103,10 +104,11 @@ This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Relea
 
 ## Project layout
 
-- `Sources/Metria/MetriaApp.swift` — app entrypoint, AppKit coordinator, pairing, and views.
-- `Sources/Metria/Providers/` — provider implementations, credential readers, and provider registry.
-- `Sources/MetriaCore/UsageStore.swift` — shared usage state, provider seam, and refresh/retry logic.
-- `scripts/package-macos.sh` — reproducible macOS app bundle and archive builder.
+- `apps/macos-native/Sources/Metria/MetriaApp.swift` — native macOS entrypoint, AppKit coordinator, pairing, and views.
+- `apps/macos-native/Sources/Metria/Providers/` — native macOS provider implementations and credential readers.
+- `apps/macos-native/Sources/MetriaCore/UsageStore.swift` — native usage state, provider seam, and refresh/retry logic.
+- `apps/macos-native/scripts/package-macos.sh` — reproducible native macOS app bundle and archive builder.
+- `apps/electron/` — parallel Electron implementation with secure main/preload/renderer boundaries.
 
 ## Contributing
 

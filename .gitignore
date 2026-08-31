@@ -4,6 +4,9 @@ xcuserdata/
 DerivedData/
 node_modules/
 /dist/
+/apps/electron/dist/
+/apps/electron/release/
+/apps/electron/node_modules/
 
 # wrangler files
 .wrangler
