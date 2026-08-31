@@ -14,8 +14,8 @@ let package = Package(
         .executableTarget(
             name: "Metria",
             dependencies: ["MetriaCore", .product(name: "Sparkle", package: "Sparkle")],
-            path: ".",
-             exclude: ["Sources/MetriaCore", "AGENTS.md", "README.md", "LICENSE", ".build", "dist", "node_modules", ".github", ".agents", ".claude", "scripts", "src", "plans", "project.yml", "Metria.xcodeproj", "skills-lock.json", "package.json", "package-lock.json", "tailwind.config.js", "wrangler.jsonc", "MetriaPWA/tailwind.input.css", "MetriaPWA/claude-logo.png", "MetriaPWA/codex-logo.png", "MetriaPWA/opencode-logo.png", "MetriaPWA/metria-logo.png", "MetriaPWA/metria-mascot.png"],
+             path: ".",
+             exclude: ["Sources/MetriaCore", "AGENTS.md", "README.md", "LICENSE", ".build", "dist", "node_modules", ".github", ".agents", ".claude", "scripts", "src", "plans", "project.yml", "Metria.xcodeproj", "skills-lock.json", "package.json", "package-lock.json", "tailwind.config.js", "wrangler.jsonc", "MetriaPWA/tailwind.input.css", "MetriaPWA/claude-logo.png", "MetriaPWA/codex-logo.png", "MetriaPWA/opencode-logo.png", "MetriaPWA/metria-logo.png", "MetriaPWA/metria-mascot.png", "Assets/Metria.iconset"],
             sources: [
                 "Sources/Metria/MetriaApp.swift",
                 "Sources/Metria/MetriaResources.swift",
@@ -26,12 +26,13 @@ let package = Package(
                 "Sources/Metria/Providers/KeychainReader.swift",
                 "Sources/Metria/Providers/OpenCodeGoProvider.swift",
                 "Sources/Metria/Providers/ProviderError.swift",
-                "Sources/Metria/Providers/ProviderKind+Presentation.swift",
-                "Sources/Metria/Providers/ProviderRegistry.swift",
-                "Sources/Metria/Updater.swift"
-            ],
-            resources: [
-                .copy("Assets/claude-logo.png"),
+                 "Sources/Metria/Providers/ProviderKind+Presentation.swift",
+                 "Sources/Metria/Providers/ProviderRegistry.swift",
+                 "Sources/Metria/Updater.swift"
+             ],
+             resources: [
+                 .copy("Assets/Metria.icns"),
+                 .copy("Assets/claude-logo.png"),
                 .copy("Assets/codex-logo.png"),
                 .copy("Assets/metria-logo.png"),
                 .copy("Assets/metria-mascot.png"),

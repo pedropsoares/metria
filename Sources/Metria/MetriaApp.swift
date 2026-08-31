@@ -1425,6 +1425,7 @@ struct SettingsView: View {
     }
 
     private func applyDisplayMode() {
+        statusItem.menu = buildAppMenu()
         switch displayMode {
         case .sidebar:
             animateSidebarIn()
