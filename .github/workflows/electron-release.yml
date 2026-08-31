@@ -66,16 +66,29 @@ jobs:
           merge-multiple: true
           path: release
 
-      # Same tag as the native macOS release workflow: upload alongside if the
-      # release already exists, otherwise create it with all artifacts.
-      # Only files: electron-builder also leaves directories (e.g. linux-unpacked)
-      # in release/ and gh release upload cannot take directories.
+      # Keep exactly one installer per platform (plus the mandatory update
+      # channel files), so the release reads Metria-Windows/Linux/macOS.
+      # Native macOS artifacts (Metria-v*) and appcast.xml belong to the native
+      # Sparkle update flow and are preserved.
+      - name: Clean stale Electron assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ inputs.version || github.ref_name }}"
+          assets="$(gh release view "$tag" --json assets -q '.assets[].name' 2>/dev/null || true)"
+          for asset in $assets; do
+            case "$asset" in
+              Metria-Desktop-*.deb|Metria-Desktop-*.blockmap|Metria-Desktop-*.zip|builder-debug.yml|latest-mac.yml)
+                gh release delete-asset "$tag" "$asset" --repo "${{ github.repository }}" -y || true;;
+            esac
+          done
+
       - name: Attach to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.version || github.ref_name }}"
-          artifacts="$(find release -maxdepth 1 -type f)"
+          artifacts="$(find release -maxdepth 1 -type f \( -name 'Metria-Desktop-Setup-*.exe' -o -name 'Metria-Desktop-*.AppImage' -o -name 'Metria-Desktop-*.dmg' -o -name 'latest.yml' -o -name 'latest-linux.yml' \))"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" $artifacts --clobber --repo "${{ github.repository }}"
           else

@@ -9,6 +9,8 @@ files:
   - package.json
 mac:
   category: public.app-category.productivity
+  target:
+    - dmg
   artifactName: Metria-Desktop-${version}-${arch}.${ext}
 win:
   target:
@@ -17,8 +19,10 @@ win:
 linux:
   target:
     - AppImage
-    - deb
   category: Utility
   syncDesktopName: true
   artifactName: Metria-Desktop-${version}-${arch}.${ext}
-publish: null
+publish:
+  provider: github
+  owner: yurirxmos
+  repo: metria
