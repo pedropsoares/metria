@@ -1193,11 +1193,13 @@ struct SettingsView: View {
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         if updater.isConfigured {
             menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: "")
-            menu.items.last?.target = updater
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
+        if updater.isConfigured {
+            menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target = updater
+        }
         return menu
     }
 
