@@ -25,6 +25,7 @@ function createWindow(): BrowserWindow {
   const next = new BrowserWindow({
     width: 760, height: 680, minWidth: 480, minHeight: 560, show: false,
     title: "Metria Desktop",
+    ...(process.platform !== "darwin" ? { icon: findAsset("metria-mascot.png") } : {}),
     backgroundColor: "#0d1117",
     webPreferences: { preload: join(__dirname, "../preload/index.js"), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true }
   });
@@ -229,7 +230,7 @@ function updateTray(providers: typeof lastUsage): void {
 }
 
 function createTray(): void {
-  const assetIcon = findAsset("metria-logo.png");
+  const assetIcon = findAsset("metria-mascot.png");
   const icon = assetIcon
     ? nativeImage.createFromPath(assetIcon).resize({ width: 18, height: 18 })
     : nativeImage.createFromDataURL(FALLBACK_ICON);
