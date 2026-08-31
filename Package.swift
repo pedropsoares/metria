@@ -33,6 +33,8 @@ let package = Package(
             resources: [
                 .copy("Assets/claude-logo.png"),
                 .copy("Assets/codex-logo.png"),
+                .copy("Assets/metria-logo.png"),
+                .copy("Assets/metria-mascot.png"),
                 .copy("Assets/opencode-logo.png"),
                 .copy("MetriaPWA/app.css"),
                 .copy("MetriaPWA/app.js"),
@@ -40,6 +42,8 @@ let package = Package(
                 .copy("MetriaPWA/index.html"),
                 .copy("MetriaPWA/jsQR.js"),
                 .copy("MetriaPWA/manifest.json"),
+                .copy("MetriaPWA/metria-logo.png"),
+                .copy("MetriaPWA/metria-mascot.png"),
                 .copy("MetriaPWA/pairing.js"),
                 .copy("MetriaPWA/scanner.js"),
                 .copy("MetriaPWA/sw.js"),

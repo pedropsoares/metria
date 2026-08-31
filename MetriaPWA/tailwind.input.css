@@ -9,3 +9,7 @@
 [hidden] { display: none !important; }
 
 html, body { min-height: 100%; background: #000; }
+
+@media (max-width: 380px) {
+  #setup .mb-5 > img { width: 5rem; height: 5rem; }
+}

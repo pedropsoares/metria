@@ -8,9 +8,9 @@
   "description": "Live AI provider usage from Metria.",
   "icons": [
     {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "metria-logo.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

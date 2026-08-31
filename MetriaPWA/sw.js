@@ -4,7 +4,7 @@
 // below can sweep out old-named caches left over from versions before this comment.
 const CACHE_NAME = "metria-pwa-v3";
 const NOTIFICATION_TAG = "metria-usage";
-const ASSETS = ["./", "./index.html", "./app.css", "./app.js", "./pairing.js", "./wordlist.js", "./scanner.js", "./jsQR.js", "./manifest.json", "./icon.svg"];
+const ASSETS = ["./", "./index.html", "./app.css", "./app.js", "./pairing.js", "./wordlist.js", "./scanner.js", "./jsQR.js", "./manifest.json", "./icon.svg", "./metria-logo.png", "./metria-mascot.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));

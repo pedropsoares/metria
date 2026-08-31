@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101114">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="metria-logo.png">
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="app.css">
   <title>Metria</title>
@@ -14,16 +14,24 @@
 <body>
   <main class="mx-auto w-full max-w-xl bg-black px-5 pb-10 pt-[max(28px,env(safe-area-inset-top))] text-[#f5f5f7]">
     <header class="flex items-center justify-between gap-4">
-      <div>
-        <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-[#8e8e93]">Live usage</p>
-        <h1 class="m-0 mt-1 text-2xl font-semibold tracking-[-0.03em]">Metria</h1>
+      <div class="flex items-center gap-3">
+        <img src="metria-logo.png" alt="Metria" class="h-10 w-10 rounded-xl object-cover shadow-[0_8px_24px_rgba(239,91,66,0.18)]">
+        <div>
+          <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-[#8e8e93]">Live usage</p>
+          <h1 class="m-0 mt-1 text-2xl font-semibold tracking-[-0.03em]">Metria</h1>
+        </div>
       </div>
       <span id="connectionStatus" class="flex items-center gap-2 text-xs text-[#8e8e93]" role="status"><i id="connectionIndicator" class="h-2 w-2 rounded-full bg-[#636366]"></i><span id="connectionLabel">Not connected</span></span>
     </header>
 
-    <section id="setup" class="mt-8 rounded-2xl border border-white/10 bg-black p-5">
-      <p class="m-0 text-base font-medium">Pair your iPhone</p>
-      <p class="mb-0 mt-2 text-sm leading-6 text-[#8e8e93]">Scan the QR code in Metria's Settings, or enter the pairing phrase.</p>
+    <section id="setup" class="mt-8 overflow-hidden rounded-2xl border border-white/10 bg-black p-5">
+      <div class="mb-5 flex items-end justify-between gap-4">
+        <div>
+          <p class="m-0 text-base font-medium">Pair your iPhone</p>
+          <p class="mb-0 mt-2 text-sm leading-6 text-[#8e8e93]">Scan the QR code in Metria's Settings, or enter the pairing phrase.</p>
+        </div>
+        <img src="metria-mascot.png" alt="" class="-mb-5 h-28 w-28 shrink-0 object-contain object-bottom" aria-hidden="true">
+      </div>
       <button id="scanButton" type="button" class="mt-5 min-h-11 w-full cursor-pointer rounded-xl border border-white/15 bg-transparent px-4 py-3 text-sm font-medium text-white active:bg-white/10">Scan QR code</button>
       <p id="cameraUnavailable" class="mb-0 mt-4 text-sm leading-6 text-[#8e8e93]" hidden>Local Metria pages cannot access the iPhone camera. Scan the QR code with the iPhone Camera app instead.</p>
       <form id="topicForm" class="mt-5 grid gap-4">
@@ -60,9 +68,12 @@
         </div>
       </div>
       <div id="providerGrid" class="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]"></div>
-      <div id="emptyState" class="mt-3 grid gap-2 rounded-2xl border border-white/10 bg-black p-5" hidden>
-        <strong>No snapshot received yet</strong>
-        <span class="text-sm text-[#8e8e93]">Leave Metria running on your Mac to publish usage updates.</span>
+      <div id="emptyState" class="mt-3 flex items-center gap-4 rounded-2xl border border-white/10 bg-black p-5" hidden>
+        <img src="metria-mascot.png" alt="" class="h-16 w-16 shrink-0 object-contain" aria-hidden="true">
+        <div class="grid gap-2">
+          <strong>No snapshot received yet</strong>
+          <span class="text-sm text-[#8e8e93]">Leave Metria running on your Mac to publish usage updates.</span>
+        </div>
       </div>
     </section>
   </main>
