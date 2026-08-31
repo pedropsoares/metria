@@ -1,46 +1,113 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import type { ProviderKind, ProviderUsage, UsageWindow } from "../shared/types";
+import type { AppSettings, ProviderKind, ProviderSourceChoice, ProviderSourceInfo, ProviderUsage, UsageWindow, WslPresence } from "../shared/types";
 import { providerPaths } from "./provider-paths";
+import { makeWslShell, type WslProviderPresence, type WslShell } from "./wsl";
 
-const paths = providerPaths({ platform: process.platform, home: homedir(), env: process.env });
-const authPath = paths.openCodeAuth;
-const codexSessionsPath = paths.codexSessions;
-const execFileAsync = promisify(execFile);
+export interface ProviderPaths { codexAuth: string; codexSessions: string; openCodeAuth: string; claudeCredentials: string; }
 
-interface Provider { kind: ProviderKind; available(): boolean; fetch(): Promise<ProviderUsage>; hint: string; }
+const defaultPaths: ProviderPaths = providerPaths({ platform: process.platform, home: homedir(), env: process.env });
+const PRESENCE_TTL_MS = 30_000;
+
+interface Provider {
+  readonly kind: ProviderKind;
+  readonly hint: string;
+  hasHostCredentials(): boolean;
+  fetchHost(): Promise<ProviderUsage>;
+  fetchWsl(shell: WslShell, distro: string): Promise<ProviderUsage>;
+}
 
 export class ProviderService {
-  private readonly providers: Provider[] = [new ClaudeProvider(), new CodexProvider(), new OpenCodeGoProvider()];
+  private readonly providers: Provider[];
+  private readonly presenceResults = new Map<string, { at: number; presence: WslProviderPresence }>();
+
+  constructor(
+    private readonly loadSettings: () => AppSettings,
+    private readonly wsl: WslShell = makeWslShell(),
+    paths: ProviderPaths = defaultPaths
+  ) {
+    this.providers = [new ClaudeProvider(paths), new CodexProvider(paths), new OpenCodeGoProvider(paths)];
+  }
 
   async fetch(enabled: ProviderKind[]): Promise<ProviderUsage[]> {
     if (process.env.METRIA_SYNTHETIC === "1") return enabled.map((kind, index) => loaded(kind, [{ title: "Synthetic session", percent: [32, 58, 76][index] ?? 0, resetDate: new Date(Date.now() + 3_600_000).toISOString() }]));
-    return Promise.all(this.providers.filter((provider) => enabled.includes(provider.kind)).map(async (provider) => {
-      if (!provider.available()) return unavailable(provider.kind, provider.hint);
-      try { return await provider.fetch(); }
-      catch (error) { return { ...unavailable(provider.kind, provider.hint), available: true, error: error instanceof Error ? error.message : "Unable to load usage." }; }
+    const entries = await this.sources(enabled);
+    return Promise.all(entries.map(async (entry) => {
+      const provider = this.providerFor(entry.kind);
+      const source = chooseSource(entry, entry.source);
+      if (!source) return unavailable(entry.kind, provider.hint);
+      try {
+        return source.location === "wsl"
+          ? await provider.fetchWsl(this.wsl, source.distro ?? "")
+          : await provider.fetchHost();
+      } catch (error) {
+        return { ...unavailable(entry.kind, provider.hint), available: true, error: error instanceof Error ? error.message : "Unable to load usage." };
+      }
     }));
   }
+
+  async sources(kinds: ProviderKind[]): Promise<ProviderSourceInfo[]> {
+    const saved = this.loadSettings().providerSource ?? {};
+    const distros = await this.wsl.distros();
+    const presences = new Map<string, WslProviderPresence>();
+    for (const distro of distros) presences.set(distro, await this.presence(distro));
+    return kinds.map((kind) => {
+      const wsl: WslPresence[] = distros.map((distro) => ({ distro, present: presences.get(distro)?.[POPULATION_BY_KIND[kind]] ?? false }));
+      const host = this.providerFor(kind).hasHostCredentials();
+      const source = saved[kind] ?? null;
+      const needsChoice = host && wsl.some((entry) => entry.present) && !source;
+      return { kind, host, wsl, source, needsChoice };
+    });
+  }
+
+  private providerFor(kind: ProviderKind): Provider {
+    return this.providers.find((provider) => provider.kind === kind)!;
+  }
+
+  private async presence(distro: string): Promise<WslProviderPresence> {
+    const cached = this.presenceResults.get(distro);
+    if (cached && Date.now() - cached.at < PRESENCE_TTL_MS) return cached.presence;
+    const presence = await this.wsl.presence(distro);
+    this.presenceResults.set(distro, { at: Date.now(), presence });
+    return presence;
+  }
+}
+
+const POPULATION_BY_KIND: Record<ProviderKind, keyof WslProviderPresence> = { Claude: "claude", Codex: "codex", "OpenCode Go": "openCode" };
+const WSL_DIR_BY_KIND: Partial<Record<ProviderKind, string>> = { Codex: ".codex/sessions" };
+
+/** Pick the data source for a provider given saved preference (if any) and presence. */
+export function chooseSource(info: Pick<ProviderSourceInfo, "host" | "wsl">, saved: ProviderSourceChoice | null): ProviderSourceChoice | null {
+  const wslSource = (): ProviderSourceChoice | null => {
+    const present = info.wsl.find((entry) => entry.present);
+    return present ? { location: "wsl", distro: present.distro } : null;
+  };
+  if (saved) {
+    if (saved.location === "host") return info.host ? saved : wslSource();
+    return info.wsl.some((entry) => entry.distro === saved.distro && entry.present) ? saved : info.host ? { location: "host" } : wslSource();
+  }
+  return info.host ? { location: "host" } : wslSource();
 }
 
 class ClaudeProvider implements Provider {
   readonly kind = "Claude" as const;
-  readonly hint = process.platform === "darwin" ? "Run `claude auth login` to store Claude Code credentials in your macOS Keychain." : "Claude usage in Electron currently supports the macOS Claude Code Keychain. Use the native Mac app or run Claude Code on this platform.";
-  available(): boolean { return process.platform === "darwin"; }
-  async fetch(): Promise<ProviderUsage> {
-    if (process.platform !== "darwin") return unavailable(this.kind, this.hint);
-    const { stdout } = await execFileAsync("/usr/bin/security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"]);
-    const credential = JSON.parse(stdout) as { claudeAiOauth?: { accessToken?: string } };
-    const token = credential.claudeAiOauth?.accessToken;
+  readonly hint = "Run `claude auth login` in your terminal to create local Claude Code credentials, then refresh Metria.";
+  constructor(private readonly paths: ProviderPaths) {}
+  hasHostCredentials(): boolean { return existsSync(this.paths.claudeCredentials); }
+  async fetchHost(): Promise<ProviderUsage> { return this.usage(this.readToken(this.paths.claudeCredentials)); }
+  async fetchWsl(shell: WslShell, distro: string): Promise<ProviderUsage> { return this.usage(this.readToken(await shell.readFile(distro, ".claude/.credentials.json"))); }
+  private readToken(credentials: string): string | undefined {
+    try {
+      return (JSON.parse(credentials) as { claudeAiOauth?: { accessToken?: string } }).claudeAiOauth?.accessToken;
+    } catch { return undefined; }
+  }
+  private async usage(token?: string): Promise<ProviderUsage> {
     if (!token) throw new Error("Claude Code credentials were not found. Run `claude auth login`.");
-    const data = await requestWithRetry("https://api.anthropic.com/api/oauth/usage", { Authorization: `Bearer ${token}`, "anthropic-beta": "oauth-2025-04-20" });
-    const usage = JSON.parse(data) as { five_hour?: { utilization?: number; resets_at?: string }; seven_day?: { utilization?: number; resets_at?: string } };
+    const data = JSON.parse(await requestWithRetry("https://api.anthropic.com/api/oauth/usage", { Authorization: `Bearer ${token}`, "anthropic-beta": "oauth-2025-04-20" })) as { five_hour?: { utilization?: number; resets_at?: string }; seven_day?: { utilization?: number; resets_at?: string } };
     return loaded(this.kind, [
-      { title: "Current session", percent: Number(usage.five_hour?.utilization ?? 0), resetDate: usage.five_hour?.resets_at ?? null },
-      { title: "All models", percent: Number(usage.seven_day?.utilization ?? 0), resetDate: usage.seven_day?.resets_at ?? null }
+      { title: "Current session", percent: Number(data.five_hour?.utilization ?? 0), resetDate: data.five_hour?.resets_at ?? null },
+      { title: "All models", percent: Number(data.seven_day?.utilization ?? 0), resetDate: data.seven_day?.resets_at ?? null }
     ]);
   }
 }
@@ -48,56 +115,42 @@ class ClaudeProvider implements Provider {
 class CodexProvider implements Provider {
   readonly kind = "Codex" as const;
   readonly hint = "Sign in with Codex to create local session data.";
-  available(): boolean { return existsSync(authPath) || existsSync(codexSessionsPath); }
-  async fetch(): Promise<ProviderUsage> {
-    const remote = await this.fetchOpenCodeUsage();
-    if (remote) return remote;
-    const newest = newestSessionFile(codexSessionsPath);
-    if (!newest) return empty(this.kind);
-    const lines = readFileSync(newest, "utf8").trim().split("\n").reverse();
-    for (const line of lines) {
-      try {
-        const value = JSON.parse(line) as { payload?: { rate_limits?: Record<string, { used_percent?: number; resets_at?: number }>; info?: { rate_limits?: Record<string, { used_percent?: number; resets_at?: number }> } } };
-        const limits = value.payload?.rate_limits ?? value.payload?.info?.rate_limits;
-        if (limits) {
-          const windows = [["Current session", limits.primary], ["All models", limits.secondary]].flatMap(([title, limit]) => {
-            const typed = limit as { used_percent?: number; resets_at?: number } | undefined;
-            return typed?.used_percent === undefined ? [] : [{ title: String(title), percent: Number(typed.used_percent), resetDate: typed.resets_at ? new Date(typed.resets_at * 1000).toISOString() : null }];
-          });
-          if (windows.length) return loaded(this.kind, windows);
-        }
-      } catch { /* Ignore malformed local event lines. */ }
+  constructor(private readonly paths: ProviderPaths) {}
+  hasHostCredentials(): boolean { return existsSync(this.paths.codexAuth) || existsSync(this.paths.codexSessions); }
+  async fetchHost(): Promise<ProviderUsage> {
+    if (existsSync(this.paths.codexAuth)) {
+      const remote = await openCodeRemoteUsage(readFileSync(this.paths.codexAuth, "utf8"));
+      if (remote) return remote;
     }
-    return empty(this.kind);
+    return this.localUsage(readFileSyncPathOrEmpty(this.paths.codexSessions));
   }
-  private async fetchOpenCodeUsage(): Promise<ProviderUsage | undefined> {
-    if (!existsSync(authPath)) return undefined;
-    try {
-      const auth = JSON.parse(readFileSync(authPath, "utf8")) as { openai?: { access?: string; accountId?: string } };
-      const access = auth.openai?.access; const accountId = auth.openai?.accountId;
-      if (!access || !accountId) return undefined;
-      const data = await requestWithRetry("https://chatgpt.com/backend-api/wham/usage", { Authorization: `Bearer ${access}`, "ChatGPT-Account-Id": accountId });
-      const rateLimit = (JSON.parse(data) as { rate_limit?: { primary_window?: { used_percent?: number; reset_at?: number }; secondary_window?: { used_percent?: number; reset_at?: number } } }).rate_limit;
-      if (!rateLimit) return undefined;
-      return loaded(this.kind, [["Current session", rateLimit.primary_window], ["All models", rateLimit.secondary_window]].flatMap(([title, limit]) => {
-        const typed = limit as { used_percent?: number; reset_at?: number } | undefined;
-        return typed?.used_percent === undefined ? [] : [{ title: String(title), percent: Number(typed.used_percent), resetDate: typed.reset_at ? new Date(typed.reset_at * 1000).toISOString() : null }];
-      }));
-    } catch { return undefined; }
+  async fetchWsl(shell: WslShell, distro: string): Promise<ProviderUsage> {
+    let remote: ProviderUsage | undefined;
+    try { remote = await openCodeRemoteUsage(await shell.readFile(distro, ".codex/auth.json")); } catch { /* No WSL auth file. */ }
+    if (remote) return remote;
+    const newest = await shell.newestJsonl(distro, WSL_DIR_BY_KIND.Codex!);
+    if (!newest) return empty(this.kind);
+    return this.localUsage(await shell.readFile(distro, newest));
+  }
+  private localUsage(content: string): ProviderUsage {
+    const windows = parseSessionWindows(content);
+    return windows.length ? loaded(this.kind, windows) : empty(this.kind);
   }
 }
 
 class OpenCodeGoProvider implements Provider {
   readonly kind = "OpenCode Go" as const;
   readonly hint = "Sign in to OpenCode Go to create a local API credential.";
-  available(): boolean { return existsSync(authPath); }
-  async fetch(): Promise<ProviderUsage> {
-    const auth = JSON.parse(readFileSync(authPath, "utf8")) as { "opencode-go"?: { key?: string } };
-    const key = auth["opencode-go"]?.key;
+  constructor(private readonly paths: ProviderPaths) {}
+  hasHostCredentials(): boolean { return existsSync(this.paths.openCodeAuth); }
+  async fetchHost(): Promise<ProviderUsage> { return this.usage(readFileSync(this.paths.openCodeAuth, "utf8")); }
+  async fetchWsl(shell: WslShell, distro: string): Promise<ProviderUsage> { return this.usage(await shell.readFile(distro, ".local/share/opencode/auth.json")); }
+  private async usage(auth: string): Promise<ProviderUsage> {
+    const key = parseOpenCodeGoKey(auth);
     if (!key) throw new Error("OpenCode Go credentials were not found.");
     const data = JSON.parse(await requestWithRetry("https://opencode.ai/zen/go/v1/usage", { Authorization: `Bearer ${key}` })) as { usage?: Record<string, { percent?: number; resets_at?: string }> };
     const windows = [["Current session", "rolling"], ["This week", "weekly"], ["This month", "monthly"]].flatMap(([title, keyName]) => {
-      const limit = data.usage?.[keyName];
+      const limit = data.usage?.[keyName as string];
       return limit ? [{ title, percent: Number(limit.percent ?? 0), resetDate: limit.resets_at ?? null }] : [];
     });
     return loaded(this.kind, windows);
@@ -110,7 +163,7 @@ async function fetchWithTimeout(url: string, headers: Record<string, string>): P
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(url, { headers: { ...headers, "User-Agent": "Metria-Desktop/0.1" }, signal: controller.signal });
+    return await fetch(url, { headers: { ...headers, "User-Agent": "Metria-Electron/0.1" }, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -138,6 +191,51 @@ async function requestWithRetry(url: string, headers: Record<string, string>): P
   throw lastError ?? new Error("Unable to load usage.");
 }
 
+function parseOpenCodeGoKey(auth: string): string | undefined {
+  try {
+    return (JSON.parse(auth) as { "opencode-go"?: { key?: string } })["opencode-go"]?.key;
+  } catch { return undefined; }
+}
+
+async function openCodeRemoteUsage(auth: string): Promise<ProviderUsage | undefined> {
+  const parsed = parseCodexAuth(auth);
+  if (!parsed) return undefined;
+  try {
+    const data = await requestWithRetry("https://chatgpt.com/backend-api/wham/usage", { Authorization: `Bearer ${parsed.access}`, "ChatGPT-Account-Id": parsed.accountId });
+    const rateLimit = (JSON.parse(data) as { rate_limit?: { primary_window?: { used_percent?: number; reset_at?: number }; secondary_window?: { used_percent?: number; reset_at?: number } } }).rate_limit;
+    if (!rateLimit) return undefined;
+    return loaded("Codex", [["Current session", rateLimit.primary_window], ["All models", rateLimit.secondary_window]].flatMap(([title, limit]) => {
+      const typed = limit as { used_percent?: number; reset_at?: number } | undefined;
+      return typed?.used_percent === undefined ? [] : [{ title: String(title), percent: Number(typed.used_percent), resetDate: typed.reset_at ? new Date(typed.reset_at * 1000).toISOString() : null }];
+    }));
+  } catch { return undefined; }
+}
+
+function parseCodexAuth(auth: string): { access: string; accountId: string } | undefined {
+  try {
+    const parsed = JSON.parse(auth) as { openai?: { access?: string; accountId?: string } };
+    return parsed.openai?.access && parsed.openai.accountId ? { access: parsed.openai.access, accountId: parsed.openai.accountId } : undefined;
+  } catch { return undefined; }
+}
+
+function parseSessionWindows(content: string): UsageWindow[] {
+  const lines = content.trim().split("\n").reverse();
+  for (const line of lines) {
+    try {
+      const value = JSON.parse(line) as { payload?: { rate_limits?: Record<string, { used_percent?: number; resets_at?: number }>; info?: { rate_limits?: Record<string, { used_percent?: number; resets_at?: number }> } } };
+      const limits = value.payload?.rate_limits ?? value.payload?.info?.rate_limits;
+      if (limits) {
+        const windows = [["Current session", limits.primary], ["All models", limits.secondary]].flatMap(([title, limit]) => {
+          const typed = limit as { used_percent?: number; resets_at?: number } | undefined;
+          return typed?.used_percent === undefined ? [] : [{ title: String(title), percent: Number(typed.used_percent), resetDate: typed.resets_at ? new Date(typed.resets_at * 1000).toISOString() : null }];
+        });
+        if (windows.length) return windows;
+      }
+    } catch { /* Ignore malformed local event lines. */ }
+  }
+  return [];
+}
+
 function newestSessionFile(path: string): string | undefined {
   if (!existsSync(path)) return undefined;
   const files: { path: string; modified: number }[] = [];
@@ -148,6 +246,11 @@ function newestSessionFile(path: string): string | undefined {
   });
   visit(path);
   return files.sort((left, right) => right.modified - left.modified)[0]?.path;
+}
+
+function readFileSyncPathOrEmpty(path: string): string {
+  const newest = newestSessionFile(path);
+  return newest ? readFileSync(newest, "utf8") : "";
 }
 
 function loaded(kind: ProviderKind, windows: UsageWindow[]): ProviderUsage { return { kind, windows, updatedAt: new Date().toISOString(), error: null, available: true, setupHint: "" }; }

@@ -1,10 +1,10 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell, Tray } from "electron";
 import { autoUpdater } from "electron-updater";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { ProviderService } from "./providers";
 import { SettingsStore } from "./settings";
-import type { ProviderKind, ProviderUsage } from "../shared/types";
+import type { ProviderKind, ProviderSourceChoice, ProviderUsage } from "../shared/types";
 
 let window: BrowserWindow | undefined;
 let widgetWindow: BrowserWindow | undefined;
@@ -19,13 +19,13 @@ let badgeTrays = new Map<ProviderKind, Tray>();
 let updateState: "idle" | "downloaded" = "idle";
 let updateTimer: NodeJS.Timeout | undefined;
 const settings = new SettingsStore();
-const providers = new ProviderService();
+const providers = new ProviderService(() => settings.load());
 
 function createWindow(): BrowserWindow {
   const next = new BrowserWindow({
     width: 760, height: 680, minWidth: 480, minHeight: 560, show: false,
-    title: "Metria Desktop",
-    ...(process.platform !== "darwin" ? { icon: findAsset("metria-mascot.png") } : {}),
+    title: "Metria Electron",
+    icon: findAsset("metria-mascot.png"),
     backgroundColor: "#0d1117",
     webPreferences: { preload: join(__dirname, "../preload/index.js"), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true }
   });
@@ -203,7 +203,7 @@ function buildTrayMenu(rows: UsageRow[]): Menu {
   if (updateState === "downloaded") template.push({ label: "Restart & install update", click: () => { autoUpdater.quitAndInstall(); } });
   template.push({ label: "Check for updates…", click: () => { void autoUpdater.checkForUpdates().catch(() => undefined); } });
   template.push({ type: "separator" });
-  template.push({ label: "Quit Metria Desktop", click: () => { isQuitting = true; app.quit(); } });
+  template.push({ label: "Quit Metria Electron", click: () => { isQuitting = true; app.quit(); } });
   return Menu.buildFromTemplate(template);
 }
 
@@ -211,7 +211,7 @@ function buildTrayMenu(rows: UsageRow[]): Menu {
  * background and install on quit, exposed through the tray menu only. macOS
  * stays out because electron-updater needs a signed app there. */
 function initAutoUpdater(): void {
-  if (!app.isPackaged || process.platform === "darwin") return;
+  if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.on("update-downloaded", () => { updateState = "downloaded"; updateTray(lastUsage); });
   autoUpdater.on("error", (error) => { console.error("Metria auto-update failed:", error.message); });
@@ -219,13 +219,16 @@ function initAutoUpdater(): void {
   setTimeout(check, 20_000);
   updateTimer = setInterval(check, 6 * 60 * 60 * 1000);
 }
+function restartRefreshTimer(): void {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => { void usage(); }, settings.load().refreshIntervalSeconds * 1000);
+}
 function updateTray(providers: typeof lastUsage): void {
   if (!tray) return;
   const rows = usageRows(providers);
   const summary = rows.map((row) => `${row.name} ${row.percent}%`).join(" · ");
   const updated = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date());
-  tray.setToolTip(summary ? `${summary} · Updated ${updated}` : `Metria Desktop · Updated ${updated}`);
-  if (process.platform === "darwin") tray.setTitle(summary ? ` ${summary}` : "");
+  tray.setToolTip(summary ? `${summary} · Updated ${updated}` : `Metria Electron · Updated ${updated}`);
   tray.setContextMenu(buildTrayMenu(rows));
 }
 
@@ -265,13 +268,11 @@ function updateBadges(providers: typeof lastUsage): void {
     const existing = badgeTrays.get(provider.kind);
     if (existing) {
       existing.setToolTip(tooltip);
-      if (process.platform === "darwin") existing.setTitle(` ${percent}%`);
       continue;
     }
     const icon = trayMenuIcon(TRAY_LOGOS[provider.kind]) ?? nativeImage.createFromDataURL(FALLBACK_ICON);
     const badge = new Tray(icon);
     badge.setToolTip(tooltip);
-    if (process.platform === "darwin") badge.setTitle(` ${percent}%`);
     badge.setContextMenu(Menu.buildFromTemplate(badgeTemplate()));
     badge.on("click", showDashboard);
     badgeTrays.set(provider.kind, badge);
@@ -279,6 +280,12 @@ function updateBadges(providers: typeof lastUsage): void {
 }
 
 function validKind(value: unknown): value is ProviderKind { return value === "Claude" || value === "Codex" || value === "OpenCode Go"; }
+function validProviderSource(value: unknown): value is ProviderSourceChoice {
+  if (typeof value !== "object" || value === null) return false;
+  const source = value as Record<string, unknown>;
+  if (source.location === "host") return true;
+  return source.location === "wsl" && typeof source.distro === "string" && source.distro.length > 0;
+}
 function trustedWindow(event: Electron.IpcMainInvokeEvent): boolean {
   const url = event.senderFrame?.url;
   if (!url) return false;
@@ -293,21 +300,23 @@ function requireTrustedSender(event: Electron.IpcMainInvokeEvent): void {
 const ALL_KINDS: ProviderKind[] = ["Claude", "Codex", "OpenCode Go"];
 async function usage() { const values = await providers.fetch(ALL_KINDS); lastUsage = values; updateTray(values); if (process.platform === "linux") { updateWidgetBounds(values); refreshCard(); } else updateBadges(values); return values; }
 function loginItemStatus(): { available: boolean; enabled: boolean; message: string } {
-  if (process.platform === "linux") { const path = linuxAutostartPath(); return { available: true, enabled: existsSync(path), message: existsSync(path) ? "Metria Desktop starts through your desktop autostart entry." : "Metria Desktop does not start automatically." }; }
+  if (process.platform === "linux") { const path = linuxAutostartPath(); return { available: true, enabled: existsSync(path), message: existsSync(path) ? "Metria Electron starts through your desktop autostart entry." : "Metria Electron does not start automatically." }; }
   const enabled = app.getLoginItemSettings().openAtLogin;
-  return { available: true, enabled, message: enabled ? "Metria Desktop starts when you sign in." : "Metria Desktop does not start automatically." };
+  return { available: true, enabled, message: enabled ? "Metria Electron starts when you sign in." : "Metria Electron does not start automatically." };
 }
-function linuxAutostartPath(): string { return join(process.env.XDG_CONFIG_HOME || join(app.getPath("home"), ".config"), "autostart", "metria-desktop.desktop"); }
+function linuxAutostartPath(): string { return join(process.env.XDG_CONFIG_HOME || join(app.getPath("home"), ".config"), "autostart", "metria-electron.desktop"); }
 function setLinuxAutostart(enabled: boolean): void {
   const path = linuxAutostartPath();
+  const legacyPath = join(process.env.XDG_CONFIG_HOME || join(app.getPath("home"), ".config"), "autostart", "metria-desktop.desktop");
   if (!enabled) { try { unlinkSync(path); } catch { /* Not enabled. */ } return; }
+  try { if (legacyPath !== path) unlinkSync(legacyPath); } catch { /* No legacy entry. */ }
   const executable = process.execPath.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
-  const content = `[Desktop Entry]\nType=Application\nName=Metria Desktop\nComment=AI coding assistant usage\nExec="${executable}"\nTerminal=false\nX-GNOME-Autostart-enabled=true\n`;
+  const content = `[Desktop Entry]\nType=Application\nName=Metria Electron\nComment=AI coding assistant usage\nExec="${executable}"\nTerminal=false\nX-GNOME-Autostart-enabled=true\n`;
   mkdirSync(join(path, ".."), { recursive: true });
   const temporary = `${path}.tmp`; writeFileSync(temporary, content, { mode: 0o600 }); renameSync(temporary, path);
 }
 
-app.setName("Metria Desktop");
+app.setName("Metria Electron");
 if (process.platform === "linux") {
   // Reduced-compositing environments (no DRI3/VA-API render node) crash the GPU
   // process and can fail to draw windows. Software compositing on Linux avoids
@@ -364,6 +373,42 @@ app.whenReady().then(() => {
     return next;
   });
   ipcMain.handle("metria:get-login-item-status", (event) => { requireTrustedSender(event); return loginItemStatus(); });
+  ipcMain.handle("metria:app-info", (event) => {
+    requireTrustedSender(event);
+    return { version: app.getVersion(), platform: process.platform, packaged: app.isPackaged, dataPath: app.getPath("userData") };
+  });
+  ipcMain.handle("metria:check-updates", async (event) => {
+    requireTrustedSender(event);
+    if (!app.isPackaged) return { status: "unavailable", message: "Automatic updates are only available in packaged builds." };
+    try {
+      await autoUpdater.checkForUpdates();
+      if (updateState === "downloaded") return { status: "downloaded", message: "An update was downloaded and will install on quit." };
+      return { status: "up-to-date", message: "Metria Electron is up to date." };
+    } catch (error) {
+      return { status: "error", message: `Update check failed: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  });
+  ipcMain.handle("metria:install-update", (event) => {
+    requireTrustedSender(event);
+    if (updateState !== "downloaded") throw new Error("No downloaded update.");
+    isQuitting = true;
+    autoUpdater.quitAndInstall();
+  });
+  ipcMain.handle("metria:uninstall", (event) => {
+    requireTrustedSender(event);
+    if (process.platform === "win32") {
+      const uninstaller = join(dirname(process.execPath), "Uninstall Metria Electron.exe");
+      if (!existsSync(uninstaller)) return { opened: false, message: "The uninstaller was not found next to the app. You can uninstall Metria Electron from the Windows Settings app." };
+      void shell.openPath(uninstaller);
+      return { opened: true, message: "The uninstaller is starting." };
+    }
+    if (process.platform === "linux") {
+      shell.showItemInFolder(process.execPath);
+      return { opened: true, message: "To uninstall, delete the Metria Electron file and its autostart entry." };
+    }
+    return { opened: false, message: "Uninstall is only available on Windows and Linux." };
+  });
+  ipcMain.handle("metria:quit", (event) => { requireTrustedSender(event); isQuitting = true; app.quit(); });
   ipcMain.handle("metria:set-launch-at-login", (event, enabled: unknown) => {
     requireTrustedSender(event);
     if (typeof enabled !== "boolean") throw new Error("Invalid launch-at-login setting.");
@@ -371,7 +416,27 @@ app.whenReady().then(() => {
     else app.setLoginItemSettings({ openAtLogin: enabled });
     return loginItemStatus();
   });
-  refreshTimer = setInterval(() => { void usage(); }, settings.load().refreshIntervalSeconds * 1000);
+  ipcMain.handle("metria:set-refresh-interval", (event, seconds: unknown) => {
+    requireTrustedSender(event);
+    if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 60) throw new Error("Invalid refresh interval.");
+    const next = settings.setRefreshInterval(seconds);
+    restartRefreshTimer();
+    return next;
+  });
+  ipcMain.handle("metria:get-provider-sources", (event) => {
+    requireTrustedSender(event);
+    return providers.sources(ALL_KINDS);
+  });
+  ipcMain.handle("metria:set-provider-source", (event, kind: unknown, source: unknown) => {
+    requireTrustedSender(event);
+    if (!validKind(kind) || !validProviderSource(source)) throw new Error("Invalid provider source.");
+    const next = settings.setProviderSource(kind, source);
+    updateWidgetBounds(lastUsage);
+    widgetWindow?.webContents.send("metria:settings-changed");
+    void usage();
+    return next;
+  });
+  restartRefreshTimer();
 });
 app.on("window-all-closed", () => { /* Metria remains available through the tray. */ });
 app.on("before-quit", () => { isQuitting = true; if (refreshTimer) clearInterval(refreshTimer); if (updateTimer) clearInterval(updateTimer); });

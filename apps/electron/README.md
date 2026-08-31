@@ -1,8 +1,10 @@
-# Metria Desktop (Electron)
+# Metria Electron
 
-This is a parallel Electron implementation of Metria for Windows, Linux, and
-macOS. It does the same job as the native macOS application, but it is a
-separate app and does not replace or import the native SwiftUI/AppKit code.
+This is a parallel Electron implementation of Metria for Windows and Linux.
+It does the same job as the native macOS application, but it is a separate app
+and does not replace or import the native SwiftUI/AppKit code. macOS is served
+exclusively by the native app, so Electron releases carry Windows/Linux
+installers only.
 
 ## Development
 
@@ -15,8 +17,9 @@ npm run package
 ```
 
 `npm run package` creates host-native Electron artifacts in `release/`; it does
-not publish them. The existing native macOS application remains verified from
-the repository root with `swift build`.
+not publish them. macOS packaging is not configured, so on macOS use the native
+app instead, which remains verified from the repository root with
+`swift build`.
 
 ## Architecture and security
 
@@ -38,30 +41,33 @@ links, or post encrypted snapshots to `ntfy.sh`.
 
 ## Parity and platform support
 
-| Capability | Native macOS | Electron macOS | Electron Windows/Linux |
-| --- | --- | --- | --- |
-| Dashboard, tray, provider controls | Yes | Yes | Build support; runtime validation required |
-| Side notch | Yes | Tray badges per provider | Usage widget window; tray is unavailable to Linux apps under WSLg |
-| Hosted-PWA QR pairing | Yes | No | No |
-| Launch at login | macOS service | Electron login item | XDG desktop-autostart entry |
-| Auto-update | Sparkle, signed appcast | No (unsigned) | Yes, silent via GitHub Releases |
-| Claude credentials | macOS Keychain | Existing macOS Keychain, read-only | Unsupported until a verified platform convention is implemented |
+| Capability | Native macOS | Metria Electron |
+| --- | --- | --- |
+| Dashboard, tray, provider controls | Yes | Yes |
+| Side notch | Yes | Usage widget window (Linux) and per-provider tray badges (Windows) |
+| Hosted-PWA QR pairing | Yes | No |
+| Launch at login | macOS service | Windows login item, XDG desktop-autostart entry |
+| Auto-update | Sparkle, signed appcast | Yes, silent via GitHub Releases |
+| Provider data from WSL | No | Yes: providers stored in WSL distros are discovered and selectable per provider |
 
-Codex discovery uses `CODEX_HOME` or `~/.codex`; OpenCode discovery uses
-`XDG_DATA_HOME`/`~/.local/share` on Unix and `%APPDATA%` on Windows. These
-read-only locations are fixture-tested, not runtime-tested on Windows/Linux.
+## Provider data sources
+
+Providers are discovered in the host filesystem and in every installed WSL
+distro (Windows only). When the same provider has data in both places, the
+dashboard asks which to track once, then remembers the choice in settings:
+
+- Claude reads `~/.claude/.credentials.json` on the host and in WSL and calls
+  the Anthropic usage endpoint with the stored access token.
+- Codex reads `CODEX_HOME`/`~/.codex` (auth plus newest session) or the same
+  files inside WSL.
+- OpenCode Go reads `XDG_DATA_HOME`/`~/.local/share/opencode/auth.json` on Unix,
+  `%APPDATA%` on Windows, or the WSL path.
+
+These read-only locations are fixture-tested, not runtime-tested on
+Windows/Linux.
 
 Use `METRIA_SYNTHETIC=1 npm run dev` for a no-credential, no-provider-network
 smoke run. It generates synthetic provider data.
-
-## Provider status
-
-- Codex: reads the same Unix-style session locations as native Metria when they
-  exist. Windows paths are intentionally not guessed.
-- OpenCode Go: reads the Unix auth file and calls the existing usage endpoint;
-  Windows support awaits verified credential-path evidence.
-- Claude: on macOS, reads the existing Claude Code Keychain entry without
-  updating it; other platforms show an actionable unsupported state.
 
 Windows and Linux packages must be created and runtime-tested on those systems;
 they are not claimed as verified from macOS.

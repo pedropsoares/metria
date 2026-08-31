@@ -1,5 +1,5 @@
 appId: com.metria.electron
-productName: Metria Desktop
+productName: Metria Electron
 icon: resources/icon.png
 directories:
   output: release
@@ -7,21 +7,16 @@ directories:
 files:
   - dist/**
   - package.json
-mac:
-  category: public.app-category.productivity
-  target:
-    - dmg
-  artifactName: Metria-Desktop-${version}-${arch}.${ext}
 win:
   target:
     - nsis
-  artifactName: Metria-Desktop-Setup-${version}-${arch}.${ext}
+  artifactName: Metria-Electron-Setup-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
   category: Utility
   syncDesktopName: true
-  artifactName: Metria-Desktop-${version}-${arch}.${ext}
+  artifactName: Metria-Electron-${version}-${arch}.${ext}
 publish:
   provider: github
   owner: yurirxmos

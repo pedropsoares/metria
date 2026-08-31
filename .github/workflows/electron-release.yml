@@ -23,8 +23,6 @@ jobs:
             target: linux
           - runner: windows-latest
             target: win
-          - runner: macos-latest
-            target: mac
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -40,7 +38,7 @@ jobs:
         working-directory: apps/electron
 
       # The Electron artifacts are unsigned (no certificate secrets for this app):
-      # Windows SmartScreen or macOS Gatekeeper may warn when installing them.
+      # Windows SmartScreen may warn when installing them.
       - name: Package
         run: npm run package
         working-directory: apps/electron
@@ -67,9 +65,9 @@ jobs:
           path: release
 
       # Keep exactly one installer per platform (plus the mandatory update
-      # channel files), so the release reads Metria-Windows/Linux/macOS.
-      # Native macOS artifacts (Metria-v*) and appcast.xml belong to the native
-      # Sparkle update flow and are preserved.
+      # channel files), so the release reads Metria-Windows/Linux. macOS users
+      # get the native app (Metria-v*.dmg, appcast.xml); previously published
+      # Electron macOS artifacts are removed so the release stays unambiguous.
       - name: Clean stale Electron assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,7 +76,7 @@ jobs:
           assets="$(gh release view "$tag" --json assets -q '.assets[].name' 2>/dev/null || true)"
           for asset in $assets; do
             case "$asset" in
-              Metria-Desktop-*.deb|Metria-Desktop-*.blockmap|Metria-Desktop-*.zip|builder-debug.yml|latest-mac.yml)
+              Metria-Electron-*.deb|Metria-Electron-*.blockmap|Metria-Electron-*.zip|Metria-Electron-*.dmg|Metria-Desktop-*|builder-debug.yml|latest-mac.yml)
                 gh release delete-asset "$tag" "$asset" --repo "${{ github.repository }}" -y || true;;
             esac
           done
@@ -88,7 +86,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.version || github.ref_name }}"
-          artifacts="$(find release -maxdepth 1 -type f \( -name 'Metria-Desktop-Setup-*.exe' -o -name 'Metria-Desktop-*.AppImage' -o -name 'Metria-Desktop-*.dmg' -o -name 'latest.yml' -o -name 'latest-linux.yml' \))"
+          artifacts="$(find release -maxdepth 1 -type f \( -name 'Metria-Electron-Setup-*.exe' -o -name 'Metria-Electron-*.AppImage' -o -name 'latest.yml' -o -name 'latest-linux.yml' \))"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" $artifacts --clobber --repo "${{ github.repository }}"
           else

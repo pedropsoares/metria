@@ -5,7 +5,7 @@
   "description": "Cross-platform Electron implementation of Metria",
   "author": "Metria <metria@users.noreply.github.com>",
   "homepage": "https://github.com/yurirxmos/metria",
-  "desktopName": "Metria Desktop",
+  "desktopName": "Metria Electron",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "npm run build && electron .",

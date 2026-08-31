@@ -19,6 +19,7 @@ export interface AppSettings {
   refreshIntervalSeconds: number;
   enabledProviders: ProviderKind[];
   widgetYOffset: number;
+  providerSource: Partial<Record<ProviderKind, ProviderSourceChoice>>;
 }
 
 export interface CardShowPayload {
@@ -41,6 +42,49 @@ export interface MetriaApi {
   setWidgetYOffset(offsetY: number): Promise<AppSettings>;
   getLoginItemStatus(): Promise<LoginItemStatus>;
   setLaunchAtLogin(enabled: boolean): Promise<LoginItemStatus>;
+  getAppInfo(): Promise<AppInfo>;
+  checkUpdates(): Promise<UpdateCheckResult>;
+  installUpdate(): Promise<void>;
+  uninstall(): Promise<UninstallResult>;
+  quit(): Promise<void>;
+  setRefreshInterval(seconds: number): Promise<AppSettings>;
+  getProviderSources(): Promise<ProviderSourceInfo[]>;
+  setProviderSource(kind: ProviderKind, source: ProviderSourceChoice): Promise<AppSettings>;
 }
 
 export interface LoginItemStatus { available: boolean; enabled: boolean; message: string; }
+
+export interface AppInfo {
+  version: string;
+  platform: string;
+  packaged: boolean;
+  dataPath: string;
+}
+
+export interface UpdateCheckResult {
+  status: "up-to-date" | "downloaded" | "unavailable" | "error";
+  message: string;
+}
+
+export interface UninstallResult {
+  opened: boolean;
+  message: string;
+}
+
+export interface ProviderSourceChoice {
+  location: "host" | "wsl";
+  distro?: string;
+}
+
+export interface WslPresence {
+  distro: string;
+  present: boolean;
+}
+
+export interface ProviderSourceInfo {
+  kind: ProviderKind;
+  host: boolean;
+  wsl: WslPresence[];
+  source: ProviderSourceChoice | null;
+  needsChoice: boolean;
+}
