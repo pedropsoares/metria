@@ -1,7 +1,6 @@
 import { buildPushHTTPRequest } from "@pushforge/builder";
 
 const encoder = new TextEncoder();
-const PUSH_INTERVAL_MS = 5 * 60 * 1000;
 const NOTIFICATION_TAG = "metria-usage";
 
 function jsonResponse(value, status = 200) {
@@ -68,14 +67,24 @@ async function rememberTopic(env, topic) {
   }
 }
 
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function sendUsageToTopic(env, topic, snapshot) {
   const now = Date.now();
-  const lastPush = Number(await env.METRIA_PUSH_SUBSCRIPTIONS.get(`push:${topic}`) || 0);
-  if (now - lastPush < PUSH_INTERVAL_MS) return 0;
-
   const subscriptionKey = `subscriptions:${topic}`;
   const subscriptions = JSON.parse((await env.METRIA_PUSH_SUBSCRIPTIONS.get(subscriptionKey)) || "[]");
   if (subscriptions.length === 0) return 0;
+
+  // Only push when the snapshot actually changed — otherwise an unchanged snapshot
+  // would keep triggering a push and a KV write indefinitely.
+  const content = JSON.stringify(snapshot.providers ?? []);
+  const hashKey = `pushHash:${topic}`;
+  const contentHash = await sha256Hex(content);
+  const lastHash = await env.METRIA_PUSH_SUBSCRIPTIONS.get(hashKey);
+  if (lastHash === contentHash) return 0;
 
   const payload = usageNotification(snapshot);
   const results = await Promise.allSettled(subscriptions.map((subscription) => sendPush(env, subscription, payload, NOTIFICATION_TAG)));
@@ -86,17 +95,8 @@ async function sendUsageToTopic(env, topic, snapshot) {
   if (activeSubscriptions.length !== subscriptions.length) {
     await env.METRIA_PUSH_SUBSCRIPTIONS.put(subscriptionKey, JSON.stringify(activeSubscriptions));
   }
-  await env.METRIA_PUSH_SUBSCRIPTIONS.put(`push:${topic}`, String(now));
+  await env.METRIA_PUSH_SUBSCRIPTIONS.put(hashKey, contentHash);
   return results.filter((result) => result.status === "fulfilled").length;
-}
-
-async function notifyStoredSnapshots(env) {
-  const topics = String(await env.METRIA_PUSH_SUBSCRIPTIONS.get("topics") || "").split(",").filter(Boolean);
-  for (const topic of topics) {
-    const snapshot = JSON.parse((await env.METRIA_PUSH_SUBSCRIPTIONS.get(`snapshot:${topic}`)) || "null");
-    if (!Array.isArray(snapshot?.providers)) continue;
-    await sendUsageToTopic(env, topic, snapshot);
-  }
 }
 
 async function subscribe(request, env) {
@@ -147,8 +147,5 @@ export default {
     } catch {
       return jsonResponse({ error: "Request failed" }, 500);
     }
-  },
-  async scheduled(controller, env) {
-    await notifyStoredSnapshots(env);
   }
 };

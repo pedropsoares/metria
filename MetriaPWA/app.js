@@ -175,11 +175,11 @@ async function loadLocalSnapshot(secretBase64) {
 
 async function restoreLocalSnapshot(secretBase64) {
   clearInterval(snapshotPollingTimer);
-  if (await loadLocalSnapshot(secretBase64)) return;
-  setStatus("Waiting", "connecting");
-  snapshotPollingTimer = setInterval(async () => {
-    if (await loadLocalSnapshot(secretBase64)) clearInterval(snapshotPollingTimer);
-  }, 3000);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (await loadLocalSnapshot(secretBase64)) return;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  setStatus("Offline", "offline");
 }
 
 form.addEventListener("submit", async (event) => {
