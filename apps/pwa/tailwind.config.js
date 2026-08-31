@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./MetriaPWA/index.html", "./MetriaPWA/app.js"],
+  content: ["./public/index.html", "./public/app.js"],
   theme: {
     extend: {}
   },

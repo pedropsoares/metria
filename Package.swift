@@ -15,7 +15,7 @@ let package = Package(
             name: "Metria",
             dependencies: ["MetriaCore", .product(name: "Sparkle", package: "Sparkle")],
              path: ".",
-             exclude: ["AGENTS.md", "README.md", "LICENSE", ".build", "dist", "node_modules", ".github", ".agents", ".claude", "scripts", "src", "plans", "skills-lock.json", "package.json", "package-lock.json", "tailwind.config.js", "wrangler.jsonc", "MetriaPWA/tailwind.input.css", "MetriaPWA/claude-logo.png", "MetriaPWA/codex-logo.png", "MetriaPWA/opencode-logo.png", "MetriaPWA/metria-logo.png", "MetriaPWA/metria-mascot.png", "Assets/Metria.iconset", "apps/electron", "apps/macos-native/Sources/MetriaCore", "apps/macos-native/Metria.xcodeproj", "apps/macos-native/project.yml", "apps/macos-native/scripts"],
+             exclude: ["AGENTS.md", "README.md", "LICENSE", ".build", "dist", "node_modules", ".github", ".agents", ".claude", "scripts", "plans", "skills-lock.json", "Assets/Metria.iconset", "apps/electron", "apps/macos-native/Sources/MetriaCore", "apps/macos-native/Metria.xcodeproj", "apps/macos-native/project.yml", "apps/macos-native/scripts", "apps/pwa/src", "apps/pwa/package.json", "apps/pwa/package-lock.json", "apps/pwa/tailwind.config.js", "apps/pwa/wrangler.jsonc", "apps/pwa/public/tailwind.input.css", "apps/pwa/public/claude-logo.png", "apps/pwa/public/codex-logo.png", "apps/pwa/public/opencode-logo.png", "apps/pwa/public/metria-logo.png", "apps/pwa/public/metria-mascot.png"],
             sources: [
                 "apps/macos-native/Sources/Metria/MetriaApp.swift",
                 "apps/macos-native/Sources/Metria/MetriaResources.swift",
@@ -37,16 +37,16 @@ let package = Package(
                 .copy("Assets/metria-logo.png"),
                 .copy("Assets/metria-mascot.png"),
                 .copy("Assets/opencode-logo.png"),
-                .copy("MetriaPWA/app.css"),
-                .copy("MetriaPWA/app.js"),
-                .copy("MetriaPWA/icon.svg"),
-                .copy("MetriaPWA/index.html"),
-                .copy("MetriaPWA/jsQR.js"),
-                .copy("MetriaPWA/manifest.json"),
-                .copy("MetriaPWA/pairing.js"),
-                .copy("MetriaPWA/scanner.js"),
-                .copy("MetriaPWA/sw.js"),
-                .copy("MetriaPWA/wordlist.js")
+                 .copy("apps/pwa/public/app.css"),
+                 .copy("apps/pwa/public/app.js"),
+                 .copy("apps/pwa/public/icon.svg"),
+                 .copy("apps/pwa/public/index.html"),
+                 .copy("apps/pwa/public/jsQR.js"),
+                 .copy("apps/pwa/public/manifest.json"),
+                 .copy("apps/pwa/public/pairing.js"),
+                 .copy("apps/pwa/public/scanner.js"),
+                 .copy("apps/pwa/public/sw.js"),
+                 .copy("apps/pwa/public/wordlist.js")
             ]
         )
     ]

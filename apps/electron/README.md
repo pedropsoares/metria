@@ -22,7 +22,9 @@ the repository root with `swift build`.
 
 - `src/main/` owns provider files, network calls, settings, tray, and IPC.
 - `src/preload/` exposes only the typed `window.metria` methods.
-- `src/renderer/` is sandboxed; it has no Node or Electron imports.
+- `src/renderer/` is sandboxed; it has no Node or Electron imports. The
+  dashboard, usage widget, and hover card are React apps using TanStack Query
+  and Tailwind v4, bundled by Vite into `dist/renderer/`.
 - Browser windows use `contextIsolation: true`, `sandbox: true`, and
   `nodeIntegration: false`; every IPC method validates its sender and arguments.
 
@@ -30,21 +32,17 @@ Electron stores its settings in its own `com.metria.electron` application-data
 namespace. It must not modify native Metria's UserDefaults, Keychain services,
 Sparkle feed, or app bundle.
 
-Phone sync is **off by default**. A user must explicitly enable it in the
-dashboard before Metria posts encrypted snapshots to `ntfy.sh`. Its pairing
-secret is held only in Electron secure storage; if the OS keychain/keyring is
-unavailable, pairing is disabled rather than falling back to plaintext storage.
-The local PWA server is loopback-only, has an authenticated snapshot endpoint,
-and rejects traversal and non-file requests. Pairing links retain the native
-and PWA HKDF/AES-GCM protocol compatibility.
+Phone pairing and phone sync (the hosted-PWA feature) are not included in the
+Electron implementation. It does not run a loopback PWA server, generate pairing
+links, or post encrypted snapshots to `ntfy.sh`.
 
 ## Parity and platform support
 
 | Capability | Native macOS | Electron macOS | Electron Windows/Linux |
 | --- | --- | --- | --- |
 | Dashboard, tray, provider controls | Yes | Yes | Build support; runtime validation required |
-| Side notch | Yes | Right-edge desktop rail | Desktop rail; runtime validation required |
-| Hosted-PWA QR pairing | Yes | Yes, opt-in | Build support; runtime validation required |
+| Side notch | Yes | Tray badges per provider | Usage widget window; tray is unavailable to Linux apps under WSLg |
+| Hosted-PWA QR pairing | Yes | No | No |
 | Launch at login | macOS service | Electron login item | XDG desktop-autostart entry |
 | Claude credentials | macOS Keychain | Existing macOS Keychain, read-only | Unsupported until a verified platform convention is implemented |
 
@@ -53,7 +51,7 @@ Codex discovery uses `CODEX_HOME` or `~/.codex`; OpenCode discovery uses
 read-only locations are fixture-tested, not runtime-tested on Windows/Linux.
 
 Use `METRIA_SYNTHETIC=1 npm run dev` for a no-credential, no-provider-network
-smoke run. It generates synthetic provider data and keeps opt-in phone sync off.
+smoke run. It generates synthetic provider data.
 
 ## Provider status
 

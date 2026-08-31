@@ -6,9 +6,7 @@ import type { AppSettings, ProviderKind } from "../shared/types";
 const defaults: AppSettings = {
   refreshIntervalSeconds: 300,
   enabledProviders: ["Claude", "Codex", "OpenCode Go"],
-  phoneSyncEnabled: false,
-  displayMode: "tray",
-  notchPinned: true
+  widgetYOffset: 12
 };
 
 export class SettingsStore {
@@ -20,16 +18,12 @@ export class SettingsStore {
       return {
         refreshIntervalSeconds: Number.isFinite(parsed.refreshIntervalSeconds) ? Math.max(60, Number(parsed.refreshIntervalSeconds)) : defaults.refreshIntervalSeconds,
         enabledProviders: Array.isArray(parsed.enabledProviders) ? parsed.enabledProviders.filter(isProviderKind) : defaults.enabledProviders,
-        phoneSyncEnabled: parsed.phoneSyncEnabled === true,
-        displayMode: parsed.displayMode === "notch" ? "notch" : "tray",
-        notchPinned: parsed.notchPinned === true
+        widgetYOffset: Number.isFinite(parsed.widgetYOffset) && Number(parsed.widgetYOffset) >= 0 ? Number(parsed.widgetYOffset) : defaults.widgetYOffset
       };
     } catch { return defaults; }
   }
 
-  setPhoneSyncEnabled(phoneSyncEnabled: boolean): AppSettings { return this.save({ ...this.load(), phoneSyncEnabled }); }
-  setDisplayMode(displayMode: AppSettings["displayMode"]): AppSettings { return this.save({ ...this.load(), displayMode }); }
-  setNotchPinned(notchPinned: boolean): AppSettings { return this.save({ ...this.load(), notchPinned }); }
+  setWidgetYOffset(widgetYOffset: number): AppSettings { return this.save({ ...this.load(), widgetYOffset }); }
 
   private save(next: AppSettings): AppSettings {
     mkdirSync(dirname(this.path), { recursive: true });

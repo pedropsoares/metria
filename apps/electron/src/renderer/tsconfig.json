@@ -1,0 +1,8 @@
+{
+  // Editor discovery shim: the TypeScript language server resolves the nearest
+  // tsconfig.json, and the app-level tsconfig.json excludes src/renderer. This
+  // file points the editor at the renderer configuration so renderer files get
+  // the same typing (including the shared MetriaApi globals) as `npm run
+  // typecheck`. All settings live in apps/electron/tsconfig.renderer.json.
+  "extends": "../../tsconfig.renderer.json"
+}

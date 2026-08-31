@@ -7,9 +7,6 @@ directories:
 files:
   - dist/**
   - package.json
-extraResources:
-  - from: ../../MetriaPWA
-    to: MetriaPWA
 mac:
   category: public.app-category.productivity
   artifactName: Metria-Desktop-${version}-${arch}.${ext}

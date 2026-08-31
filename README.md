@@ -40,6 +40,7 @@ Metria serves the iPhone companion locally from your Mac by default. Start Metri
 Local HTTP access works in Safari but cannot be installed as an offline PWA because iOS requires HTTPS for that capability. Metria uses the hosted Cloudflare PWA by default at `https://metria-pwa.yuriramos2406.workers.dev`. Clear **Settings > iPhone > Custom PWA URL** to pair through the local server instead. Build and deploy the static files with:
 
 ```sh
+cd apps/pwa
 npm ci
 npm run build
 npm run deploy
@@ -109,6 +110,7 @@ This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Relea
 - `apps/macos-native/Sources/MetriaCore/UsageStore.swift` — native usage state, provider seam, and refresh/retry logic.
 - `apps/macos-native/scripts/package-macos.sh` — reproducible native macOS app bundle and archive builder.
 - `apps/electron/` — parallel Electron implementation with secure main/preload/renderer boundaries.
+- `apps/pwa/` — iPhone companion PWA and its Cloudflare Worker (`public/` holds the static site, `src/worker.js` the Worker).
 
 ## Contributing
 
@@ -117,7 +119,7 @@ Contributions are welcome! Feel free to open an issue to report a bug or suggest
 - Fork the repository and create a branch from `main`.
 - Keep changes focused and follow the existing code style.
 - Run `swift build` from the repository root to verify the package compiles.
-- For the iPhone PWA, build its stylesheet with `npm ci && npm run build`.
+- For the iPhone PWA, build its stylesheet with `cd apps/pwa && npm ci && npm run build`.
 - Keep all repository text in en-US (comments, UI strings, commit messages, docs).
 - Do not commit credentials, generated `.build/` output, or local configuration.
 
