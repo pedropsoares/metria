@@ -23,6 +23,23 @@ Shows current session and monthly usage percentages for your AI providers, surfa
 
 Provider selection, display mode, and sidebar opacity are persisted in `UserDefaults`. The floating sidebar is fixed to the right side of the screen.
 
+## Download
+
+Grab the latest stable build for your platform. Every release also attaches installers to [GitHub Releases](https://github.com/yurirxmos/metria/releases).
+
+<p align="center">
+  <a href="https://github.com/yurirxmos/metria/releases">
+    <img src="https://img.shields.io/badge/Download%20for%20macOS-000000?style=for-the-badge&logo=apple" alt="Download for macOS" />
+  </a>
+  <a href="https://github.com/yurirxmos/metria/releases">
+    <img src="https://img.shields.io/badge/Download%20for%20Windows%20%2F%20Linux-0078d4?style=for-the-badge" alt="Download for Windows and Linux" />
+  </a>
+</p>
+
+- **macOS** — native `Metria` `.dmg` (Apple Silicon and Intel, Sparkle auto-updates included).
+- **Windows** — `Metria Desktop` NSIS installer (x64).
+- **Linux** — `Metria Desktop` AppImage and `.deb` (x64).
+
 ## Providers
 
 - **Claude** — OAuth token read from the macOS Keychain, usage fetched from the Anthropic usage endpoint.
