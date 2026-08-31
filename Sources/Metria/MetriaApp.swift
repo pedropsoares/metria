@@ -337,7 +337,7 @@ struct PopoverContent: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .padding(20)
+        .padding(12)
         .frame(width: 440, height: 700)
     }
 }
@@ -510,6 +510,7 @@ struct NotchContent: View {
                 SidebarProviderItem(usage: usage, scale: metrics.scale)
                     .frame(width: metrics.idleWidth, height: metrics.providerItemHeight)
                     .contentShape(Rectangle())
+                    .help(usage.kind.rawValue)
                     .onHover { isHovering in
                         onProviderHover(usage.kind, index, isHovering)
                     }
@@ -524,10 +525,12 @@ struct NotchContent: View {
             Image(systemName: "gearshape")
                 .font(.system(size: 13 * metrics.scale))
                 .foregroundStyle(Color(white: 0.58))
+                .help("Settings")
             Image(systemName: isHiddenMode ? "pin.fill" : "arrow.right")
                 .font(.system(size: 13 * metrics.scale))
                 .foregroundStyle(Color(white: 0.58))
                 .accessibilityLabel(isHiddenMode ? "Pin notch" : "Hide notch")
+                .help(isHiddenMode ? "Pin notch" : "Hide notch")
             Spacer()
         }
         .frame(height: metrics.controlsHeight)
@@ -567,9 +570,9 @@ struct SideNotchPointer: Shape {
 final class DraggableNotchPanel: NSPanel {
     var metrics = NotchMetrics(size: .medium)
     var onDragMove: ((CGFloat) -> Void)?
-    var onGearTap: (() -> Void)?
+    var onGearTap: ((NSPoint) -> Void)?
     var onEyeTap: (() -> Void)?
-    private var lastMouseY: CGFloat?
+    private var lastMouseScreenY: CGFloat?
     private var didDrag = false
     private var didHandleControlTap = false
 
@@ -578,18 +581,19 @@ final class DraggableNotchPanel: NSPanel {
         case .leftMouseDown:
             didDrag = false
             didHandleControlTap = routeControlTap(at: event.locationInWindow)
-            lastMouseY = event.locationInWindow.y
+            lastMouseScreenY = convertPoint(toScreen: event.locationInWindow).y
         case .leftMouseDragged:
             didDrag = true
-            if let lastMouseY {
-                let currentMouseY = event.locationInWindow.y
-                onDragMove?(currentMouseY - lastMouseY)
-                self.lastMouseY = currentMouseY
+            if let lastMouseScreenY {
+                let currentMouseScreenY = convertPoint(toScreen: event.locationInWindow).y
+                onDragMove?(currentMouseScreenY - lastMouseScreenY)
+                self.lastMouseScreenY = currentMouseScreenY
             }
+            return
         case .leftMouseUp:
             if !didDrag && !didHandleControlTap { _ = routeControlTap(at: event.locationInWindow) }
             didHandleControlTap = false
-            lastMouseY = nil
+            lastMouseScreenY = nil
         default:
             break
         }
@@ -604,7 +608,7 @@ final class DraggableNotchPanel: NSPanel {
         let controlsTop = metrics.hoverHeight - (metrics.compactHeight + metrics.controlsGap)
         let controlsBottom = controlsTop - metrics.controlsHeight
         guard point.y >= controlsBottom, point.y <= controlsTop else { return false }
-        if point.x < metrics.idleWidth / 2 { onGearTap?() } else { onEyeTap?() }
+        if point.x < metrics.idleWidth / 2 { onGearTap?(point) } else { onEyeTap?() }
         return true
     }
 }
@@ -911,7 +915,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding(20)
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .alert("Launch at login", isPresented: Binding(
             get: { launchAtLoginMessage != nil },
@@ -977,7 +981,7 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
-        .padding(20)
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .alert("Provider diagnosis", isPresented: $isDiagnosticShown) {
             Button("OK", role: .cancel) {}
@@ -1178,9 +1182,13 @@ struct SettingsView: View {
         statusItem.button?.image = nil
         statusItem.button?.title = "--"
         statusItem.button?.font = .systemFont(ofSize: 13, weight: .semibold)
+        statusItem.menu = buildAppMenu()
+    }
+
+    private func buildAppMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "")
-        menu.addItem(withTitle: "Floating mode", action: #selector(switchToSidebar), keyEquivalent: "")
+        menu.addItem(withTitle: displayMode == .menuBar ? "Notch mode" : "Menu mode", action: displayMode == .menuBar ? #selector(switchToSidebar) : #selector(switchToMenuBar), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         if updater.isConfigured {
@@ -1190,7 +1198,13 @@ struct SettingsView: View {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
-        statusItem.menu = menu
+        return menu
+    }
+
+    private func showNotchMenu(at windowPoint: NSPoint) {
+        guard let contentView = sidebarWindow?.contentView else { return }
+        let anchor = contentView.convert(windowPoint, from: nil)
+        buildAppMenu().popUp(positioning: nil, at: anchor, in: contentView)
     }
 
     private func configurePopover() { popover = NSPopover(); popover.behavior = .transient; popover.contentSize = NSSize(width: 440, height: 700); popover.contentViewController = NSHostingController(rootView: PopoverContent(store: store)) }
@@ -1213,7 +1227,7 @@ struct SettingsView: View {
         sidebarWindow = notchPanel
         notchPanel.metrics = notchMetrics
         notchPanel.onDragMove = { [weak self] deltaY in self?.moveNotch(by: deltaY) }
-        notchPanel.onGearTap = { [weak self] in self?.openSettings() }
+        notchPanel.onGearTap = { [weak self] point in self?.showNotchMenu(at: point) }
         notchPanel.onEyeTap = { [weak self] in
             guard let self else { return }
             self.setHiddenNotch(!self.notchMode.isHiddenMode)
