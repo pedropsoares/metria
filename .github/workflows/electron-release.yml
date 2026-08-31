@@ -68,13 +68,16 @@ jobs:
 
       # Same tag as the native macOS release workflow: upload alongside if the
       # release already exists, otherwise create it with all artifacts.
+      # Only files: electron-builder also leaves directories (e.g. linux-unpacked)
+      # in release/ and gh release upload cannot take directories.
       - name: Attach to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.version || github.ref_name }}"
+          artifacts="$(find release -maxdepth 1 -type f)"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" release/* --repo "${{ github.repository }}"
+            gh release upload "$tag" $artifacts --repo "${{ github.repository }}"
           else
-            gh release create "$tag" release/* --title "$tag" --generate-notes --repo "${{ github.repository }}"
+            gh release create "$tag" $artifacts --title "$tag" --generate-notes --repo "${{ github.repository }}"
           fi
