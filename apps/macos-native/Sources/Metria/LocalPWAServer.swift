@@ -81,7 +81,11 @@ import Network
         connection.start(queue: queue)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
             Task { @MainActor in
-                let response = self?.response(for: data) ?? Self.response(status: "500 Internal Server Error", body: Data())
+                guard let self else {
+                    connection.send(content: Self.response(status: "500 Internal Server Error", body: Data()), completion: .contentProcessed { _ in connection.cancel() })
+                    return
+                }
+                let response = self.response(for: data)
                 connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
             }
         }
