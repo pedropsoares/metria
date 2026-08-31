@@ -57,7 +57,11 @@ if [[ -n "${SPARKLE_FEED_URL:-}" && -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
 fi
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
-    codesign --deep --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
+    if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
+        codesign --force --sign - "$APP_BUNDLE"
+    else
+        codesign --deep --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
+    fi
     codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 else
     printf '%s\n' "Warning: CODESIGN_IDENTITY is not set; this archive is unsigned."
