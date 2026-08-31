@@ -12,7 +12,7 @@ enum ProviderError: Error, LocalizedError {
         case .unavailable:
             return "Provider data is unavailable."
         case .http(401):
-            return "Authentication expired. Sign in again to refresh usage."
+            return "Authentication expired and could not be refreshed."
         case .http(403):
             return "The provider rejected the stored credentials."
         case .http(let status):

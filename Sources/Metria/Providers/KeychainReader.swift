@@ -14,7 +14,7 @@ enum KeychainReader {
         return SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
     }
 
-    static func readClaudeToken() async throws -> String {
+    static func readClaudeCredentials() async throws -> ClaudeCredentials {
         let process = Process(); let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
         process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w", "-g"]
@@ -22,8 +22,48 @@ enum KeychainReader {
         try process.run(); process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw ProviderError.unavailable }
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        let credentials = try JSONDecoder().decode(ClaudeCredentials.self, from: data)
-        return credentials.claudeAiOauth.accessToken
+        guard let document = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let oauth = document["claudeAiOauth"] as? [String: Any],
+              let accessToken = oauth["accessToken"] as? String,
+              let refreshToken = oauth["refreshToken"] as? String else {
+            throw ProviderError.unavailable
+        }
+        return ClaudeCredentials(
+            document: document,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            scopes: oauth["scopes"] as? [String]
+        )
     }
-    private struct ClaudeCredentials: Decodable { let claudeAiOauth: OAuth; struct OAuth: Decodable { let accessToken: String } }
+
+    static func saveClaudeCredentials(
+        _ credentials: ClaudeCredentials,
+        accessToken: String,
+        refreshToken: String,
+        expiresIn: TimeInterval
+    ) throws {
+        guard var oauth = credentials.document["claudeAiOauth"] as? [String: Any] else {
+            throw ProviderError.unavailable
+        }
+        oauth["accessToken"] = accessToken
+        oauth["refreshToken"] = refreshToken
+        oauth["expiresAt"] = Int((Date().timeIntervalSince1970 + expiresIn) * 1_000)
+
+        var document = credentials.document
+        document["claudeAiOauth"] = oauth
+        let data = try JSONSerialization.data(withJSONObject: document)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Claude Code-credentials"
+        ]
+        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        guard status == errSecSuccess else { throw ProviderError.unavailable }
+    }
+
+    struct ClaudeCredentials {
+        fileprivate let document: [String: Any]
+        let accessToken: String
+        let refreshToken: String
+        let scopes: [String]?
+    }
 }
