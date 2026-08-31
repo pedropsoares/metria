@@ -1,4 +1,4 @@
-name: Release Electron app
+name: win & linux app deploy
 
 on:
   push:
