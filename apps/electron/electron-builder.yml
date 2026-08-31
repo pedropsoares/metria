@@ -7,6 +7,9 @@ directories:
 files:
   - dist/**
   - package.json
+extraResources:
+  - from: ../Assets
+    to: MetriaPWA
 win:
   target:
     - nsis
