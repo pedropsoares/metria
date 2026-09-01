@@ -61,11 +61,13 @@ fi
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
     if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
-        codesign --force --sign - "$APP_BUNDLE"
+        printf '%s\n' "Warning: ad hoc signing is disabled for SwiftPM resource bundles."
     else
         codesign --deep --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
     fi
-    codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+    if [[ "$CODESIGN_IDENTITY" != "-" ]]; then
+        codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+    fi
 else
     printf '%s\n' "Warning: CODESIGN_IDENTITY is not set; this archive is unsigned."
 fi
