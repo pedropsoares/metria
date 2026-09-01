@@ -138,13 +138,19 @@ jobs:
             grep -q "sparkle-signatures" "appcast/$arch/appcast.xml"
             cp "appcast/$arch/appcast.xml" "dist/appcast-$arch.xml"
           done
+          # Builds through v0.1.10 all shipped with the same hardcoded SUFeedURL
+          # (a single "appcast.xml", not the arch-specific files above). Keep
+          # publishing that legacy name pointed at the Intel feed - historically
+          # the only one that ever validated - so those installs do not get
+          # stuck permanently unable to auto-update.
+          cp "dist/appcast-intel.xml" "dist/appcast.xml"
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.version || github.ref_name }}"
-          assets="dist/*.zip dist/*.dmg dist/appcast-intel.xml dist/appcast-apple-silicon.xml"
+          assets="dist/*.zip dist/*.dmg dist/appcast-intel.xml dist/appcast-apple-silicon.xml dist/appcast.xml"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" $assets --clobber --repo "${{ github.repository }}"
           else
