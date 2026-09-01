@@ -3,7 +3,7 @@
 *A native macOS app and parallel Electron app that track your AI coding assistant usage in real time.*
 
 <p align="center">
-  <img src="https://i.imgur.com/JrV7abR.png" alt="Metria banner" width="480" />
+  <img src="https://i.imgur.com/shpAcSm.gif" alt="Metria demo" width="720" />
 </p>
 
 <p align="center">
