@@ -1,12 +1,13 @@
 import { app } from "electron";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ALL_PROVIDER_KINDS, DEFAULT_REFRESH_INTERVAL_SECONDS, DEFAULT_WIDGET_Y_OFFSET, isProviderKind } from "../shared/types";
 import type { AppSettings, ProviderKind, ProviderSourceChoice } from "../shared/types";
 
 const defaults: AppSettings = {
-  refreshIntervalSeconds: 300,
-  enabledProviders: ["Claude", "Codex", "OpenCode Go"],
-  widgetYOffset: 12,
+  refreshIntervalSeconds: DEFAULT_REFRESH_INTERVAL_SECONDS,
+  enabledProviders: [...ALL_PROVIDER_KINDS],
+  widgetYOffset: DEFAULT_WIDGET_Y_OFFSET,
   providerSource: {}
 };
 
@@ -54,15 +55,11 @@ export class SettingsStore {
   }
 }
 
-function isProviderKind(value: unknown): value is ProviderKind {
-  return value === "Claude" || value === "Codex" || value === "OpenCode Go";
-}
-
 function normalizeProviderSource(value: unknown): Partial<Record<ProviderKind, ProviderSourceChoice>> {
   if (typeof value !== "object" || value === null) return {};
   const source = value as Record<string, unknown>;
   const normalized: Partial<Record<ProviderKind, ProviderSourceChoice>> = {};
-  (["Claude", "Codex", "OpenCode Go"] as ProviderKind[]).forEach((kind) => {
+  ALL_PROVIDER_KINDS.forEach((kind) => {
     const entry = source[kind];
     if (typeof entry !== "object" || entry === null) return;
     const candidate = entry as Record<string, unknown>;

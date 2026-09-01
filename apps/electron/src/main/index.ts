@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell, Tray } f
 import { autoUpdater } from "electron-updater";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { ALL_PROVIDER_KINDS, CARD_WIDTH, isProviderKind, PROVIDER_LOGOS, providerShortLabel, WIDGET_ITEM_HEIGHT } from "../shared/types";
 import { ProviderService } from "./providers";
 import { SettingsStore } from "./settings";
 import type { ProviderKind, ProviderSourceChoice, ProviderUsage } from "../shared/types";
@@ -43,12 +44,13 @@ function createWindow(): BrowserWindow {
 
 function showDashboard(): void { if (!window) window = createWindow(); window.show(); window.focus(); }
 
-/** Opaque compact widget that is always visible on Linux, where the system
- * tray (StatusNotifierItem) is unavailable to GUI apps, including WSLg. */
+/** Opaque compact widget that stays visible on Windows and Linux. Linux needs
+ * it because the system tray is unavailable to some GUI environments; Windows
+ * uses it as the primary provider surface instead of separate tray badges. */
 const WIDGET_WIDTH = 88;
-const WIDGET_ITEM_HEIGHT = 52;
 const WIDGET_ITEM_GAP = 8;
 const WIDGET_PADDING = 12;
+function supportsWidget(): boolean { return process.platform === "win32" || process.platform === "linux"; }
 function displayArea(): Electron.Rectangle {
   return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
 }
@@ -80,9 +82,7 @@ function updateWidgetBounds(values: typeof lastUsage): void {
 }
 
 /** Hover card shown to the left of the widget while pointing at a provider. */
-const CARD_WIDTH = 316;
 const CARD_SPACING = 12;
-const CARD_MAX_HEIGHT = 520;
 
 function visibleProviders(): typeof lastUsage {
   const enabled = settings.load().enabledProviders;
@@ -147,7 +147,7 @@ function refreshCard(): void {
 function cardBounds(index: number, height?: number): Electron.Rectangle {
   const area = widgetWindow?.getBounds();
   const workArea = displayArea();
-  const cardHeight = Math.min(height ?? 200, CARD_MAX_HEIGHT);
+  const cardHeight = height ?? 200;
   const anchorTop = (area ?? workArea).y;
   const itemCenterY = anchorTop + WIDGET_PADDING + index * (WIDGET_ITEM_HEIGHT + WIDGET_ITEM_GAP) + WIDGET_ITEM_HEIGHT / 2;
   // Vertically center the card on the hovered item.
@@ -165,8 +165,6 @@ function positionCard(index: number, height?: number): void {
 }
 
 interface UsageRow { name: string; percent: number; reset: string; logo: string; }
-const TRAY_LOGOS: Record<ProviderKind, string> = { Claude: "claude-logo.png", Codex: "codex-logo.png", "OpenCode Go": "opencode-logo.png" };
-function providerLabel(kind: ProviderKind): string { return kind === "OpenCode Go" ? "Go" : kind; }
 function formatReset(resetDate: string | null): string {
   if (!resetDate) return "";
   const seconds = (new Date(resetDate).getTime() - Date.now()) / 1000;
@@ -187,10 +185,10 @@ function trayMenuIcon(name: string): Electron.NativeImage | undefined {
 function usageRows(providers: typeof lastUsage): UsageRow[] {
   const enabled = settings.load().enabledProviders;
   return providers.filter((provider) => enabled.includes(provider.kind) && provider.windows[0]).map((provider) => ({
-    name: providerLabel(provider.kind),
+    name: providerShortLabel(provider.kind),
     percent: Math.round(Math.max(0, Math.min(100, provider.windows[0]!.percent))),
     reset: formatReset(provider.windows[0]!.resetDate),
-    logo: TRAY_LOGOS[provider.kind]
+    logo: PROVIDER_LOGOS[provider.kind]
   }));
 }
 function buildTrayMenu(rows: UsageRow[]): Menu {
@@ -264,13 +262,13 @@ function updateBadges(providers: typeof lastUsage): void {
   }
   for (const provider of active) {
     const { percent, reset } = badgeStatus(provider);
-    const tooltip = `${providerLabel(provider.kind)} — ${percent}%${reset ? ` · ${reset}` : ""}`;
+    const tooltip = `${providerShortLabel(provider.kind)} — ${percent}%${reset ? ` · ${reset}` : ""}`;
     const existing = badgeTrays.get(provider.kind);
     if (existing) {
       existing.setToolTip(tooltip);
       continue;
     }
-    const icon = trayMenuIcon(TRAY_LOGOS[provider.kind]) ?? nativeImage.createFromDataURL(FALLBACK_ICON);
+    const icon = trayMenuIcon(PROVIDER_LOGOS[provider.kind]) ?? nativeImage.createFromDataURL(FALLBACK_ICON);
     const badge = new Tray(icon);
     badge.setToolTip(tooltip);
     badge.setContextMenu(Menu.buildFromTemplate(badgeTemplate()));
@@ -279,7 +277,6 @@ function updateBadges(providers: typeof lastUsage): void {
   }
 }
 
-function validKind(value: unknown): value is ProviderKind { return value === "Claude" || value === "Codex" || value === "OpenCode Go"; }
 function validProviderSource(value: unknown): value is ProviderSourceChoice {
   if (typeof value !== "object" || value === null) return false;
   const source = value as Record<string, unknown>;
@@ -297,8 +294,7 @@ function requireTrustedSender(event: Electron.IpcMainInvokeEvent): void {
 }
 // The dashboard must show every provider (enabled or not) so users can re-enable
 // from there; taps, badges, and the widget keep filtering by enabledProviders.
-const ALL_KINDS: ProviderKind[] = ["Claude", "Codex", "OpenCode Go"];
-async function usage() { const values = await providers.fetch(ALL_KINDS); lastUsage = values; updateTray(values); if (process.platform === "linux") { updateWidgetBounds(values); refreshCard(); } else updateBadges(values); return values; }
+async function usage() { const values = await providers.fetch(ALL_PROVIDER_KINDS); lastUsage = values; updateTray(values); if (supportsWidget()) { updateWidgetBounds(values); refreshCard(); } else updateBadges(values); return values; }
 function loginItemStatus(): { available: boolean; enabled: boolean; message: string } {
   if (process.platform === "linux") { const path = linuxAutostartPath(); return { available: true, enabled: existsSync(path), message: existsSync(path) ? "Metria Electron starts through your desktop autostart entry." : "Metria Electron does not start automatically." }; }
   const enabled = app.getLoginItemSettings().openAtLogin;
@@ -325,7 +321,7 @@ if (process.platform === "linux") {
 }
 app.whenReady().then(() => {
   createTray(); showDashboard(); initAutoUpdater();
-  if (process.platform === "linux") {
+  if (supportsWidget()) {
     widgetWindow = createWidgetWindow();
     widgetWindow.setBounds(widgetBounds(displayArea(), 0));
     widgetWindow.showInactive();
@@ -346,7 +342,7 @@ app.whenReady().then(() => {
   ipcMain.handle("metria:refresh", (event) => { requireTrustedSender(event); return usage(); });
   ipcMain.handle("metria:get-settings", (event) => { requireTrustedSender(event); return settings.load(); });
   ipcMain.handle("metria:set-provider-enabled", (event, kind: unknown, enabled: unknown) => {
-    requireTrustedSender(event); if (!validKind(kind) || typeof enabled !== "boolean") throw new Error("Invalid provider setting.");
+    requireTrustedSender(event); if (!isProviderKind(kind) || typeof enabled !== "boolean") throw new Error("Invalid provider setting.");
     const next = settings.setProviderEnabled(kind, enabled);
     // The widget (notch) keeps its own settings snapshot; refresh it and the bounds now.
     updateWidgetBounds(lastUsage);
@@ -354,7 +350,7 @@ app.whenReady().then(() => {
     return next;
   });
   ipcMain.handle("metria:reconnect", async (event, kind: unknown) => {
-    requireTrustedSender(event); if (!validKind(kind)) throw new Error("Invalid provider.");
+    requireTrustedSender(event); if (!isProviderKind(kind)) throw new Error("Invalid provider.");
     const command = kind === "Claude" ? "claude auth login" : kind === "Codex" ? "codex login" : "opencode auth login";
     await shell.openPath(app.getPath("home"));
     return { command, message: `Run \`${command}\` in your terminal, then refresh Metria.` };
@@ -425,11 +421,11 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("metria:get-provider-sources", (event) => {
     requireTrustedSender(event);
-    return providers.sources(ALL_KINDS);
+    return providers.sources(ALL_PROVIDER_KINDS);
   });
   ipcMain.handle("metria:set-provider-source", (event, kind: unknown, source: unknown) => {
     requireTrustedSender(event);
-    if (!validKind(kind) || !validProviderSource(source)) throw new Error("Invalid provider source.");
+    if (!isProviderKind(kind) || !validProviderSource(source)) throw new Error("Invalid provider source.");
     const next = settings.setProviderSource(kind, source);
     updateWidgetBounds(lastUsage);
     widgetWindow?.webContents.send("metria:settings-changed");

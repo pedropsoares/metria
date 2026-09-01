@@ -2,8 +2,10 @@ import { join } from "node:path";
 
 export interface PathEnvironment { platform: NodeJS.Platform; home: string; env: NodeJS.ProcessEnv; }
 
+export interface ProviderPaths { codexAuth: string; codexSessions: string; openCodeAuth: string; claudeCredentials: string; }
+
 /** Vendor-owned roots only; environment overrides take precedence so portable installs stay opt-in. */
-export function providerPaths(context: PathEnvironment): { codexAuth: string; codexSessions: string; openCodeAuth: string; claudeCredentials: string } {
+export function providerPaths(context: PathEnvironment): ProviderPaths {
   const codexRoot = context.env.CODEX_HOME || join(context.home, ".codex");
   const dataRoot = context.platform === "win32"
     ? (context.env.APPDATA || join(context.home, "AppData", "Roaming"))

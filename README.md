@@ -17,7 +17,8 @@
 
 Shows current session and monthly usage percentages for your AI providers, surfaced in three places:
 
-- **Floating sidebar** — hover a provider logo to preview its usage card.
+- **Floating sidebar** — hover a provider logo to preview its usage card. The
+  Electron Windows/Linux app provides this as a right-edge widget.
 - **Menu bar** — compact text labels for each provider.
 - **Dashboard popover** — ring gauges plus detailed per-provider cards.
 

@@ -1,25 +1,25 @@
 import { useEffect, useRef, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { clampPercent, DEFAULT_WIDGET_Y_OFFSET, PROVIDER_LOGOS, WIDGET_ITEM_HEIGHT } from "../shared/types";
 import type { ProviderKind, ProviderUsage } from "../shared/types";
 import "./app.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
 
-const KIND: Record<ProviderKind, { logo: string; color: string }> = {
-  "Claude": { logo: "claude-logo.png", color: "#ff9f0a" },
-  "Codex": { logo: "codex-logo.png", color: "#0a84ff" },
-  "OpenCode Go": { logo: "opencode-logo.png", color: "#ffffff" }
+const ACCENT: Record<ProviderKind, string> = {
+  "Claude": "#ff9f0a",
+  "Codex": "#0a84ff",
+  "OpenCode Go": "#ffffff"
 };
 
-function percentage(value: number): number { return Math.max(0, Math.min(100, value)); }
 function primary(provider: ProviderUsage): number { return provider.windows[0]?.percent ?? 0; }
 
 function Ring({ provider }: { provider: ProviderUsage }): JSX.Element {
-  const clamped = percentage(primary(provider));
+  const clamped = clampPercent(primary(provider));
   const r = 17;
   const c = 2 * Math.PI * r;
-  const stroke = provider.kind === "Codex" ? "url(#codex-ring)" : KIND[provider.kind].color;
+  const stroke = provider.kind === "Codex" ? "url(#codex-ring)" : ACCENT[provider.kind];
   return (
     <span className="relative block h-[38px] w-[38px]">
       <svg className="absolute inset-0" width="38" height="38" viewBox="0 0 38 38">
@@ -39,7 +39,7 @@ function Ring({ provider }: { provider: ProviderUsage }): JSX.Element {
           transform="rotate(-90 19 19)"
         />
       </svg>
-      <img className="pointer-events-none absolute inset-0 m-auto h-[15px] w-[15px] object-contain" src={`./${KIND[provider.kind].logo}`} alt="" />
+      <img className="pointer-events-none absolute inset-0 m-auto h-[15px] w-[15px] object-contain" src={`./${PROVIDER_LOGOS[provider.kind]}`} alt="" />
     </span>
   );
 }
@@ -61,7 +61,7 @@ function Widget(): JSX.Element {
   });
   const drag = useRef<{ startScreenY: number; startOffset: number } | null>(null);
   const moved = useRef(false);
-  const offsetRef = useRef(12);
+  const offsetRef = useRef(DEFAULT_WIDGET_Y_OFFSET);
   const pendingTarget = useRef<number | null>(null);
   const frameScheduled = useRef(false);
   const scheduleMove = (target: number): void => {
@@ -115,13 +115,14 @@ function Widget(): JSX.Element {
           <div
             key={provider.kind}
             data-index={index}
-            className="flex h-[52px] w-16 shrink-0 cursor-pointer flex-col items-center justify-center gap-[3px]"
+            className="flex w-16 shrink-0 cursor-pointer flex-col items-center justify-center gap-[3px]"
+            style={{ height: WIDGET_ITEM_HEIGHT }}
             onClick={() => { if (!moved.current) void window.metria.openDashboard(); }}
             onMouseEnter={() => { void window.metria.setProviderHover(index); }}
           >
             <Ring provider={provider} />
             <span className="text-[11px] font-semibold leading-none text-white">
-              {Math.round(percentage(primary(provider)))}%
+              {Math.round(clampPercent(primary(provider)))}%
             </span>
           </div>
         ))}

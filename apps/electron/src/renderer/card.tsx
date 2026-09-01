@@ -1,7 +1,8 @@
 import { useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import type { CardShowPayload, ProviderKind, ProviderUsage, UsageWindow } from "../shared/types";
+import { CARD_WIDTH, clampPercent, gaugeColor, PROVIDER_LOGOS, providerShortLabel, statusDotColor } from "../shared/types";
+import type { CardShowPayload, ProviderUsage, UsageWindow } from "../shared/types";
 import "./app.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
@@ -14,19 +15,6 @@ let bufferedShow: CardShowPayload | null = null;
 const showListeners = new Set<ShowListener>();
 window.metria.onCardShow((payload) => { bufferedShow = payload; showListeners.forEach((listener) => listener(payload)); });
 window.metria.onCardHide(() => { bufferedShow = null; showListeners.forEach((listener) => listener(null)); });
-
-const KIND: Record<ProviderKind, { label: string; logo: string }> = {
-  "Claude": { label: "Claude", logo: "claude-logo.png" },
-  "Codex": { label: "Codex", logo: "codex-logo.png" },
-  "OpenCode Go": { label: "Go", logo: "opencode-logo.png" }
-};
-
-function gaugeColor(percent: number): string {
-  if (percent >= 85) return "#ff453a";
-  if (percent >= 65) return "#ff9f0a";
-  if (percent >= 40) return "#ffd60a";
-  return "#30d158";
-}
 
 function resetText(resetDate: string | null): string {
   if (!resetDate) return "No reset data";
@@ -42,7 +30,7 @@ function resetText(resetDate: string | null): string {
 }
 
 function WindowRow({ window: row }: { window: UsageWindow }): JSX.Element {
-  const percent = Math.max(0, Math.min(100, row.percent));
+  const percent = clampPercent(row.percent);
   return (
     <div className="mt-[18px] first:mt-0">
       <div className="flex items-baseline justify-between gap-3 text-[15px] leading-[1.2]">
@@ -100,13 +88,13 @@ function Card(): JSX.Element {
   );
 
   return (
-    <main className="relative flex h-fit min-w-[316px] select-none flex-col bg-surface px-6 py-7">
+    <main className="relative flex h-fit select-none flex-col bg-surface px-6 py-7" style={{ minWidth: CARD_WIDTH }}>
       <h2 className="m-0 flex items-center gap-2.5 p-0 mb-5 text-[22px] font-medium leading-none">
         {provider && (
           <>
-            <img className="h-[22px] w-[22px] shrink-0 object-contain" src={`./${KIND[provider.kind].logo}`} alt="" />
-            <span>{KIND[provider.kind].label}</span>
-            <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: provider.error ? "#ff9f0a" : "#30d158" }} />
+            <img className="h-[22px] w-[22px] shrink-0 object-contain" src={`./${PROVIDER_LOGOS[provider.kind]}`} alt="" />
+            <span>{providerShortLabel(provider.kind)}</span>
+            <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: statusDotColor(provider.error !== null) }} />
           </>
         )}
       </h2>

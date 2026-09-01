@@ -88,3 +88,37 @@ export interface ProviderSourceInfo {
   source: ProviderSourceChoice | null;
   needsChoice: boolean;
 }
+
+export const ALL_PROVIDER_KINDS: ProviderKind[] = ["Claude", "Codex", "OpenCode Go"];
+
+export function isProviderKind(value: unknown): value is ProviderKind {
+  return value === "Claude" || value === "Codex" || value === "OpenCode Go";
+}
+
+export const PROVIDER_LOGOS: Record<ProviderKind, string> = {
+  "Claude": "claude-logo.png",
+  "Codex": "codex-logo.png",
+  "OpenCode Go": "opencode-logo.png"
+};
+
+export function providerShortLabel(kind: ProviderKind): string {
+  return kind === "OpenCode Go" ? "Go" : kind;
+}
+
+export function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+export function gaugeColor(percent: number): string {
+  return percent >= 85 ? "#ff453a" : percent >= 65 ? "#ff9f0a" : percent >= 40 ? "#ffd60a" : "#30d158";
+}
+
+export function statusDotColor(hasError: boolean): string {
+  return hasError ? "#ff9f0a" : "#30d158";
+}
+
+export const WIDGET_ITEM_HEIGHT = 52;
+export const CARD_WIDTH = 316;
+export const DEFAULT_WIDGET_Y_OFFSET = 12;
+export const DEFAULT_REFRESH_INTERVAL_SECONDS = 300;
+export const PRESENCE_CACHE_TTL_MS = 30_000;

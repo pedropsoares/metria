@@ -3,13 +3,6 @@ import assert from "node:assert/strict";
 import { chooseSource } from "../main/providers";
 import type { ProviderSourceInfo } from "../shared/types";
 
-test("usage percentages are presented as bounded values", () => {
-  const bounded = (value: number) => Math.max(0, Math.min(100, value));
-  assert.equal(bounded(-4), 0);
-  assert.equal(bounded(45), 45);
-  assert.equal(bounded(101), 100);
-});
-
 function info(host: boolean, present: string[]): Pick<ProviderSourceInfo, "host" | "wsl"> {
   return {
     host,

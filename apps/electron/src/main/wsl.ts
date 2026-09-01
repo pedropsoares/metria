@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { PRESENCE_CACHE_TTL_MS } from "../shared/types";
 
 export interface WslProviderPresence {
   codex: boolean;
@@ -7,7 +8,6 @@ export interface WslProviderPresence {
 }
 
 const WSL_TIMEOUT_MS = 20_000;
-const RESULT_TTL_MS = 30_000;
 
 export interface WslExec {
   (command: string, args: string[], options?: { encoding: "buffer"; input?: string }): Promise<{ stdout: string | Buffer }>;
@@ -46,7 +46,7 @@ export function makeWslShell(options: { platform?: NodeJS.Platform; exec?: WslEx
   async function presence(distro: string): Promise<WslProviderPresence> {
     if (platform !== "win32") return { codex: false, openCode: false, claude: false };
     const cached = results.get(distro);
-    if (cached && Date.now() - cached.at < RESULT_TTL_MS) return cached.presence;
+    if (cached && Date.now() - cached.at < PRESENCE_CACHE_TTL_MS) return cached.presence;
     try {
       const stdout = await exec("wsl.exe", ["-d", distro, "sh"], { encoding: "buffer", input: PROBE_SCRIPT });
       const hits = decodeWslOutput(stdout.stdout).split(/\r?\n/).map((line) => line.trim());

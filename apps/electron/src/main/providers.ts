@@ -2,13 +2,11 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AppSettings, ProviderKind, ProviderSourceChoice, ProviderSourceInfo, ProviderUsage, UsageWindow, WslPresence } from "../shared/types";
-import { providerPaths } from "./provider-paths";
+import { PRESENCE_CACHE_TTL_MS } from "../shared/types";
+import { providerPaths, type ProviderPaths } from "./provider-paths";
 import { makeWslShell, type WslProviderPresence, type WslShell } from "./wsl";
 
-export interface ProviderPaths { codexAuth: string; codexSessions: string; openCodeAuth: string; claudeCredentials: string; }
-
 const defaultPaths: ProviderPaths = providerPaths({ platform: process.platform, home: homedir(), env: process.env });
-const PRESENCE_TTL_MS = 30_000;
 
 interface Provider {
   readonly kind: ProviderKind;
@@ -67,7 +65,7 @@ export class ProviderService {
 
   private async presence(distro: string): Promise<WslProviderPresence> {
     const cached = this.presenceResults.get(distro);
-    if (cached && Date.now() - cached.at < PRESENCE_TTL_MS) return cached.presence;
+    if (cached && Date.now() - cached.at < PRESENCE_CACHE_TTL_MS) return cached.presence;
     const presence = await this.wsl.presence(distro);
     this.presenceResults.set(distro, { at: Date.now(), presence });
     return presence;

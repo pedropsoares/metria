@@ -44,7 +44,7 @@ links, or post encrypted snapshots to `ntfy.sh`.
 | Capability | Native macOS | Metria Electron |
 | --- | --- | --- |
 | Dashboard, tray, provider controls | Yes | Yes |
-| Side notch | Yes | Usage widget window (Linux) and per-provider tray badges (Windows) |
+| Side notch | Yes | Usage widget window (Windows/Linux) |
 | Hosted-PWA QR pairing | Yes | No |
 | Launch at login | macOS service | Windows login item, XDG desktop-autostart entry |
 | Auto-update | Sparkle, signed appcast | Yes, silent via GitHub Releases |

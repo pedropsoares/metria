@@ -1,12 +1,11 @@
 import { useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
+import { clampPercent, DEFAULT_REFRESH_INTERVAL_SECONDS, gaugeColor, PROVIDER_LOGOS, statusDotColor } from "../shared/types";
 import type { ProviderKind, ProviderSourceChoice, ProviderUsage, UsageWindow } from "../shared/types";
 import "./app.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
-
-const LOGO: Record<ProviderKind, string> = { Claude: "claude-logo.png", Codex: "codex-logo.png", "OpenCode Go": "opencode-logo.png" };
 const SOURCES_KEY = ["provider-sources"] as const;
 
 function useProviderSources() {
@@ -19,9 +18,8 @@ function sourceValue(source: ProviderSourceChoice | null): string {
   return source?.location === "wsl" ? `wsl:${source.distro ?? ""}` : "host";
 }
 
-function percentage(value: number): string { return `${Math.max(0, Math.min(100, value)).toFixed(0)}%`; }
+function percentage(value: number): string { return `${clampPercent(value).toFixed(0)}%`; }
 function date(value: string | null): string { return value ? `Resets ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))}` : "No reset time available"; }
-function gaugeColor(percent: number): string { return percent >= 85 ? "#ff453a" : percent >= 65 ? "#ff9f0a" : percent >= 40 ? "#ffd60a" : "#30d158"; }
 
 function UsageRow({ window: row }: { window: UsageWindow }): JSX.Element {
   return (
@@ -60,9 +58,9 @@ function ProviderCard({ provider, enabled, onStatus }: { provider: ProviderUsage
     <article className={`my-3.5 px-3 py-4 ${enabled ? "" : "opacity-60"}`}>
       <div className="flex items-center justify-between gap-[18px]">
         <div className="flex items-center gap-2.5">
-          <img className="h-[22px] w-[22px] object-contain" src={`./${LOGO[provider.kind]}`} alt="" />
+          <img className="h-[22px] w-[22px] object-contain" src={`./${PROVIDER_LOGOS[provider.kind]}`} alt="" />
           <h2 className="m-0 text-xl font-semibold">{provider.kind}</h2>
-          <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: provider.error ? "#ff9f0a" : "#30d158" }} />
+          <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: statusDotColor(provider.error !== null) }} />
         </div>
         <button
           type="button"
@@ -150,7 +148,7 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
     onSuccess: (result) => setNotice(result.message)
   });
   const quit = useMutation({ mutationFn: () => window.metria.quit() });
-  const currentInterval = (useQuery({ queryKey: ["settings"], queryFn: () => window.metria.getSettings() }).data ?? { refreshIntervalSeconds: 300 }).refreshIntervalSeconds;
+  const currentInterval = (useQuery({ queryKey: ["settings"], queryFn: () => window.metria.getSettings() }).data ?? { refreshIntervalSeconds: DEFAULT_REFRESH_INTERVAL_SECONDS }).refreshIntervalSeconds;
   const providerSources = useProviderSources();
   const setProviderSource = useMutation({
     mutationFn: (variables: { kind: ProviderKind; source: ProviderSourceChoice }) => window.metria.setProviderSource(variables.kind, variables.source),
