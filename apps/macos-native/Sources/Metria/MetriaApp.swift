@@ -134,6 +134,7 @@ private extension Data {
 @MainActor private final class NtfyPublisher {
     private let defaults = UserDefaults.standard
     private var lastPayload: Data?
+    private var publishTask: Task<Void, Never>?
     var onSnapshot: ((Data) -> Void)?
 
     func publish(_ providers: [ProviderUsage], secret: Data) {
@@ -163,15 +164,40 @@ private extension Data {
         request.httpBody = encryptedSnapshot
         request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
         request.setValue("low", forHTTPHeaderField: "Priority")
-        Task {
+        // Superseding an in-flight publish is safe: `lastPayload` above already reflects
+        // the newest snapshot, so a cancelled older request is not losing data.
+        publishTask?.cancel()
+        publishTask = Task {
             _ = try? await URLSession.shared.data(for: request)
         }
+    }
+
+    deinit {
+        publishTask?.cancel()
     }
 }
 
 struct GaugeColor {
     static func color(for percent: Double) -> Color { Color(nsColor: nsColor(for: percent)) }
     static func nsColor(for percent: Double) -> NSColor { percent >= 85 ? .systemRed : percent >= 65 ? .systemOrange : percent >= 40 ? .systemYellow : .systemGreen }
+}
+
+struct MenuBarAlertSettings {
+    var cautionThreshold: Int
+    var warningThreshold: Int
+    var criticalThreshold: Int
+    var cautionColor: NSColor
+    var warningColor: NSColor
+    var criticalColor: NSColor
+
+    static let `default` = Self(
+        cautionThreshold: 40,
+        warningThreshold: 65,
+        criticalThreshold: 85,
+        cautionColor: .systemYellow,
+        warningColor: .systemOrange,
+        criticalColor: .systemRed
+    )
 }
 
 struct ProviderLogo: View {
@@ -198,6 +224,7 @@ struct NotchVisualEffect: NSViewRepresentable {
         view.blendingMode = .behindWindow
         view.state = .active
         view.isEmphasized = true
+        view.appearance = NSAppearance(named: .darkAqua)
         return view
     }
 
@@ -209,6 +236,10 @@ struct UsageCard: View {
     var width: CGFloat = 390
     var scale: CGFloat = 1
     private var isCompact: Bool { width < 390 }
+    /// The progress bar's available width, mirroring this view's own horizontal padding
+    /// so it no longer needs a `GeometryReader` (and the extra layout pass that comes
+    /// with one) just to size itself.
+    private var barWidth: CGFloat { width - 2 * (isCompact ? 14 : 24) * scale }
     var body: some View {
         VStack(alignment: .leading, spacing: (isCompact ? 10 : 18) * scale) {
             HStack(spacing: (isCompact ? 6 : 10) * scale) { ProviderLogo(provider: usage.kind, size: (isCompact ? 17 : 24) * scale); Text(usage.kind.rawValue).font(.system(size: (isCompact ? 15 : 22) * scale, weight: .medium)); Spacer(); Circle().fill(usage.error == nil ? .green : .orange).frame(width: (isCompact ? 5 : 7) * scale, height: (isCompact ? 5 : 7) * scale) }
@@ -218,10 +249,10 @@ struct UsageCard: View {
                     .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
                     .lineLimit(3)
             } else {
-                ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
+                ForEach(usage.windows) { window in
                     VStack(alignment: .leading, spacing: (isCompact ? 5 : 8) * scale) {
                         HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
-                        GeometryReader { proxy in ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: proxy.size.width * window.percent / 100) } }.frame(height: (isCompact ? 5 : 7) * scale)
+                        ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: max(0, barWidth * window.percent / 100)) }.frame(height: (isCompact ? 5 : 7) * scale)
                         Text("\(Int(window.percent.rounded()))% Used").font(.system(size: (isCompact ? 11 : 15) * scale))
                     }
                 }
@@ -264,18 +295,19 @@ struct DashboardUsageCard: View {
                         .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
+                    ForEach(usage.windows) { window in
+                        let color = window.percent >= 40 ? GaugeColor.color(for: window.percent) : Color.primary
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text(window.title)
                                 Spacer()
                                 Text("\(Int(window.percent.rounded()))%")
-                                    .foregroundStyle(GaugeColor.color(for: window.percent))
+                                    .foregroundStyle(color)
                                     .monospacedDigit()
                             }
                             .font(.subheadline)
                             ProgressView(value: min(max(window.percent, 0), 100), total: 100)
-                                .tint(GaugeColor.color(for: window.percent))
+                                .tint(color)
                             Text(window.resetText)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -307,15 +339,6 @@ struct DashboardUsageCard: View {
 struct PopoverContent: View {
     @ObservedObject var store: UsageStore
 
-    private var visibleProviders: [ProviderUsage] {
-        ProviderKind.allCases
-            .filter { store.enabledProviderKinds.contains($0) && store.isProviderAvailable($0) }
-            .map { kind in
-                store.providers.first(where: { $0.kind == kind })
-                    ?? ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil)
-            }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
@@ -332,14 +355,14 @@ struct PopoverContent: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if visibleProviders.isEmpty {
+                    if store.visibleProviders.isEmpty {
                         Label("No providers are available yet. Sign in to a supported provider and refresh.", systemImage: "externaldrive.badge.questionmark")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .padding(.vertical, 24)
                             .frame(maxWidth: .infinity)
                     } else {
-                        ForEach(visibleProviders) { DashboardUsageCard(usage: $0) }
+                        ForEach(store.visibleProviders) { DashboardUsageCard(usage: $0) }
                     }
                 }
             }
@@ -403,8 +426,8 @@ struct NotchMetrics {
 
     var idleWidth: CGFloat { 80 * scale }
     var compactHeight: CGFloat { 236 * scale }
-    var hoverHeight: CGFloat { 280 * scale }
-    var hiddenWidth: CGFloat { 10 * scale }
+    var hoverHeight: CGFloat { compactHeight + (controlsHeight + controlsGap + controlsBottomSpace) * 2 }
+    var hiddenWidth: CGFloat { 18 * scale }
     var hiddenHeight: CGFloat { 80 * scale }
     var cornerRadius: CGFloat { 20 * scale }
     var providerItemHeight: CGFloat { 64 * scale }
@@ -434,6 +457,7 @@ struct NotchContent: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var mode: NotchMode
     let backgroundOpacity: Double
+    let menuBarAlertSettings: MenuBarAlertSettings
     let onNotchHover: (Bool) -> Void
     let onProviderHover: (ProviderKind, Int, Bool) -> Void
     @State private var isHovered = false
@@ -442,38 +466,37 @@ struct NotchContent: View {
 
     private var isHiddenMode: Bool { mode.isHiddenMode }
     private var metrics: NotchMetrics { NotchMetrics(size: mode.size) }
-
-    private var visibleProviders: [ProviderUsage] {
-        ProviderKind.allCases
-            .filter { store.enabledProviderKinds.contains($0) && store.isProviderAvailable($0) }
-            .map { kind in
-                store.providers.first(where: { $0.kind == kind })
-                    ?? ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil)
-            }
-    }
+    private var railHoverOffset: CGFloat { metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            NotchVisualEffect()
-                .opacity(backgroundOpacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(UnevenRoundedRectangle(
+             NotchVisualEffect()
+                 .opacity(backgroundOpacity)
+                 .frame(
+                     width: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
+                     height: isHiddenMode && !isHovered
+                         ? metrics.hiddenHeight
+                         : isHovered ? metrics.hoverHeight : metrics.compactHeight,
+                     alignment: .topTrailing
+                 )
+                 .clipShape(UnevenRoundedRectangle(
                     topLeadingRadius: metrics.cornerRadius,
                     bottomLeadingRadius: metrics.cornerRadius,
                     bottomTrailingRadius: 0,
                     topTrailingRadius: 0,
                     style: .continuous
                 ))
-                .overlay {
-                    UnevenRoundedRectangle(
+             .overlay {
+             UnevenRoundedRectangle(
                         topLeadingRadius: metrics.cornerRadius,
                         bottomLeadingRadius: metrics.cornerRadius,
                         bottomTrailingRadius: 0,
                         topTrailingRadius: 0,
                         style: .continuous
-                    )
-                    .fill(.black.opacity(0.12 * backgroundOpacity))
-                }
+                     )
+                     .fill(.black.opacity(0.72 * backgroundOpacity))
+                 }
+                 .offset(y: isHovered ? 0 : railHoverOffset)
             /*
              The native visual effect view is required here because the notch is
              hosted in an AppKit panel outside the normal SwiftUI window hierarchy.
@@ -485,8 +508,8 @@ struct NotchContent: View {
                 topTrailingRadius: 0,
                 style: .continuous
             )
-            .fill(.black.opacity(0.18 * backgroundOpacity))
-            .frame(
+            .fill(.black.opacity(0.24 * backgroundOpacity))
+             .frame(
                 width: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
                 height: isHiddenMode && !isHovered
                     ? metrics.hiddenHeight
@@ -501,20 +524,25 @@ struct NotchContent: View {
                     topTrailingRadius: 0,
                     style: .continuous
                 )
-                .stroke(.white.opacity(0.14), lineWidth: 1)
-            }
+                 .stroke(.white.opacity(0.14), lineWidth: 1)
+              }
+              .offset(y: isHovered ? 0 : railHoverOffset)
+              if !isHiddenMode || isHovered {
+                 compactProviders
+                     .frame(width: metrics.idleWidth, alignment: .topTrailing)
+                     .offset(y: railHoverOffset)
+             }
 
-            if !isHiddenMode || isHovered {
-                compactProviders
-                    .frame(width: metrics.idleWidth, alignment: .topTrailing)
-            }
-
-            if isHovered {
-                controls
-                    .frame(width: metrics.idleWidth, height: metrics.controlsHeight)
-                    .offset(y: metrics.compactHeight + metrics.controlsGap)
-                    .transition(.opacity)
-            }
+             if isHovered {
+                 topControls
+                     .frame(width: metrics.idleWidth, height: metrics.controlsHeight)
+                     .offset(y: metrics.controlsBottomSpace)
+                     .transition(.opacity)
+                 bottomControls
+                     .frame(width: metrics.idleWidth, height: metrics.controlsHeight)
+                     .offset(y: metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace + metrics.compactHeight + metrics.controlsGap)
+                     .transition(.opacity)
+             }
         }
         .frame(
             width: metrics.idleWidth,
@@ -558,9 +586,9 @@ struct NotchContent: View {
 
     private var compactProviders: some View {
         VStack(spacing: 0) {
-            ForEach(Array(visibleProviders.enumerated()), id: \.element.id) { index, usage in
-                let rowHeight = metrics.providerItemHeight + (index < visibleProviders.count - 1 ? metrics.providerSpacing : 0)
-                SidebarProviderItem(usage: usage, scale: metrics.scale)
+            ForEach(Array(store.visibleProviders.enumerated()), id: \.element.id) { index, usage in
+                let rowHeight = metrics.providerItemHeight + (index < store.visibleProviders.count - 1 ? metrics.providerSpacing : 0)
+                 SidebarProviderItem(usage: usage, scale: metrics.scale, alertSettings: menuBarAlertSettings)
                     .frame(width: metrics.idleWidth, height: metrics.providerItemHeight)
                     .frame(width: metrics.idleWidth, height: rowHeight)
                     .contentShape(Rectangle())
@@ -573,18 +601,23 @@ struct NotchContent: View {
         .padding(.vertical, 12 * metrics.scale)
     }
 
-    private var controls: some View {
+    private var topControls: some View {
+        Image(systemName: isHiddenMode ? "pin.fill" : "arrow.right")
+            .font(.system(size: 13 * metrics.scale))
+            .foregroundStyle(Color(white: 0.58))
+            .accessibilityLabel(isHiddenMode ? "Pin notch" : "Hide notch")
+            .help(isHiddenMode ? "Pin notch" : "Hide notch")
+            .frame(maxWidth: .infinity)
+            .frame(height: metrics.controlsHeight)
+    }
+
+    private var bottomControls: some View {
         HStack(spacing: metrics.controlsSpacing) {
             Spacer()
             Image(systemName: "gearshape")
                 .font(.system(size: 13 * metrics.scale))
                 .foregroundStyle(Color(white: 0.58))
                 .help("Settings")
-            Image(systemName: isHiddenMode ? "pin.fill" : "arrow.right")
-                .font(.system(size: 13 * metrics.scale))
-                .foregroundStyle(Color(white: 0.58))
-                .accessibilityLabel(isHiddenMode ? "Pin notch" : "Hide notch")
-                .help(isHiddenMode ? "Pin notch" : "Hide notch")
             Spacer()
         }
         .frame(height: metrics.controlsHeight)
@@ -665,16 +698,27 @@ final class DraggableNotchPanel: NSPanel {
         super.sendEvent(event)
     }
 
-    // The controls sit right below the provider stack. In window coordinates (origin at
-    // the bottom-left) that band spans from `hoverHeight - compactHeight - gap - controlsHeight`
-    // up to `hoverHeight - compactHeight - gap`.
+    // The top and bottom control bands mirror the SwiftUI layout around the provider rail.
     @discardableResult
     private func routeControlTap(at point: NSPoint) -> Bool {
-        let controlsTop = metrics.hoverHeight - (metrics.compactHeight + metrics.controlsGap)
-        let controlsBottom = controlsTop - metrics.controlsHeight
-        guard point.y >= controlsBottom, point.y <= controlsTop else { return false }
-        if point.x < metrics.idleWidth / 2 { onGearTap?(point) } else { onEyeTap?() }
-        return true
+        let topControlsBottom = metrics.controlsBottomSpace
+        let topControlsTop = topControlsBottom + metrics.controlsHeight
+        let topControlsWindowBottom = metrics.hoverHeight - topControlsTop
+        let topControlsWindowTop = metrics.hoverHeight - topControlsBottom
+        if point.y >= topControlsWindowBottom && point.y <= topControlsWindowTop {
+            onEyeTap?()
+            return true
+        }
+
+        let bottomControlsTop = metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace + metrics.compactHeight + metrics.controlsGap
+        let bottomControlsWindowBottom = metrics.hoverHeight - bottomControlsTop - metrics.controlsHeight
+        let bottomControlsWindowTop = metrics.hoverHeight - bottomControlsTop
+        if point.y >= bottomControlsWindowBottom && point.y <= bottomControlsWindowTop {
+            onGearTap?(point)
+            return true
+        }
+
+        return false
     }
 }
 
@@ -710,26 +754,57 @@ final class NotchHostingView: NSHostingView<NotchContent> {
     }
 }
 
+struct AnimatedPercentageText: View, Animatable {
+    var percent: Double
+    let scale: CGFloat
+
+    var animatableData: Double {
+        get { percent }
+        set { percent = newValue }
+    }
+
+    var body: some View {
+        Text("\(Int(percent.rounded()))%")
+            .font(.system(size: 11 * scale, weight: .regular, design: .rounded))
+            .foregroundStyle(.white)
+    }
+}
+
 struct SidebarProviderItem: View {
     let usage: ProviderUsage
     let scale: CGFloat
+    let alertSettings: MenuBarAlertSettings
     @State private var displayedPercent = 0.0
 
     private var percent: Double { usage.primary?.percent ?? 0 }
+    private var progressColor: Color {
+        if percent >= Double(alertSettings.criticalThreshold) {
+            return Color(nsColor: alertSettings.criticalColor)
+        }
+        if percent >= Double(alertSettings.warningThreshold) {
+            return Color(nsColor: alertSettings.warningColor)
+        }
+        if percent >= Double(alertSettings.cautionThreshold) {
+            return Color(nsColor: alertSettings.cautionColor)
+        }
+        switch usage.kind {
+        case .claude: return .orange
+        case .codex: return .blue
+        case .openCodeGo: return .white
+        }
+    }
 
     var body: some View {
         VStack(spacing: 3 * scale) {
             ZStack {
                 Circle().stroke(Color(white: 0.18), lineWidth: 5 * scale)
                 Circle().trim(from: 0, to: displayedPercent / 100)
-                     .stroke(usage.kind.sidebarProgressGradient, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round))
+                     .stroke(progressColor, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round))
                      .rotationEffect(.degrees(-90))
                 ProviderLogo(provider: usage.kind, size: 14 * scale).foregroundStyle(.white)
             }
             .frame(width: 38 * scale, height: 38 * scale)
-            Text("\(Int(displayedPercent.rounded()))%")
-                .font(.system(size: 11 * scale, weight: .regular, design: .rounded))
-                .foregroundStyle(percent >= 40 ? GaugeColor.color(for: percent) : .white)
+            AnimatedPercentageText(percent: displayedPercent, scale: scale)
         }
         .contentShape(Rectangle())
         .onAppear { animatePercent(to: percent, delay: 0.15) }
@@ -753,6 +828,20 @@ enum DisplayMode: String {
 struct NotchScreen: Identifiable, Hashable {
     let id: UInt32
     let name: String
+}
+
+enum NotchBehavior: String, CaseIterable, Identifiable {
+    case pinned
+    case autoHide
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .pinned: "Pinned"
+        case .autoHide: "Auto-hide"
+        }
+    }
 }
 
 enum LaunchAtLoginManager {
@@ -816,8 +905,19 @@ struct SettingsView: View {
     let notchScreens: [NotchScreen]
     let notchScreenID: UInt32
     let onSelectNotchScreen: (UInt32) -> Void
+    let notchBehavior: NotchBehavior
+    let onSelectNotchBehavior: (NotchBehavior) -> Void
     let notchSize: NotchSize
     let onSelectNotchSize: (NotchSize) -> Void
+    @State private var menuBarAlertColorsEnabled: Bool
+    let onChangeMenuBarAlertColors: (Bool) -> Void
+    @State private var cautionThreshold: Int
+    @State private var warningThreshold: Int
+    @State private var criticalThreshold: Int
+    @State private var cautionColor: Color
+    @State private var warningColor: Color
+    @State private var criticalColor: Color
+    let onChangeMenuBarAlertSettings: (MenuBarAlertSettings) -> Void
     @State private var sidebarOpacity: Double
     let onChangeSidebarOpacity: (Double) -> Void
     @State private var launchAtLoginEnabled: Bool
@@ -849,8 +949,14 @@ struct SettingsView: View {
         notchScreens: [NotchScreen],
         notchScreenID: UInt32,
         onSelectNotchScreen: @escaping (UInt32) -> Void,
+        notchBehavior: NotchBehavior,
+        onSelectNotchBehavior: @escaping (NotchBehavior) -> Void,
         notchSize: NotchSize,
         onSelectNotchSize: @escaping (NotchSize) -> Void,
+        menuBarAlertColorsEnabled: Bool,
+        onChangeMenuBarAlertColors: @escaping (Bool) -> Void,
+        menuBarAlertSettings: MenuBarAlertSettings,
+        onChangeMenuBarAlertSettings: @escaping (MenuBarAlertSettings) -> Void,
         sidebarOpacity: Double,
         onChangeSidebarOpacity: @escaping (Double) -> Void,
         launchAtLoginEnabled: Bool,
@@ -873,8 +979,19 @@ struct SettingsView: View {
         self.notchScreens = notchScreens
         self.notchScreenID = notchScreenID
         self.onSelectNotchScreen = onSelectNotchScreen
+        self.notchBehavior = notchBehavior
+        self.onSelectNotchBehavior = onSelectNotchBehavior
         self.notchSize = notchSize
         self.onSelectNotchSize = onSelectNotchSize
+        _menuBarAlertColorsEnabled = State(initialValue: menuBarAlertColorsEnabled)
+        self.onChangeMenuBarAlertColors = onChangeMenuBarAlertColors
+        _cautionThreshold = State(initialValue: menuBarAlertSettings.cautionThreshold)
+        _warningThreshold = State(initialValue: menuBarAlertSettings.warningThreshold)
+        _criticalThreshold = State(initialValue: menuBarAlertSettings.criticalThreshold)
+        _cautionColor = State(initialValue: Color(nsColor: menuBarAlertSettings.cautionColor))
+        _warningColor = State(initialValue: Color(nsColor: menuBarAlertSettings.warningColor))
+        _criticalColor = State(initialValue: Color(nsColor: menuBarAlertSettings.criticalColor))
+        self.onChangeMenuBarAlertSettings = onChangeMenuBarAlertSettings
         _sidebarOpacity = State(initialValue: sidebarOpacity)
         self.onChangeSidebarOpacity = onChangeSidebarOpacity
         _launchAtLoginEnabled = State(initialValue: launchAtLoginEnabled)
@@ -950,6 +1067,31 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Notch") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Behavior")
+                        .font(.headline)
+                    Picker("Notch behavior", selection: Binding(get: { notchBehavior }, set: onSelectNotchBehavior)) {
+                        ForEach(NotchBehavior.allCases) { behavior in
+                            Text(behavior.title).tag(behavior)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                }
+                Text("Keep the provider rail visible or collapse it until you hover over the notch.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Menu bar") {
+                Toggle("Color usage alerts", isOn: $menuBarAlertColorsEnabled)
+                    .onChange(of: menuBarAlertColorsEnabled) { onChangeMenuBarAlertColors($0) }
+                menuBarAlertControls
+                    .disabled(!menuBarAlertColorsEnabled)
+                Text("Choose each alert color and when it starts appearing.")
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Monitor") {
                 Picker("Monitor", selection: Binding(get: { notchScreenID }, set: onSelectNotchScreen)) {
                     ForEach(notchScreens) { screen in
@@ -960,7 +1102,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Notch") {
+            Section("Notch appearance") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Size")
                         .font(.headline)
@@ -1024,6 +1166,37 @@ struct SettingsView: View {
         } message: {
             Text(launchAtLoginMessage ?? "")
         }
+    }
+
+    private var menuBarAlertControls: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+            alertControl(label: "Caution", color: $cautionColor, threshold: $cautionThreshold, range: 1...(warningThreshold - 1))
+            alertControl(label: "Warning", color: $warningColor, threshold: $warningThreshold, range: (cautionThreshold + 1)...(criticalThreshold - 1))
+            alertControl(label: "Critical", color: $criticalColor, threshold: $criticalThreshold, range: (warningThreshold + 1)...100)
+        }
+    }
+
+    private func alertControl(label: String, color: Binding<Color>, threshold: Binding<Int>, range: ClosedRange<Int>) -> some View {
+        GridRow {
+            Text(label)
+            ColorPicker("\(label) color", selection: color)
+                .labelsHidden()
+                .onChange(of: color.wrappedValue) { _ in saveMenuBarAlertSettings() }
+            Stepper("\(threshold.wrappedValue)%", value: threshold, in: range)
+                .onChange(of: threshold.wrappedValue) { _ in saveMenuBarAlertSettings() }
+                .frame(width: 92)
+        }
+    }
+
+    private func saveMenuBarAlertSettings() {
+        onChangeMenuBarAlertSettings(.init(
+            cautionThreshold: cautionThreshold,
+            warningThreshold: warningThreshold,
+            criticalThreshold: criticalThreshold,
+            cautionColor: NSColor(cautionColor),
+            warningColor: NSColor(warningColor),
+            criticalColor: NSColor(criticalColor)
+        ))
     }
 
     private var providersView: some View {
@@ -1229,6 +1402,57 @@ struct SettingsView: View {
         set { UserDefaults.standard.set(newValue, forKey: "customPWAURL") }
     }
 
+    private var menuBarAlertColorsEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "menuBarAlertColorsEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "menuBarAlertColorsEnabled") }
+    }
+
+    private var menuBarAlertSettings: MenuBarAlertSettings {
+        .init(
+            cautionThreshold: UserDefaults.standard.object(forKey: "menuBarCautionThreshold") as? Int ?? MenuBarAlertSettings.default.cautionThreshold,
+            warningThreshold: UserDefaults.standard.object(forKey: "menuBarWarningThreshold") as? Int ?? MenuBarAlertSettings.default.warningThreshold,
+            criticalThreshold: UserDefaults.standard.object(forKey: "menuBarCriticalThreshold") as? Int ?? MenuBarAlertSettings.default.criticalThreshold,
+            cautionColor: menuBarAlertColor(forKey: "menuBarCautionColor", fallback: MenuBarAlertSettings.default.cautionColor),
+            warningColor: menuBarAlertColor(forKey: "menuBarWarningColor", fallback: MenuBarAlertSettings.default.warningColor),
+            criticalColor: menuBarAlertColor(forKey: "menuBarCriticalColor", fallback: MenuBarAlertSettings.default.criticalColor)
+        )
+    }
+
+    private func setMenuBarAlertColorsEnabled(_ enabled: Bool) {
+        menuBarAlertColorsEnabled = enabled
+        updateStatusItem(store.providers)
+    }
+
+    private func setMenuBarAlertSettings(_ settings: MenuBarAlertSettings) {
+        UserDefaults.standard.set(settings.cautionThreshold, forKey: "menuBarCautionThreshold")
+        UserDefaults.standard.set(settings.warningThreshold, forKey: "menuBarWarningThreshold")
+        UserDefaults.standard.set(settings.criticalThreshold, forKey: "menuBarCriticalThreshold")
+        saveMenuBarAlertColor(settings.cautionColor, forKey: "menuBarCautionColor")
+        saveMenuBarAlertColor(settings.warningColor, forKey: "menuBarWarningColor")
+        saveMenuBarAlertColor(settings.criticalColor, forKey: "menuBarCriticalColor")
+        updateStatusItem(store.providers)
+        sidebarWindows.forEach { $0.contentView = makeHostingView() }
+    }
+
+    private func menuBarAlertColor(forKey key: String, fallback: NSColor) -> NSColor {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return fallback }
+        return (try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)) ?? fallback
+    }
+
+    private func saveMenuBarAlertColor(_ color: NSColor, forKey key: String) {
+        guard let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: true) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    private func menuBarAlertColor(for percent: Double) -> NSColor? {
+        guard menuBarAlertColorsEnabled else { return nil }
+        let settings = menuBarAlertSettings
+        if percent >= Double(settings.criticalThreshold) { return settings.criticalColor }
+        if percent >= Double(settings.warningThreshold) { return settings.warningColor }
+        if percent >= Double(settings.cautionThreshold) { return settings.cautionColor }
+        return nil
+    }
+
     private var pwaBaseURL: String? {
         let customURL = customPWAURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if let url = URL(string: customURL), url.scheme == "https", url.host != nil {
@@ -1267,9 +1491,10 @@ struct SettingsView: View {
             let name = usage.kind == .openCodeGo ? "Go" : usage.kind.rawValue
             let percent = usage.primary!.percent
             title.append(NSAttributedString(string: "\(name) ", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
-            let percentageAttributes: [NSAttributedString.Key: Any] = percent >= 40
-                ? [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: GaugeColor.nsColor(for: percent)]
-                : [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]
+            var percentageAttributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]
+            if let color = menuBarAlertColor(for: percent) {
+                percentageAttributes[.foregroundColor] = color
+            }
             title.append(NSAttributedString(string: "\(Int(percent.rounded()))%", attributes: percentageAttributes))
         }
         statusItem.button?.image = nil
@@ -1305,7 +1530,8 @@ struct SettingsView: View {
     private func showNotchMenu(at windowPoint: NSPoint) {
         let panel = sidebarWindows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? sidebarWindow
         guard let panel, let contentView = panel.contentView else { return }
-        let anchor = contentView.convert(windowPoint, from: nil)
+        let screenPoint = panel.convertPoint(toScreen: windowPoint)
+        let anchor = contentView.convert(screenPoint, from: nil)
         buildAppMenu().popUp(positioning: nil, at: anchor, in: contentView)
     }
 
@@ -1314,6 +1540,7 @@ struct SettingsView: View {
     private var notchGeometry = NotchGeometry.current()
     private let notchMode = NotchMode()
     private var notchMetrics: NotchMetrics { NotchMetrics(size: notchMode.size) }
+    private var notchExpansion: CGFloat { notchMetrics.controlsHeight + notchMetrics.controlsGap + notchMetrics.controlsBottomSpace }
     private var notchScreens: [NotchScreen] {
         NSScreen.screens.compactMap { screen in
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
@@ -1353,11 +1580,11 @@ struct SettingsView: View {
 
     private func makeSidebarWindow(for screen: NSScreen) -> NSPanel {
         let geometry = NotchGeometry.current(for: screen)
-        let frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
+        let frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset + notchExpansion)
         let panel = DraggableNotchPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.metrics = notchMetrics
         panel.onDragMove = { [weak self] deltaY in self?.moveNotch(by: deltaY) }
-        panel.onGearTap = { [weak self] point in self?.showNotchMenu(at: point) }
+        panel.onGearTap = { [weak self] _ in self?.openSettings() }
         panel.onEyeTap = { [weak self] in
             guard let self else { return }
             self.setHiddenNotch(!self.notchMode.isHiddenMode)
@@ -1377,8 +1604,8 @@ struct SettingsView: View {
     private func moveNotchToSelectedScreen() {
         guard displayMode == .sidebar, let sidebarWindow, let screen = selectedNotchScreen else { return }
         let geometry = NotchGeometry.current(for: screen)
-        let defaultFrame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight)
-        var frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
+        let defaultFrame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchExpansion)
+        var frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset + notchExpansion)
         frame.origin.y = min(max(frame.origin.y, screen.visibleFrame.minY), screen.visibleFrame.maxY - frame.height)
         guard !frame.equalTo(sidebarWindow.frame) else {
             notchGeometry = geometry
@@ -1396,6 +1623,7 @@ struct SettingsView: View {
             store: store,
             mode: notchMode,
             backgroundOpacity: sidebarOpacity,
+            menuBarAlertSettings: menuBarAlertSettings,
             onNotchHover: { [weak self] isHovered in self?.setRailHovered(isHovered) },
             onProviderHover: { [weak self] provider, index, isHovered in
                 self?.setProviderHovered(provider, index: index, isHovered: isHovered)
@@ -1432,12 +1660,13 @@ struct SettingsView: View {
         sidebarWindow.setFrameOrigin(frame.origin)
 
         notchGeometry = NotchGeometry.current(for: screen)
-        let defaultFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight)
+        let defaultFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchExpansion)
         notchYOffset = frame.origin.y - defaultFrame.origin.y
         if activeCardProvider != nil { positionCard(index: activeCardIndex) }
     }
 
     private func setRailHovered(_ isHovered: Bool) {
+        guard isRailHovered != isHovered else { return }
         isRailHovered = isHovered
         (sidebarWindow?.contentView as? NotchHostingView)?.isHovered = isHovered
         if isHovered {
@@ -1476,7 +1705,7 @@ struct SettingsView: View {
             }
             let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) }
             let geometry = NotchGeometry.current(for: screen)
-            window.setFrame(geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset), display: true)
+            window.setFrame(geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset + notchExpansion), display: true)
         }
         if let activeCardProvider {
             showCard(for: activeCardProvider, index: activeCardIndex)
@@ -1487,6 +1716,14 @@ struct SettingsView: View {
         UserDefaults.standard.set(Int(id), forKey: "notchScreenID")
         moveNotchToSelectedScreen()
         if activeCardProvider != nil { positionCard(index: activeCardIndex) }
+    }
+
+    private var notchBehavior: NotchBehavior {
+        notchMode.isHiddenMode ? .autoHide : .pinned
+    }
+
+    private func setNotchBehavior(_ behavior: NotchBehavior) {
+        setHiddenNotch(behavior == .autoHide)
     }
 
     private func setProviderHovered(_ provider: ProviderKind, index: Int, isHovered: Bool) {
@@ -1607,7 +1844,7 @@ struct SettingsView: View {
         cardWindow?.orderOut(nil)
         sidebarWindows.forEach { window in
             let geometry = NotchGeometry.current(for: screen)
-            let frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
+            let frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset + notchExpansion)
             window.setFrame(frame, display: true)
             window.alphaValue = 0
             window.orderFrontRegardless()
@@ -1656,12 +1893,18 @@ struct SettingsView: View {
                 self.displayMode = mode
                  self.applyDisplayMode()
              },
-             notchScreens: notchScreens,
-             notchScreenID: selectedNotchScreenID,
-             onSelectNotchScreen: { [weak self] id in self?.setNotchScreen(id) },
-             notchSize: notchMode.size,
-            onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
-            sidebarOpacity: sidebarOpacity,
+              notchScreens: notchScreens,
+              notchScreenID: selectedNotchScreenID,
+              onSelectNotchScreen: { [weak self] id in self?.setNotchScreen(id) },
+              notchBehavior: notchBehavior,
+              onSelectNotchBehavior: { [weak self] behavior in self?.setNotchBehavior(behavior) },
+              notchSize: notchMode.size,
+             onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
+             menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
+             onChangeMenuBarAlertColors: { [weak self] enabled in self?.setMenuBarAlertColorsEnabled(enabled) },
+             menuBarAlertSettings: menuBarAlertSettings,
+             onChangeMenuBarAlertSettings: { [weak self] settings in self?.setMenuBarAlertSettings(settings) },
+             sidebarOpacity: sidebarOpacity,
             onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
             launchAtLoginEnabled: LaunchAtLoginManager.isEnabled,
             onChangeLaunchAtLogin: { enabled in LaunchAtLoginManager.setEnabled(enabled) },

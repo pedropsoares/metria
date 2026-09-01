@@ -1,10 +1,12 @@
 import Combine
 import Foundation
 
-public struct UsageWindow: Equatable {
+public struct UsageWindow: Equatable, Identifiable {
     public let title: String
     public let percent: Double
     public let resetDate: Date?
+
+    public var id: String { title }
 
     public init(title: String, percent: Double, resetDate: Date?) {
         self.title = title
@@ -54,10 +56,20 @@ public protocol UsageProvider {
 @MainActor
 public final class UsageStore: ObservableObject {
     @Published public private(set) var providers: [ProviderUsage] = []
-    @Published public var refreshInterval = 300.0
+    @Published public var refreshInterval = 300.0 {
+        didSet {
+            guard refreshInterval != oldValue else { return }
+            rescheduleTimer()
+        }
+    }
     @Published public private(set) var enabledProviderKinds: Set<ProviderKind>
+    /// The providers to display, in `ProviderKind` order, backfilled with an empty
+    /// placeholder for any enabled provider that hasn't reported usage yet. Computed once
+    /// per underlying change instead of by every view that needs it on every render.
+    @Published public private(set) var visibleProviders: [ProviderUsage] = []
 
     private let sources: [any UsageProvider]
+    private let availableProviderKinds: Set<ProviderKind>
     private let defaults: UserDefaults
     private var refreshOperation: Task<Void, Never>?
     private var scheduleTask: Task<Void, Never>?
@@ -84,9 +96,20 @@ public final class UsageStore: ObservableObject {
         let savedKinds = (defaults.array(forKey: enabledProvidersKey) as? [String] ?? [])
             .compactMap(ProviderKind.init(rawValue:))
         let availableKinds = Set(providers.filter(\.isAvailable).map(\.kind))
+        availableProviderKinds = availableKinds
         enabledProviderKinds = savedKinds.isEmpty ? availableKinds : Set(savedKinds)
         self.providers = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
             .filter { availableKinds.contains($0.kind) && enabledProviderKinds.contains($0.kind) }
+        updateVisibleProviders()
+    }
+
+    private func updateVisibleProviders() {
+        visibleProviders = ProviderKind.allCases
+            .filter { enabledProviderKinds.contains($0) && availableProviderKinds.contains($0) }
+            .map { kind in
+                providers.first(where: { $0.kind == kind })
+                    ?? ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil)
+            }
     }
 
     public func isProviderAvailable(_ kind: ProviderKind) -> Bool {
@@ -130,11 +153,20 @@ public final class UsageStore: ObservableObject {
         }
         enabledProviderKinds = updatedKinds
         defaults.set(updatedKinds.map(\.rawValue), forKey: enabledProvidersKey)
+        updateVisibleProviders()
         refresh()
     }
 
     public func start() {
         refresh()
+        rescheduleTimer()
+    }
+
+    /// Cancels any pending wait and starts a fresh one, so a `refreshInterval` change
+    /// (e.g. from the Settings stepper) takes effect on the next tick instead of waiting
+    /// out whatever was left of the previous interval.
+    private func rescheduleTimer() {
+        scheduleTask?.cancel()
         scheduleTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -169,6 +201,7 @@ public final class UsageStore: ObservableObject {
             for result in results {
                 self.apply(result)
             }
+            self.updateVisibleProviders()
             self.isRefreshing = false
             self.refreshOperation = nil
         }
