@@ -22,7 +22,8 @@ ditto --norsrc "$BIN_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 ditto --norsrc "$ROOT_DIR/Assets/Metria.icns" "$APP_BUNDLE/Contents/Resources/Metria.icns"
 
 if [[ -d "$BIN_DIR/Metria_Metria.bundle" ]]; then
-    ditto --norsrc "$BIN_DIR/Metria_Metria.bundle" "$APP_BUNDLE/Contents/Resources/Metria_Metria.bundle"
+    # SwiftPM's generated Bundle.module accessor looks beside the app's Contents directory.
+    ditto --norsrc "$BIN_DIR/Metria_Metria.bundle" "$APP_BUNDLE/Metria_Metria.bundle"
 fi
 
 sparkle_framework="$ROOT_DIR/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
@@ -31,7 +32,7 @@ if [[ -d "$sparkle_framework" ]]; then
     install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
 fi
 
-rm -f "$APP_BUNDLE"/._* "$APP_BUNDLE/Contents"/._* "$APP_BUNDLE/Contents/MacOS"/._* "$APP_BUNDLE/Contents/Resources"/._* "$APP_BUNDLE/Contents/Resources/Metria_Metria.bundle"/._*
+rm -f "$APP_BUNDLE"/._* "$APP_BUNDLE/Contents"/._* "$APP_BUNDLE/Contents/MacOS"/._* "$APP_BUNDLE/Contents/Resources"/._* "$APP_BUNDLE/Metria_Metria.bundle"/._*
 
 plutil -create xml1 "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleDevelopmentRegion string en" "$APP_BUNDLE/Contents/Info.plist"
