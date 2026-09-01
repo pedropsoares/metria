@@ -125,6 +125,7 @@ jobs:
           # generate_appcast rejects multiple archives that share one bundle version, so
           # each architecture gets its own appcast feed (matching its build-time SUFeedURL).
           for arch in intel apple-silicon; do
+            rm -rf "appcast/$arch"
             mkdir -p "appcast/$arch"
             cp "dist/Metria-$tag-$arch.zip" "appcast/$arch/"
             printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sparkle_bin" \
@@ -132,11 +133,15 @@ jobs:
               --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/$tag/" \
               --link "https://github.com/${{ github.repository }}" \
               "appcast/$arch"
+            # generate_appcast's output filename isn't always "appcast.xml", so
+            # pick up whatever single feed file it actually wrote.
+            feed="$(find "appcast/$arch" -maxdepth 1 -name '*.xml')"
+            test -n "$feed"
             # generate_appcast silently skips signing when the key is piped via
             # --ed-key-file -, so sign the feed explicitly with sign_update instead.
-            printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sign_bin" --ed-key-file - "appcast/$arch/appcast.xml"
-            grep -q "sparkle-signatures" "appcast/$arch/appcast.xml"
-            cp "appcast/$arch/appcast.xml" "dist/appcast-$arch.xml"
+            printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sign_bin" --ed-key-file - "$feed"
+            grep -q "sparkle-signatures" "$feed"
+            cp "$feed" "dist/appcast-$arch.xml"
           done
           # Builds through v0.1.10 all shipped with the same hardcoded SUFeedURL
           # (a single "appcast.xml", not the arch-specific files above). Keep
