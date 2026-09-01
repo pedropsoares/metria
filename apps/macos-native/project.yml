@@ -51,7 +51,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.metria.app
         PRODUCT_NAME: Metria
-        MARKETING_VERSION: 0.1.5
+        MARKETING_VERSION: 0.1.6
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: YES
