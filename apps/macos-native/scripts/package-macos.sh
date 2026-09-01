@@ -54,18 +54,13 @@ mkdir -p "$BUILD_DIR"
 ditto --norsrc "$XCODE_APP_BUNDLE" "$APP_BUNDLE"
 rm -f "$APP_BUNDLE"/._* "$APP_BUNDLE/Contents"/._* "$APP_BUNDLE/Contents/MacOS"/._* "$APP_BUNDLE/Contents/Resources"/._*
 
-if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
-    if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
-        printf '%s\n' "Warning: ad hoc signing is disabled for release archives."
-    else
-        codesign --deep --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
-    fi
-    if [[ "$CODESIGN_IDENTITY" != "-" ]]; then
-        codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
-    fi
+if [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != "-" ]]; then
+    codesign --deep --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
 else
-    printf '%s\n' "Warning: CODESIGN_IDENTITY is not set; this archive is unsigned."
+    printf '%s\n' "Warning: no Developer ID configured; ad hoc signing the release archive so Gatekeeper treats it as an unidentified-developer app instead of reporting it as damaged."
+    codesign --deep --force --sign - "$APP_BUNDLE"
 fi
+codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
 ditto --norsrc -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 

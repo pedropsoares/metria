@@ -144,6 +144,14 @@ Download the latest native macOS `.dmg` from [GitHub Releases](https://github.co
 
 Open the disk image, drag `Metria.app` to `Applications`, and launch it from Finder or Spotlight. Metria runs in the menu bar and does not open a regular application window.
 
+> **macOS warns that Metria can't be opened or is from an unidentified developer?** Releases are ad hoc signed but not yet notarized with an Apple Developer ID (see [note below](#run-in-development)), so macOS Gatekeeper flags the downloaded app — this does not mean the file is corrupted. Open **System Settings → Privacy & Security**, scroll to the Metria warning, and choose **Open Anyway**, then confirm in the dialog that follows. If that option isn't available, remove the quarantine attribute in Terminal instead:
+>
+> ```sh
+> xattr -cr /Applications/Metria.app
+> ```
+>
+> Then launch the app normally.
+
 ### Electron version
 
 The Electron version supports Windows and Linux. Download the installer for your operating system from [GitHub Releases](https://github.com/yurirxmos/metria/releases). You can also build it on that operating system:
@@ -187,7 +195,7 @@ The Xcode project disables signing by default for local development. A future
 Developer ID build can override `CODE_SIGNING_ALLOWED`, `CODE_SIGNING_REQUIRED`,
 and `CODE_SIGN_IDENTITY` from the command line or an xcconfig.
 
-This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `v*` tag is pushed, then publish the signed Sparkle appcast as `releases/latest/download/appcast.xml`. Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is unsigned and macOS may show a Gatekeeper warning.
+This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `v*` tag is pushed, then publish the signed Sparkle appcast as `releases/latest/download/appcast.xml`. Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is only ad hoc signed and macOS Gatekeeper will still show an unidentified-developer warning.
 
 #### Electron version
 
