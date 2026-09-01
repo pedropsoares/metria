@@ -48,7 +48,7 @@ Download the native `.dmg` for Apple Silicon or Intel Macs.
 
 ## To do
 
-- Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
+- Build a native Android app to improve usage update delivery alongside the existing PWA. The iOS app already exists in [its own repository](https://github.com/pedropsoares/metria-ios); the PWA remains the Android path.
 
 ### Shared
 
