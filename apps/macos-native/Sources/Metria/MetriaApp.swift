@@ -191,6 +191,19 @@ struct ProviderLogo: View {
     }
 }
 
+struct NotchVisualEffect: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.isEmphasized = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
 struct UsageCard: View {
     let usage: ProviderUsage
     var width: CGFloat = 390
@@ -284,7 +297,7 @@ struct DashboardUsageCard: View {
                 if usage.error == nil {
                     Label("Connected", systemImage: "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.green)
                 }
             }
         }
@@ -350,8 +363,8 @@ struct NotchGeometry {
     private let rightEdgeX: CGFloat
     private let topAnchorY: CGFloat
 
-    static func current() -> NotchGeometry {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+    static func current(for screen: NSScreen? = nil) -> NotchGeometry {
+        guard let screen = screen ?? NSScreen.main ?? NSScreen.screens.first else {
             return NotchGeometry(rightEdgeX: 0, topAnchorY: 0)
         }
         let rightEdgeX = screen.frame.maxX
@@ -420,9 +433,11 @@ struct NotchMetrics {
 struct NotchContent: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var mode: NotchMode
+    let backgroundOpacity: Double
     let onNotchHover: (Bool) -> Void
     let onProviderHover: (ProviderKind, Int, Bool) -> Void
     @State private var isHovered = false
+    @State private var hasAppeared = false
     @State private var pendingHoverCollapse: DispatchWorkItem?
 
     private var isHiddenMode: Bool { mode.isHiddenMode }
@@ -439,6 +454,30 @@ struct NotchContent: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
+            NotchVisualEffect()
+                .opacity(backgroundOpacity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(UnevenRoundedRectangle(
+                    topLeadingRadius: metrics.cornerRadius,
+                    bottomLeadingRadius: metrics.cornerRadius,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 0,
+                    style: .continuous
+                ))
+                .overlay {
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: metrics.cornerRadius,
+                        bottomLeadingRadius: metrics.cornerRadius,
+                        bottomTrailingRadius: 0,
+                        topTrailingRadius: 0,
+                        style: .continuous
+                    )
+                    .fill(.black.opacity(0.12 * backgroundOpacity))
+                }
+            /*
+             The native visual effect view is required here because the notch is
+             hosted in an AppKit panel outside the normal SwiftUI window hierarchy.
+             */
             UnevenRoundedRectangle(
                 topLeadingRadius: metrics.cornerRadius,
                 bottomLeadingRadius: metrics.cornerRadius,
@@ -446,7 +485,7 @@ struct NotchContent: View {
                 topTrailingRadius: 0,
                 style: .continuous
             )
-            .fill(.black)
+            .fill(.black.opacity(0.18 * backgroundOpacity))
             .frame(
                 width: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
                 height: isHiddenMode && !isHovered
@@ -454,6 +493,16 @@ struct NotchContent: View {
                     : isHovered ? metrics.hoverHeight : metrics.compactHeight,
                 alignment: .topTrailing
             )
+            .overlay {
+                UnevenRoundedRectangle(
+                    topLeadingRadius: metrics.cornerRadius,
+                    bottomLeadingRadius: metrics.cornerRadius,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 0,
+                    style: .continuous
+                )
+                .stroke(.white.opacity(0.14), lineWidth: 1)
+            }
 
             if !isHiddenMode || isHovered {
                 compactProviders
@@ -484,6 +533,13 @@ struct NotchContent: View {
             )
         )
         .frame(width: metrics.idleWidth, height: metrics.hoverHeight, alignment: .topTrailing)
+        .opacity(hasAppeared ? 1 : 0)
+        .offset(x: hasAppeared ? 0 : 18 * metrics.scale)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.32).delay(0.15)) {
+                hasAppeared = true
+            }
+        }
         .onHover { isInside in
             pendingHoverCollapse?.cancel()
             if isInside {
@@ -492,23 +548,21 @@ struct NotchContent: View {
                 }
                 onNotchHover(true)
             } else {
-                let collapse = DispatchWorkItem {
-                    withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
-                        isHovered = false
-                    }
-                    onNotchHover(false)
+                withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
+                    isHovered = false
                 }
-                pendingHoverCollapse = collapse
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: collapse)
+                onNotchHover(false)
             }
         }
     }
 
     private var compactProviders: some View {
-        VStack(spacing: metrics.providerSpacing) {
+        VStack(spacing: 0) {
             ForEach(Array(visibleProviders.enumerated()), id: \.element.id) { index, usage in
+                let rowHeight = metrics.providerItemHeight + (index < visibleProviders.count - 1 ? metrics.providerSpacing : 0)
                 SidebarProviderItem(usage: usage, scale: metrics.scale)
                     .frame(width: metrics.idleWidth, height: metrics.providerItemHeight)
+                    .frame(width: metrics.idleWidth, height: rowHeight)
                     .contentShape(Rectangle())
                     .help(usage.kind.rawValue)
                     .onHover { isHovering in
@@ -540,13 +594,24 @@ struct NotchContent: View {
 struct NotchCardContent: View {
     let usage: ProviderUsage
     let metrics: NotchMetrics
+    let backgroundOpacity: Double
     let onHover: (Bool) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            UsageCard(usage: usage, width: metrics.cardContentWidth, scale: metrics.scale)
+            DashboardUsageCard(usage: usage)
+                .padding(8 * metrics.scale)
+                .frame(width: metrics.cardContentWidth)
+                .background {
+                    RoundedRectangle(cornerRadius: 14 * metrics.scale, style: .continuous)
+                        .fill(.black.opacity(backgroundOpacity))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14 * metrics.scale, style: .continuous)
+                                .stroke(.white.opacity(0.12), lineWidth: 1)
+                        }
+                }
             SideNotchPointer()
-                .fill(.black)
+                .fill(.black.opacity(backgroundOpacity))
                 .frame(width: 16 * metrics.scale, height: 34 * metrics.scale)
         }
         .onHover(perform: onHover)
@@ -648,23 +713,33 @@ final class NotchHostingView: NSHostingView<NotchContent> {
 struct SidebarProviderItem: View {
     let usage: ProviderUsage
     let scale: CGFloat
+    @State private var displayedPercent = 0.0
+
+    private var percent: Double { usage.primary?.percent ?? 0 }
 
     var body: some View {
-        let percent = usage.primary?.percent ?? 0
         VStack(spacing: 3 * scale) {
             ZStack {
                 Circle().stroke(Color(white: 0.18), lineWidth: 5 * scale)
-                Circle().trim(from: 0, to: percent / 100)
+                Circle().trim(from: 0, to: displayedPercent / 100)
                      .stroke(usage.kind.sidebarProgressGradient, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+                     .rotationEffect(.degrees(-90))
                 ProviderLogo(provider: usage.kind, size: 14 * scale).foregroundStyle(.white)
             }
             .frame(width: 38 * scale, height: 38 * scale)
-            Text("\(Int(percent.rounded()))%")
+            Text("\(Int(displayedPercent.rounded()))%")
                 .font(.system(size: 11 * scale, weight: .regular, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(percent >= 40 ? GaugeColor.color(for: percent) : .white)
         }
         .contentShape(Rectangle())
+        .onAppear { animatePercent(to: percent, delay: 0.15) }
+        .onChange(of: percent) { newPercent in animatePercent(to: newPercent) }
+    }
+
+    private func animatePercent(to percent: Double, delay: Double = 0) {
+        withAnimation(.easeOut(duration: 0.65).delay(delay)) {
+            displayedPercent = percent
+        }
     }
 }
 
@@ -673,6 +748,11 @@ struct SidebarProviderItem: View {
 enum DisplayMode: String {
     case sidebar
     case menuBar
+}
+
+struct NotchScreen: Identifiable, Hashable {
+    let id: UInt32
+    let name: String
 }
 
 enum LaunchAtLoginManager {
@@ -733,6 +813,9 @@ struct SettingsView: View {
     @ObservedObject var pairing: PairingManager
     let displayMode: DisplayMode
     let onSelectDisplayMode: (DisplayMode) -> Void
+    let notchScreens: [NotchScreen]
+    let notchScreenID: UInt32
+    let onSelectNotchScreen: (UInt32) -> Void
     let notchSize: NotchSize
     let onSelectNotchSize: (NotchSize) -> Void
     @State private var sidebarOpacity: Double
@@ -763,6 +846,9 @@ struct SettingsView: View {
         pairing: PairingManager,
         displayMode: DisplayMode,
         onSelectDisplayMode: @escaping (DisplayMode) -> Void,
+        notchScreens: [NotchScreen],
+        notchScreenID: UInt32,
+        onSelectNotchScreen: @escaping (UInt32) -> Void,
         notchSize: NotchSize,
         onSelectNotchSize: @escaping (NotchSize) -> Void,
         sidebarOpacity: Double,
@@ -784,6 +870,9 @@ struct SettingsView: View {
         self.pairing = pairing
         self.displayMode = displayMode
         self.onSelectDisplayMode = onSelectDisplayMode
+        self.notchScreens = notchScreens
+        self.notchScreenID = notchScreenID
+        self.onSelectNotchScreen = onSelectNotchScreen
         self.notchSize = notchSize
         self.onSelectNotchSize = onSelectNotchSize
         _sidebarOpacity = State(initialValue: sidebarOpacity)
@@ -858,6 +947,16 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
                 Text("Only one option is visible at a time.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Monitor") {
+                Picker("Monitor", selection: Binding(get: { notchScreenID }, set: onSelectNotchScreen)) {
+                    ForEach(notchScreens) { screen in
+                        Text(screen.name).tag(screen.id)
+                    }
+                }
+                Text("Choose which monitor displays the notch.")
                     .foregroundStyle(.secondary)
             }
 
@@ -1204,7 +1303,8 @@ struct SettingsView: View {
     }
 
     private func showNotchMenu(at windowPoint: NSPoint) {
-        guard let contentView = sidebarWindow?.contentView else { return }
+        let panel = sidebarWindows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? sidebarWindow
+        guard let panel, let contentView = panel.contentView else { return }
         let anchor = contentView.convert(windowPoint, from: nil)
         buildAppMenu().popUp(positioning: nil, at: anchor, in: contentView)
     }
@@ -1214,37 +1314,79 @@ struct SettingsView: View {
     private var notchGeometry = NotchGeometry.current()
     private let notchMode = NotchMode()
     private var notchMetrics: NotchMetrics { NotchMetrics(size: notchMode.size) }
+    private var notchScreens: [NotchScreen] {
+        NSScreen.screens.compactMap { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+            return NotchScreen(id: id.uint32Value, name: screen.localizedName)
+        }
+    }
+    private var selectedNotchScreen: NSScreen? {
+        let selectedID = UserDefaults.standard.object(forKey: "notchScreenID") as? NSNumber
+        return NSScreen.screens.first { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+            return id.uint32Value == selectedID?.uint32Value
+        } ?? NSScreen.main ?? NSScreen.screens.first
+    }
+    private var selectedNotchScreenID: UInt32 {
+        guard let screen = selectedNotchScreen,
+              let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return 0 }
+        return id.uint32Value
+    }
+    private var sidebarWindows: [NSPanel] = []
     private var cardWindow: NSPanel?
     private var activeCardProvider: ProviderKind?
     private var activeCardIndex = 0
+    private var activeCardScreen: NSScreen?
     private var hoveredProvider: ProviderKind?
     private var isRailHovered = false
     private var isCardHovered = false
     private var pendingCardDismiss: DispatchWorkItem?
 
     private func configureSidebar() {
-        notchGeometry = NotchGeometry.current()
-        let windowFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
-        let notchPanel = DraggableNotchPanel(contentRect: windowFrame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        sidebarWindow = notchPanel
-        notchPanel.metrics = notchMetrics
-        notchPanel.onDragMove = { [weak self] deltaY in self?.moveNotch(by: deltaY) }
-        notchPanel.onGearTap = { [weak self] point in self?.showNotchMenu(at: point) }
-        notchPanel.onEyeTap = { [weak self] in
+        let screen = selectedNotchScreen ?? NSScreen.main ?? NSScreen.screens.first
+        sidebarWindows = screen.map { [makeSidebarWindow(for: $0)] } ?? []
+        sidebarWindow = sidebarWindows.first
+        notchGeometry = NotchGeometry.current(for: screen)
+
+        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersDidChange), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    private func makeSidebarWindow(for screen: NSScreen) -> NSPanel {
+        let geometry = NotchGeometry.current(for: screen)
+        let frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
+        let panel = DraggableNotchPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.metrics = notchMetrics
+        panel.onDragMove = { [weak self] deltaY in self?.moveNotch(by: deltaY) }
+        panel.onGearTap = { [weak self] point in self?.showNotchMenu(at: point) }
+        panel.onEyeTap = { [weak self] in
             guard let self else { return }
             self.setHiddenNotch(!self.notchMode.isHiddenMode)
         }
-        sidebarWindow.level = .statusBar
-        sidebarWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        sidebarWindow.isOpaque = false
-        sidebarWindow.alphaValue = sidebarOpacity
-        sidebarWindow.backgroundColor = .clear
-        sidebarWindow.hasShadow = false
-        sidebarWindow.isMovable = false
-        sidebarWindow.contentView = makeHostingView()
-        sidebarWindow.setFrame(windowFrame, display: true)
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.isOpaque = false
+        panel.alphaValue = 1
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.isMovable = false
+        panel.contentView = makeHostingView()
+        panel.setFrame(frame, display: true)
+        return panel
+    }
 
-        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersDidChange), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    private func moveNotchToSelectedScreen() {
+        guard displayMode == .sidebar, let sidebarWindow, let screen = selectedNotchScreen else { return }
+        let geometry = NotchGeometry.current(for: screen)
+        let defaultFrame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight)
+        var frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
+        frame.origin.y = min(max(frame.origin.y, screen.visibleFrame.minY), screen.visibleFrame.maxY - frame.height)
+        guard !frame.equalTo(sidebarWindow.frame) else {
+            notchGeometry = geometry
+            return
+        }
+        sidebarWindow.setFrame(frame, display: true)
+        notchGeometry = geometry
+        notchYOffset = frame.origin.y - defaultFrame.origin.y
     }
 
     // Building a fresh hosting view resets the SwiftUI hover state so that, on hiding,
@@ -1253,6 +1395,7 @@ struct SettingsView: View {
         let content = NotchContent(
             store: store,
             mode: notchMode,
+            backgroundOpacity: sidebarOpacity,
             onNotchHover: { [weak self] isHovered in self?.setRailHovered(isHovered) },
             onProviderHover: { [weak self] provider, index, isHovered in
                 self?.setProviderHovered(provider, index: index, isHovered: isHovered)
@@ -1267,10 +1410,7 @@ struct SettingsView: View {
     // Displays can be connected/disconnected or change resolution at any time; recompute
     // the notch's real position and snap back to it unless the shelf is mid-interaction.
     @objc private func screenParametersDidChange() {
-        notchGeometry = NotchGeometry.current()
-        guard let sidebarWindow else { return }
-        let windowFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
-        sidebarWindow.setFrame(windowFrame, display: true)
+        moveNotchToSelectedScreen()
         if activeCardProvider != nil {
             positionCard(index: activeCardIndex)
         }
@@ -1285,11 +1425,13 @@ struct SettingsView: View {
     // offset so the user's preferred vertical position survives relaunches.
     private func moveNotch(by deltaY: CGFloat) {
         guard let sidebarWindow else { return }
-        let visibleFrame = NSScreen.main?.visibleFrame ?? sidebarWindow.frame
+        let screen = sidebarWindow.screen ?? NSScreen.screens.first { $0.frame.intersects(sidebarWindow.frame) } ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame ?? sidebarWindow.frame
         var frame = sidebarWindow.frame
         frame.origin.y = min(max(frame.origin.y + deltaY, visibleFrame.minY), visibleFrame.maxY - frame.height)
         sidebarWindow.setFrameOrigin(frame.origin)
 
+        notchGeometry = NotchGeometry.current(for: screen)
         let defaultFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight)
         notchYOffset = frame.origin.y - defaultFrame.origin.y
         if activeCardProvider != nil { positionCard(index: activeCardIndex) }
@@ -1316,7 +1458,9 @@ struct SettingsView: View {
         if isHidden {
             isRailHovered = false
             // Fresh view resets the SwiftUI hover state so the rail collapses at once.
-            sidebarWindow?.contentView = makeHostingView()
+            for window in sidebarWindows {
+                window.contentView = makeHostingView()
+            }
         }
     }
 
@@ -1324,15 +1468,25 @@ struct SettingsView: View {
         guard notchMode.size != size else { return }
         notchMode.size = size
         UserDefaults.standard.set(size.rawValue, forKey: "notchSize")
-        (sidebarWindow as? DraggableNotchPanel)?.metrics = notchMetrics
-        if let hostingView = sidebarWindow?.contentView as? NotchHostingView {
-            hostingView.metrics = notchMetrics
-            hostingView.needsLayout = true
+        for window in sidebarWindows {
+            (window as? DraggableNotchPanel)?.metrics = notchMetrics
+            if let hostingView = window.contentView as? NotchHostingView {
+                hostingView.metrics = notchMetrics
+                hostingView.needsLayout = true
+            }
+            let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) }
+            let geometry = NotchGeometry.current(for: screen)
+            window.setFrame(geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset), display: true)
         }
-        sidebarWindow?.setFrame(notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset), display: true)
         if let activeCardProvider {
             showCard(for: activeCardProvider, index: activeCardIndex)
         }
+    }
+
+    private func setNotchScreen(_ id: UInt32) {
+        UserDefaults.standard.set(Int(id), forKey: "notchScreenID")
+        moveNotchToSelectedScreen()
+        if activeCardProvider != nil { positionCard(index: activeCardIndex) }
     }
 
     private func setProviderHovered(_ provider: ProviderKind, index: Int, isHovered: Bool) {
@@ -1343,7 +1497,6 @@ struct SettingsView: View {
             showCard(for: provider, index: index)
         } else if hoveredProvider == provider {
             hoveredProvider = nil
-            scheduleCardDismiss()
         }
     }
 
@@ -1364,7 +1517,7 @@ struct SettingsView: View {
             self.activeCardProvider = nil
         }
         pendingCardDismiss = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+        DispatchQueue.main.async(execute: workItem)
     }
 
     private func showCard(for provider: ProviderKind, index: Int) {
@@ -1384,14 +1537,16 @@ struct SettingsView: View {
 
         activeCardProvider = provider
         activeCardIndex = index
-        let cardContent = NotchCardContent(usage: usage, metrics: notchMetrics) { [weak self] isHovered in
+        activeCardScreen = selectedNotchScreen
+        notchGeometry = NotchGeometry.current(for: activeCardScreen)
+        let cardContent = NotchCardContent(usage: usage, metrics: notchMetrics, backgroundOpacity: sidebarOpacity) { [weak self] isHovered in
             self?.setCardHovered(isHovered)
         }
         cardWindow?.contentViewController = NSHostingController(rootView: cardContent)
         cardWindow?.layoutIfNeeded()
         let cardHeight = max(cardWindow?.contentViewController?.view.fittingSize.height ?? 0, 1)
         positionCard(index: index, height: cardHeight)
-        cardWindow?.alphaValue = sidebarOpacity
+        cardWindow?.alphaValue = 1
         cardWindow?.orderFrontRegardless()
     }
 
@@ -1401,7 +1556,7 @@ struct SettingsView: View {
         let railFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.compactHeight, verticalOffset: notchYOffset)
         let providerCenterY = railFrame.maxY - 12 * notchMetrics.scale - notchMetrics.providerItemHeight / 2
             - CGFloat(index) * (notchMetrics.providerItemHeight + notchMetrics.providerSpacing)
-        let visibleFrame = NSScreen.main?.visibleFrame ?? railFrame
+        let visibleFrame = activeCardScreen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? railFrame
         let originY = min(max(providerCenterY - cardHeight / 2, visibleFrame.minY + 8), visibleFrame.maxY - cardHeight - 8)
         let originX = railFrame.minX - notchMetrics.cardWidth - notchMetrics.cardSpacing
         cardWindow.setFrame(NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight), display: true)
@@ -1414,8 +1569,13 @@ struct SettingsView: View {
 
     private func setSidebarOpacity(_ opacity: Double) {
         sidebarOpacity = opacity
-        sidebarWindow?.alphaValue = opacity
-        cardWindow?.alphaValue = opacity
+        sidebarWindows.forEach { window in
+            window.alphaValue = 1
+            window.contentView = makeHostingView()
+        }
+        if let activeCardProvider {
+            showCard(for: activeCardProvider, index: activeCardIndex)
+        }
     }
 
     // The two modes are mutually exclusive: only one is visible at a time.
@@ -1431,26 +1591,31 @@ struct SettingsView: View {
             animateSidebarIn()
             statusItem.isVisible = false
         case .menuBar:
-            sidebarWindow.orderOut(nil)
+            sidebarWindows.forEach { $0.orderOut(nil) }
             cardWindow?.orderOut(nil)
             statusItem.isVisible = true
         }
     }
 
     private func animateSidebarIn() {
-        guard let sidebarWindow else { return }
-        notchGeometry = NotchGeometry.current()
+        guard !sidebarWindows.isEmpty else { return }
+        let screen = selectedNotchScreen
+        notchGeometry = NotchGeometry.current(for: screen)
         isRailHovered = false
         isCardHovered = false
         activeCardProvider = nil
         cardWindow?.orderOut(nil)
-        sidebarWindow.alphaValue = 0
-        sidebarWindow.setFrame(notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset), display: true)
-        sidebarWindow.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.3
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            sidebarWindow.animator().alphaValue = sidebarOpacity
+        sidebarWindows.forEach { window in
+            let geometry = NotchGeometry.current(for: screen)
+            let frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset)
+            window.setFrame(frame, display: true)
+            window.alphaValue = 0
+            window.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.3
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                window.animator().alphaValue = 1
+            }
         }
     }
 
@@ -1485,13 +1650,16 @@ struct SettingsView: View {
         window.contentViewController = NSHostingController(rootView: SettingsView(
             store: store,
             pairing: pairing,
-            displayMode: displayMode,
-            onSelectDisplayMode: { [weak self] mode in
+             displayMode: displayMode,
+             onSelectDisplayMode: { [weak self] mode in
                 guard let self else { return }
                 self.displayMode = mode
-                self.applyDisplayMode()
-            },
-            notchSize: notchMode.size,
+                 self.applyDisplayMode()
+             },
+             notchScreens: notchScreens,
+             notchScreenID: selectedNotchScreenID,
+             onSelectNotchScreen: { [weak self] id in self?.setNotchScreen(id) },
+             notchSize: notchMode.size,
             onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
             sidebarOpacity: sidebarOpacity,
             onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
