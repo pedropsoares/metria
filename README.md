@@ -195,7 +195,14 @@ The Xcode project disables signing by default for local development. A future
 Developer ID build can override `CODE_SIGNING_ALLOWED`, `CODE_SIGNING_REQUIRED`,
 and `CODE_SIGN_IDENTITY` from the command line or an xcconfig.
 
-This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `v*` tag is pushed, then publish a signed Sparkle appcast per architecture as `releases/latest/download/appcast-intel.xml` and `releases/latest/download/appcast-apple-silicon.xml` (Sparkle's `generate_appcast` cannot mix two architectures under one bundle version, so each build points at its own feed). Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is only ad hoc signed and macOS Gatekeeper will still show an unidentified-developer warning.
+This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `macos-v*` tag is pushed, then publish a signed Sparkle appcast per architecture through the dedicated `macos-latest` update channel (Sparkle's `generate_appcast` cannot mix two architectures under one bundle version, so each build points at its own feed). Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is only ad hoc signed and macOS Gatekeeper will still show an unidentified-developer warning.
+
+To publish a native macOS release without starting the Electron workflow:
+
+```sh
+git tag macos-v0.2.0
+git push origin macos-v0.2.0
+```
 
 #### Electron version
 
@@ -214,7 +221,12 @@ npm run check
 npm run package
 ```
 
-Electron artifacts are written to `apps/electron/release/`. macOS packaging is not configured for Electron.
+Electron artifacts are written to `apps/electron/release/`. macOS packaging is not configured for Electron. Push an `electron-v*` tag to package and publish only the Windows/Linux app; its updater uses the dedicated `electron-latest` channel.
+
+```sh
+git tag electron-v0.2.0
+git push origin electron-v0.2.0
+```
 
 ## Project layout
 

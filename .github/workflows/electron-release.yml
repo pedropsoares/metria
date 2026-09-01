@@ -3,13 +3,13 @@ name: win & linux app deploy
 on:
   push:
     tags:
-      - "v*"
+      - "electron-v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag, for example v0.1.5"
+        description: "Release tag, for example electron-v0.1.5"
         required: true
-        default: "v0.1.5"
+        default: "electron-v0.1.5"
 
 permissions:
   contents: write
@@ -35,6 +35,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        working-directory: apps/electron
+
+      - name: Set package version
+        env:
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
+        run: |
+          [[ "$RELEASE_TAG" == electron-v* ]]
+          npm version "${RELEASE_TAG#electron-v}" --no-git-tag-version --allow-same-version
         working-directory: apps/electron
 
       # The Electron artifacts are unsigned (no certificate secrets for this app):
@@ -64,31 +72,21 @@ jobs:
           merge-multiple: true
           path: release
 
-      # Keep exactly one installer per platform (plus the mandatory update
-      # channel files), so the release reads Metria-Windows/Linux. macOS users
-      # get the native app (Metria-v*.dmg, appcast.xml); previously published
-      # Electron macOS artifacts are removed so the release stays unambiguous.
-      - name: Clean stale Electron assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="${{ inputs.version || github.ref_name }}"
-          assets="$(gh release view "$tag" --json assets -q '.assets[].name' 2>/dev/null || true)"
-          for asset in $assets; do
-            case "$asset" in
-              Metria-Electron-*.deb|Metria-Electron-*.blockmap|Metria-Electron-*.zip|Metria-Electron-*.dmg|Metria-Desktop-*|builder-debug.yml|latest-mac.yml)
-                gh release delete-asset "$tag" "$asset" --repo "${{ github.repository }}" -y || true;;
-            esac
-          done
-
       - name: Attach to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.version || github.ref_name }}"
+          [[ "$tag" == electron-v* ]]
           artifacts="$(find release -maxdepth 1 -type f \( -name 'Metria-Electron-Setup-*.exe' -o -name 'Metria-Electron-*.AppImage' -o -name 'latest.yml' -o -name 'latest-linux.yml' \))"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" $artifacts --clobber --repo "${{ github.repository }}"
           else
             gh release create "$tag" $artifacts --title "$tag" --generate-notes --repo "${{ github.repository }}"
+          fi
+
+          if gh release view electron-latest >/dev/null 2>&1; then
+            gh release upload electron-latest $artifacts --clobber --repo "${{ github.repository }}"
+          else
+            gh release create electron-latest $artifacts --title "Electron latest" --notes "Electron update channel." --repo "${{ github.repository }}"
           fi
