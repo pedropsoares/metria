@@ -208,9 +208,13 @@ async function openCodeRemoteUsage(auth: string): Promise<ProviderUsage | undefi
   } catch { return undefined; }
 }
 
-function parseCodexAuth(auth: string): { access: string; accountId: string } | undefined {
+export function parseCodexAuth(auth: string): { access: string; accountId: string } | undefined {
   try {
-    const parsed = JSON.parse(auth) as { openai?: { access?: string; accountId?: string } };
+    const parsed = JSON.parse(auth) as {
+      openai?: { access?: string; accountId?: string };
+      tokens?: { access_token?: string; account_id?: string };
+    };
+    if (parsed.tokens?.access_token && parsed.tokens.account_id) return { access: parsed.tokens.access_token, accountId: parsed.tokens.account_id };
     return parsed.openai?.access && parsed.openai.accountId ? { access: parsed.openai.access, accountId: parsed.openai.accountId } : undefined;
   } catch { return undefined; }
 }

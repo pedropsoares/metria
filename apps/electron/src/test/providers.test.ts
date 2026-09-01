@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chooseSource } from "../main/providers";
+import { chooseSource, parseCodexAuth } from "../main/providers";
 import type { ProviderSourceInfo } from "../shared/types";
 
 function info(host: boolean, present: string[]): Pick<ProviderSourceInfo, "host" | "wsl"> {
@@ -32,4 +32,12 @@ test("chooseSource falls back when the saved WSL distro no longer has data", () 
 
 test("chooseSource returns null when no source has data", () => {
   assert.equal(chooseSource(info(false, []), null), null);
+});
+
+test("parseCodexAuth reads the current tokens format", () => {
+  assert.deepEqual(parseCodexAuth(JSON.stringify({ tokens: { access_token: "access", account_id: "account" } })), { access: "access", accountId: "account" });
+});
+
+test("parseCodexAuth keeps supporting the legacy format", () => {
+  assert.deepEqual(parseCodexAuth(JSON.stringify({ openai: { access: "access", accountId: "account" } })), { access: "access", accountId: "account" });
 });
