@@ -120,6 +120,7 @@ jobs:
           test -n "$SPARKLE_PRIVATE_ED_KEY"
           swift build
           sparkle_bin=".build/artifacts/sparkle/Sparkle/bin/generate_appcast"
+          sign_bin=".build/artifacts/sparkle/Sparkle/bin/sign_update"
           tag="${{ inputs.version || github.ref_name }}"
           # generate_appcast rejects multiple archives that share one bundle version, so
           # each architecture gets its own appcast feed (matching its build-time SUFeedURL).
@@ -131,6 +132,10 @@ jobs:
               --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/$tag/" \
               --link "https://github.com/${{ github.repository }}" \
               "appcast/$arch"
+            # generate_appcast silently skips signing when the key is piped via
+            # --ed-key-file -, so sign the feed explicitly with sign_update instead.
+            printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sign_bin" --ed-key-file - "appcast/$arch/appcast.xml"
+            grep -q "sparkle-signatures" "appcast/$arch/appcast.xml"
             cp "appcast/$arch/appcast.xml" "dist/appcast-$arch.xml"
           done
 
