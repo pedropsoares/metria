@@ -164,6 +164,7 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   const intervalOptions = REFRESH_OPTIONS.includes(currentInterval) ? REFRESH_OPTIONS : [currentInterval, ...REFRESH_OPTIONS].sort((a, b) => a - b);
+  const wslDetected = (providerSources.data ?? []).some((entry) => entry.wsl.length > 0);
   const sourceOptions = (providerSources.data ?? []).filter((entry) => entry.wsl.some((candidate) => candidate.present) || entry.source?.location === "wsl");
   const info = appInfo.data;
   const loginMessage = loginItem.data?.message;
@@ -198,7 +199,7 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
           </div>
         </section>
 
-        {sourceOptions.length > 0 && (
+        {wslDetected && sourceOptions.length > 0 && (
           <section className="mt-6">
             <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Provider data source</h3>
             {sourceOptions.map((entry) => (

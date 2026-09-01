@@ -233,7 +233,7 @@ function updateTray(providers: typeof lastUsage): void {
 function createTray(): void {
   const assetIcon = findAsset("metria-mascot.png");
   const icon = assetIcon
-    ? nativeImage.createFromPath(assetIcon).resize({ width: 18, height: 18 })
+    ? nativeImage.createFromPath(assetIcon).resize({ width: 16, height: 16 })
     : nativeImage.createFromDataURL(FALLBACK_ICON);
   tray = new Tray(icon);
   updateTray(lastUsage);

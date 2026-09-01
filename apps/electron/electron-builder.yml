@@ -1,6 +1,6 @@
 appId: com.metria.electron
 productName: Metria Electron
-icon: resources/icon.png
+icon: ../Assets/metria-mascot.png
 directories:
   output: release
   buildResources: resources
