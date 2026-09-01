@@ -1,6 +1,6 @@
 {
   "name": "metria-electron",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "private": true,
   "description": "Cross-platform Electron implementation of Metria",
   "author": "Metria <metria@users.noreply.github.com>",
