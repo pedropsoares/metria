@@ -582,6 +582,10 @@ struct NotchContent: View {
                 onNotchHover(false)
             }
         }
+        // The rail is always a dark, near-black surface by design, independent of the
+        // system appearance; force Dark Mode's color resolution so any adaptive color
+        // used here (now or later) reads correctly against it.
+        .preferredColorScheme(.dark)
     }
 
     private var compactProviders: some View {
@@ -648,6 +652,11 @@ struct NotchCardContent: View {
                 .frame(width: 16 * metrics.scale, height: 34 * metrics.scale)
         }
         .onHover(perform: onHover)
+        // This card always sits on a near-black surface regardless of the system
+        // appearance, but DashboardUsageCard's text uses adaptive colors (.primary,
+        // .secondary) that otherwise resolve dark in Light Mode, making them nearly
+        // invisible here. Force Dark Mode's color resolution to match the fixed backdrop.
+        .preferredColorScheme(.dark)
     }
 }
 
