@@ -27,4 +27,10 @@ final class AppUpdater: NSObject {
     @objc func checkForUpdates(_ sender: Any?) {
         controller?.checkForUpdates(sender)
     }
+
+    /// Silent, no-UI-unless-found check meant to run on every launch, in addition
+    /// to Sparkle's own hourly `SUScheduledCheckInterval` background checks.
+    func checkForUpdatesInBackground() {
+        controller?.updater.checkForUpdatesInBackground()
+    }
 }

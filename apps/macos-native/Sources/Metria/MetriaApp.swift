@@ -1615,6 +1615,7 @@ struct SettingsView: View {
         ntfyPublisher.publish(store.providers, secret: pairing.currentSecret)
         localPWAServer.onURLChange = { [weak self] in self?.refreshPairingQRCode() }
         localPWAServer.start(preferredPort: localServerPort)
+        updater.checkForUpdatesInBackground()
         observation = store.$providers.sink { [weak self] providers in
             self?.updateStatusItem(providers)
             guard let self else { return }
