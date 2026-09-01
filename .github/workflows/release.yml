@@ -26,6 +26,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Verify Swift package
         run: swift build
@@ -70,7 +72,7 @@ jobs:
       - name: Package app
         env:
           VERSION: ${{ inputs.version || github.ref_name }}
-          SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
+          SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast-${{ matrix.arch }}.xml
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
           CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
         run: |
@@ -118,21 +120,26 @@ jobs:
           test -n "$SPARKLE_PRIVATE_ED_KEY"
           swift build
           sparkle_bin=".build/artifacts/sparkle/Sparkle/bin/generate_appcast"
-          mkdir -p appcast
-          cp dist/*.zip appcast/
-          printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sparkle_bin" \
-            --ed-key-file - \
-            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/${{ inputs.version || github.ref_name }}/" \
-            --link "https://github.com/${{ github.repository }}" \
-            appcast
-          cp appcast/appcast.xml dist/appcast.xml
+          tag="${{ inputs.version || github.ref_name }}"
+          # generate_appcast rejects multiple archives that share one bundle version, so
+          # each architecture gets its own appcast feed (matching its build-time SUFeedURL).
+          for arch in intel apple-silicon; do
+            mkdir -p "appcast/$arch"
+            cp "dist/Metria-$tag-$arch.zip" "appcast/$arch/"
+            printf '%s' "$SPARKLE_PRIVATE_ED_KEY" | "$sparkle_bin" \
+              --ed-key-file - \
+              --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/$tag/" \
+              --link "https://github.com/${{ github.repository }}" \
+              "appcast/$arch"
+            cp "appcast/$arch/appcast.xml" "dist/appcast-$arch.xml"
+          done
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.version || github.ref_name }}"
-          assets="dist/*.zip dist/*.dmg dist/appcast.xml"
+          assets="dist/*.zip dist/*.dmg dist/appcast-intel.xml dist/appcast-apple-silicon.xml"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" $assets --clobber --repo "${{ github.repository }}"
           else
