@@ -35,17 +35,6 @@ xcodebuild_args=(
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 )
 
-if [[ -n "${SPARKLE_FEED_URL:-}" && -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
-    xcodebuild_args+=(
-        INFOPLIST_KEY_SUFeedURL="$SPARKLE_FEED_URL"
-        INFOPLIST_KEY_SUPublicEDKey="$SPARKLE_PUBLIC_ED_KEY"
-        INFOPLIST_KEY_SUEnableAutomaticChecks=YES
-        INFOPLIST_KEY_SUAutomaticallyUpdate=YES
-        INFOPLIST_KEY_SUVerifyUpdateBeforeExtraction=YES
-        INFOPLIST_KEY_SURequireSignedFeed=YES
-    )
-fi
-
 xcodebuild "${xcodebuild_args[@]}" build
 test -d "$XCODE_APP_BUNDLE"
 
@@ -53,6 +42,19 @@ rm -rf "$APP_BUNDLE" "$ZIP_PATH" "$DMG_PATH" "$BUILD_DIR/dmg-root"
 mkdir -p "$BUILD_DIR"
 ditto --norsrc "$XCODE_APP_BUNDLE" "$APP_BUNDLE"
 rm -f "$APP_BUNDLE"/._* "$APP_BUNDLE/Contents"/._* "$APP_BUNDLE/Contents/MacOS"/._* "$APP_BUNDLE/Contents/Resources"/._*
+
+# Xcode's GENERATE_INFOPLIST_FILE only recognizes a fixed set of well-known
+# INFOPLIST_KEY_* names, so it silently drops Sparkle's custom keys instead of
+# erroring. Write them into the built Info.plist directly instead.
+if [[ -n "${SPARKLE_FEED_URL:-}" && -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
+    PLIST="$APP_BUNDLE/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $SPARKLE_FEED_URL" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :SUAutomaticallyUpdate bool true" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :SUVerifyUpdateBeforeExtraction bool true" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :SURequireSignedFeed bool true" "$PLIST"
+fi
 
 if [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != "-" ]]; then
     codesign --deep --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
