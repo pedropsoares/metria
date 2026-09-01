@@ -13,6 +13,19 @@
   <a href="https://github.com/yurirxmos/metria/commits"><img src="https://img.shields.io/github/commit-activity/m/yurirxmos/metria?style=flat-square" alt="Commits" /></a>
 </p>
 
+## Contents
+
+- [What it does](#what-it-does)
+- [Download](#download)
+- [To do](#to-do)
+- [Providers](#providers)
+- [Mobile PWA](#mobile-pwa)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Project layout](#project-layout)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## What it does
 
 Both desktop versions show current session and monthly usage percentages for supported AI providers.
