@@ -145,13 +145,18 @@ class OpenCodeGoProvider implements Provider {
   private async usage(auth: string): Promise<ProviderUsage> {
     const key = parseOpenCodeGoKey(auth);
     if (!key) throw new Error("OpenCode Go credentials were not found.");
-    const data = JSON.parse(await requestWithRetry("https://opencode.ai/zen/go/v1/usage", { Authorization: `Bearer ${key}` })) as { usage?: Record<string, { percent?: number; resets_at?: string }> };
-    const windows = [["Current session", "rolling"], ["This week", "weekly"], ["This month", "monthly"]].flatMap(([title, keyName]) => {
-      const limit = data.usage?.[keyName as string];
-      return limit ? [{ title, percent: Number(limit.percent ?? 0), resetDate: limit.resets_at ?? null }] : [];
-    });
+    const data = await requestWithRetry("https://opencode.ai/zen/go/v1/usage", { Authorization: `Bearer ${key}` });
+    const windows = parseOpenCodeGoWindows(data);
     return loaded(this.kind, windows);
   }
+}
+
+export function parseOpenCodeGoWindows(data: string): UsageWindow[] {
+  const parsed = JSON.parse(data) as { usage?: Record<string, { percent?: number; resetsAt?: string; resets_at?: string }> };
+  return [["Current session", "rolling"], ["This week", "weekly"], ["This month", "monthly"]].flatMap(([title, keyName]) => {
+    const limit = parsed.usage?.[keyName as string];
+    return limit ? [{ title, percent: Number(limit.percent ?? 0), resetDate: limit.resetsAt ?? limit.resets_at ?? null }] : [];
+  });
 }
 
 const REQUEST_TIMEOUT_MS = 10_000;

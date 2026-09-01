@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chooseSource, parseCodexAuth } from "../main/providers";
+import { chooseSource, parseCodexAuth, parseOpenCodeGoWindows } from "../main/providers";
 import type { ProviderSourceInfo } from "../shared/types";
 
 function info(host: boolean, present: string[]): Pick<ProviderSourceInfo, "host" | "wsl"> {
@@ -40,4 +40,10 @@ test("parseCodexAuth reads the current tokens format", () => {
 
 test("parseCodexAuth keeps supporting the legacy format", () => {
   assert.deepEqual(parseCodexAuth(JSON.stringify({ openai: { access: "access", accountId: "account" } })), { access: "access", accountId: "account" });
+});
+
+test("parseOpenCodeGoWindows reads the API reset date", () => {
+  assert.deepEqual(parseOpenCodeGoWindows(JSON.stringify({ usage: { rolling: { percent: 12, resetsAt: "2026-09-01T12:00:00.000Z" } } })), [
+    { title: "Current session", percent: 12, resetDate: "2026-09-01T12:00:00.000Z" }
+  ]);
 });
