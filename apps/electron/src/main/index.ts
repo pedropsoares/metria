@@ -313,13 +313,19 @@ function setLinuxAutostart(enabled: boolean): void {
 }
 
 app.setName("Metria Electron");
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => { showDashboard(); });
+}
 if (process.platform === "linux") {
   // Reduced-compositing environments (no DRI3/VA-API render node) crash the GPU
   // process and can fail to draw windows. Software compositing on Linux avoids
   // the crash; keep hardware acceleration on macOS.
   app.disableHardwareAcceleration();
 }
-app.whenReady().then(() => {
+if (hasSingleInstanceLock) app.whenReady().then(() => {
   createTray(); showDashboard(); initAutoUpdater();
   if (supportsWidget()) {
     widgetWindow = createWidgetWindow();

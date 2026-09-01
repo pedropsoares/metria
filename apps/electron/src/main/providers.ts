@@ -1,3 +1,4 @@
+import { app } from "electron";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +30,7 @@ export class ProviderService {
   }
 
   async fetch(enabled: ProviderKind[]): Promise<ProviderUsage[]> {
-    if (process.env.METRIA_SYNTHETIC === "1") return enabled.map((kind, index) => loaded(kind, [{ title: "Synthetic session", percent: [32, 58, 76][index] ?? 0, resetDate: new Date(Date.now() + 3_600_000).toISOString() }]));
+    if (!app.isPackaged && process.env.METRIA_SYNTHETIC === "1") return enabled.map((kind, index) => loaded(kind, [{ title: "Synthetic session", percent: [32, 58, 76][index] ?? 0, resetDate: new Date(Date.now() + 3_600_000).toISOString() }]));
     const entries = await this.sources(enabled);
     return Promise.all(entries.map(async (entry) => {
       const provider = this.providerFor(entry.kind);
