@@ -44,7 +44,7 @@ struct CodexProvider: UsageProvider {
                 return .failed(kind, error.localizedDescription, retryAfter: error.retryAfter)
             }
             let value = try JSONDecoder().decode(OpenAIUsageResponse.self, from: data)
-            return .loaded(ProviderUsage(kind: kind, windows: [
+            return .loaded(ProviderUsage(kind: kind, accountLabel: credentials.idToken.flatMap(KeychainReader.tokenEmail) ?? KeychainReader.tokenEmail(credentials.accessToken), windows: [
                 UsageWindow(title: "Current session", percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
                 UsageWindow(title: "All models", percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
             ], updatedAt: Date(), error: nil))
@@ -75,10 +75,12 @@ struct CodexProvider: UsageProvider {
         struct Tokens: Decodable {
             let accessToken: String
             let accountId: String?
+            let idToken: String?
 
             enum CodingKeys: String, CodingKey {
                 case accessToken = "access_token"
                 case accountId = "account_id"
+                case idToken = "id_token"
             }
         }
     }

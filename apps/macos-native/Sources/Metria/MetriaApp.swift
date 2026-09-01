@@ -285,6 +285,8 @@ extension UsageWindow {
 
 struct DashboardUsageCard: View {
     let usage: ProviderUsage
+    let showsAccount: Bool
+    @AppStorage("showAccountEmails") private var showAccountEmails = true
 
     var body: some View {
         GroupBox {
@@ -296,7 +298,7 @@ struct DashboardUsageCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(usage.windows) { window in
-                        let color = window.percent >= 40 ? GaugeColor.color(for: window.percent) : Color.primary
+                        let color = GaugeColor.color(for: window.percent)
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text(window.title)
@@ -323,8 +325,14 @@ struct DashboardUsageCard: View {
             }
         } label: {
             HStack(spacing: 8) {
-                ProviderLogo(provider: usage.kind, size: 20)
-                Text(usage.kind.rawValue)
+                 ProviderLogo(provider: usage.kind, size: 20)
+                 Text(usage.kind.rawValue)
+                     if showsAccount && showAccountEmails, let accountLabel = usage.accountLabel {
+                     Text(accountLabel)
+                         .font(.caption)
+                         .foregroundStyle(.secondary)
+                         .textSelection(.enabled)
+                 }
                 Spacer()
                 if usage.error == nil {
                     Label("Connected", systemImage: "checkmark.circle.fill")
@@ -362,7 +370,7 @@ struct PopoverContent: View {
                             .padding(.vertical, 24)
                             .frame(maxWidth: .infinity)
                     } else {
-                        ForEach(store.visibleProviders) { DashboardUsageCard(usage: $0) }
+                        ForEach(store.visibleProviders) { DashboardUsageCard(usage: $0, showsAccount: true) }
                     }
                 }
             }
@@ -378,28 +386,96 @@ struct PopoverContent: View {
     }
 }
 
-/// Resolves where the side notch sits: flush against the right edge of the screen,
-/// hanging from just below the real menu bar (using `visibleFrame` rather than the
-/// physical notch's `safeAreaInsets`, since a screen edge isn't hardware — this keeps
-/// it clear of the menu bar's own icons and, on notched Macs, clear of the real notch).
-struct NotchGeometry {
-    private let rightEdgeX: CGFloat
-    private let topAnchorY: CGFloat
+/// The notch grows either as a vertical pill (left/right, single-corner anchored) or a
+/// horizontal bar (top/bottom, centered and growing symmetrically like a Dynamic Island).
+enum NotchAxis {
+    case vertical
+    case horizontal
+}
 
-    static func current(for screen: NSScreen? = nil) -> NotchGeometry {
-        guard let screen = screen ?? NSScreen.main ?? NSScreen.screens.first else {
-            return NotchGeometry(rightEdgeX: 0, topAnchorY: 0)
+/// Which screen edge the notch is anchored to.
+enum NotchPosition: String, CaseIterable, Identifiable {
+    case top
+    case left
+    case right
+    case bottom
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var axis: NotchAxis { self == .top || self == .bottom ? .horizontal : .vertical }
+
+    /// The corner(s) touching the screen edge stay square; the opposite, exposed corner(s)
+    /// are rounded — mirroring the shape's flush side to whichever edge this position anchors to.
+    func cornerRadii(_ radius: CGFloat) -> RectangleCornerRadii {
+        switch self {
+        case .right: RectangleCornerRadii(topLeading: radius, bottomLeading: radius, bottomTrailing: 0, topTrailing: 0)
+        case .left: RectangleCornerRadii(topLeading: 0, bottomLeading: 0, bottomTrailing: radius, topTrailing: radius)
+        case .top: RectangleCornerRadii(topLeading: 0, bottomLeading: radius, bottomTrailing: radius, topTrailing: 0)
+        case .bottom: RectangleCornerRadii(topLeading: radius, bottomLeading: 0, bottomTrailing: 0, topTrailing: radius)
         }
-        let rightEdgeX = screen.frame.maxX
-        let topAnchorY = screen.visibleFrame.maxY - 12
-        return NotchGeometry(rightEdgeX: rightEdgeX, topAnchorY: topAnchorY)
     }
 
-    /// A frame of the given size, still flush against the right edge and still hanging
-    /// from the same top anchor — used to compute the expanded shelf's frame so it
-    /// grows leftward and downward from the idle rail instead of jumping around.
-    func frame(width: CGFloat, height: CGFloat, verticalOffset: CGFloat = 0) -> CGRect {
-        CGRect(x: rightEdgeX - width, y: topAnchorY - height + verticalOffset, width: width, height: height)
+    var zStackAlignment: Alignment {
+        switch self {
+        case .right: .topTrailing
+        case .left: .topLeading
+        case .top: .top
+        case .bottom: .bottom
+        }
+    }
+
+    var hiddenHintSymbolName: String {
+        switch self {
+        case .right: "chevron.left"
+        case .left: "chevron.right"
+        case .top: "chevron.down"
+        case .bottom: "chevron.up"
+        }
+    }
+}
+
+/// Resolves where the notch sits for a given `NotchPosition`: flush against the chosen
+/// screen edge, using `visibleFrame` rather than the physical notch's `safeAreaInsets`
+/// (a screen edge isn't hardware) so it stays clear of the menu bar's icons and, on
+/// notched Macs, the real notch.
+struct NotchGeometry {
+    private let position: NotchPosition
+    private let leftEdgeX: CGFloat
+    private let rightEdgeX: CGFloat
+    private let topEdgeY: CGFloat
+    private let bottomEdgeY: CGFloat
+    private let centerX: CGFloat
+
+    static func current(for screen: NSScreen? = nil, position: NotchPosition = .right) -> NotchGeometry {
+        guard let screen = screen ?? NSScreen.main ?? NSScreen.screens.first else {
+            return NotchGeometry(position: position, leftEdgeX: 0, rightEdgeX: 0, topEdgeY: 0, bottomEdgeY: 0, centerX: 0)
+        }
+        return NotchGeometry(
+            position: position,
+            leftEdgeX: screen.frame.minX,
+            rightEdgeX: screen.frame.maxX,
+            topEdgeY: screen.visibleFrame.maxY - 12,
+            bottomEdgeY: screen.visibleFrame.minY + 12,
+            centerX: screen.frame.midX
+        )
+    }
+
+    /// `thickness` is the surface's fixed cross-axis size (the pill's width for left/right,
+    /// the bar's height for top/bottom); `extent` is the size along the growth axis (height
+    /// for left/right, width for top/bottom); `alongEdgeOffset` is the user-draggable offset
+    /// along the anchor edge (vertical for left/right, horizontal for top/bottom) — used to
+    /// compute the expanded shelf's frame too, so it grows from the idle rail without jumping.
+    func frame(thickness: CGFloat, extent: CGFloat, alongEdgeOffset: CGFloat = 0) -> CGRect {
+        switch position {
+        case .right:
+            CGRect(x: rightEdgeX - thickness, y: topEdgeY - extent + alongEdgeOffset, width: thickness, height: extent)
+        case .left:
+            CGRect(x: leftEdgeX, y: topEdgeY - extent + alongEdgeOffset, width: thickness, height: extent)
+        case .top:
+            CGRect(x: centerX - extent / 2 + alongEdgeOffset, y: topEdgeY - thickness, width: extent, height: thickness)
+        case .bottom:
+            CGRect(x: centerX - extent / 2 + alongEdgeOffset, y: bottomEdgeY, width: extent, height: thickness)
+        }
     }
 }
 
@@ -439,6 +515,13 @@ struct NotchMetrics {
     var controlsHeight: CGFloat { 16 * scale }
     var controlsGap: CGFloat { 8 * scale }
     var controlsBottomSpace: CGFloat { 20 * scale }
+
+    /// Maps a (thickness, extent) pair — thickness being the fixed cross-axis size, extent
+    /// the size along the growth axis — onto an actual (width, height), swapped for a
+    /// horizontal bar so the same numeric constants produce either orientation.
+    func size(thickness: CGFloat, extent: CGFloat, axis: NotchAxis) -> CGSize {
+        axis == .vertical ? CGSize(width: thickness, height: extent) : CGSize(width: extent, height: thickness)
+    }
 }
 
 /// Shared visibility state so the view and the window-level click routing stay in sync
@@ -447,12 +530,14 @@ struct NotchMetrics {
 @MainActor final class NotchMode: ObservableObject {
     @Published var isHiddenMode = UserDefaults.standard.bool(forKey: "hiddenNotch")
     @Published var size = NotchSize(rawValue: UserDefaults.standard.string(forKey: "notchSize") ?? "") ?? .medium
+    @Published var position = NotchPosition(rawValue: UserDefaults.standard.string(forKey: "notchPosition") ?? "") ?? .right
 }
 
-/// The floating surface itself: a compact provider rail flush against the right screen
-/// edge while idle, which grows leftward and downward into a shelf on hover. Both states
-/// share the same flush-right, rounded-left shape so the surface reads as attached to
-/// the screen rather than as a floating rectangle.
+/// The floating surface itself: a compact provider rail — a vertical pill flush against
+/// the left/right screen edge, or a horizontal bar flush against the top/bottom edge —
+/// which grows on hover into a shelf revealing the hide/pin and settings controls at its
+/// two ends. All states share the same flush-edge, rounded-opposite-edge silhouette so the
+/// surface reads as attached to the screen rather than as a floating rectangle.
 struct NotchContent: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var mode: NotchMode
@@ -466,103 +551,98 @@ struct NotchContent: View {
 
     private var isHiddenMode: Bool { mode.isHiddenMode }
     private var metrics: NotchMetrics { NotchMetrics(size: mode.size) }
-    private var railHoverOffset: CGFloat { metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace }
+    private var position: NotchPosition { mode.position }
+    private var axis: NotchAxis { position.axis }
+
+    /// Compensates the single-corner-anchored vertical pill so its flush edge stays
+    /// visually fixed as it grows into the hover shelf. The horizontal bar needs no such
+    /// compensation: its `.top`/`.bottom` alignment already centers the narrower idle
+    /// content within the oversized hover window for free.
+    private var railHoverOffset: CGFloat { axis == .vertical ? metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace : 0 }
+    /// The growing shell (background + stroke) starts pulled in by `railHoverOffset` and
+    /// relaxes to 0 on hover, so it visually grows outward around the static content below.
+    private var shellOffset: CGSize { alongAxisOffset(isHovered ? 0 : railHoverOffset) }
+    /// The provider rail itself never moves — it stays pinned at its compact position while
+    /// the shell grows around it, so the icons don't jump when the notch expands.
+    private var contentOffset: CGSize { alongAxisOffset(railHoverOffset) }
+
+    private var currentSize: CGSize {
+        metrics.size(
+            thickness: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
+            extent: isHiddenMode && !isHovered ? metrics.hiddenHeight : isHovered ? metrics.hoverHeight : metrics.compactHeight,
+            axis: axis
+        )
+    }
+    private var maxSize: CGSize { metrics.size(thickness: metrics.idleWidth, extent: metrics.hoverHeight, axis: axis) }
+    private var hiddenPeekSize: CGSize { metrics.size(thickness: metrics.hiddenWidth, extent: metrics.hiddenHeight, axis: axis) }
+    private var endControlSize: CGSize { metrics.size(thickness: metrics.idleWidth, extent: metrics.controlsHeight, axis: axis) }
+
+    private func alongAxisOffset(_ value: CGFloat) -> CGSize {
+        axis == .vertical ? CGSize(width: 0, height: value) : CGSize(width: value, height: 0)
+    }
+
+    private var appearOffset: CGSize {
+        guard !hasAppeared else { return .zero }
+        let delta = 18 * metrics.scale
+        switch position {
+        case .right: return CGSize(width: delta, height: 0)
+        case .left: return CGSize(width: -delta, height: 0)
+        case .top: return CGSize(width: 0, height: -delta)
+        case .bottom: return CGSize(width: 0, height: delta)
+        }
+    }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack(alignment: position.zStackAlignment) {
              NotchVisualEffect()
                  .opacity(backgroundOpacity)
-                 .frame(
-                     width: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
-                     height: isHiddenMode && !isHovered
-                         ? metrics.hiddenHeight
-                         : isHovered ? metrics.hoverHeight : metrics.compactHeight,
-                     alignment: .topTrailing
-                 )
-                 .clipShape(UnevenRoundedRectangle(
-                    topLeadingRadius: metrics.cornerRadius,
-                    bottomLeadingRadius: metrics.cornerRadius,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 0,
-                    style: .continuous
-                ))
+                 .frame(width: currentSize.width, height: currentSize.height, alignment: position.zStackAlignment)
+                 .clipShape(UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous))
              .overlay {
-             UnevenRoundedRectangle(
-                        topLeadingRadius: metrics.cornerRadius,
-                        bottomLeadingRadius: metrics.cornerRadius,
-                        bottomTrailingRadius: 0,
-                        topTrailingRadius: 0,
-                        style: .continuous
-                     )
+                UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
                      .fill(.black.opacity(0.72 * backgroundOpacity))
                  }
-                 .offset(y: isHovered ? 0 : railHoverOffset)
+                 .offset(shellOffset)
             /*
              The native visual effect view is required here because the notch is
              hosted in an AppKit panel outside the normal SwiftUI window hierarchy.
              */
-            UnevenRoundedRectangle(
-                topLeadingRadius: metrics.cornerRadius,
-                bottomLeadingRadius: metrics.cornerRadius,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0,
-                style: .continuous
-            )
+            UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
             .fill(.black.opacity(0.24 * backgroundOpacity))
-             .frame(
-                width: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
-                height: isHiddenMode && !isHovered
-                    ? metrics.hiddenHeight
-                    : isHovered ? metrics.hoverHeight : metrics.compactHeight,
-                alignment: .topTrailing
-            )
+             .frame(width: currentSize.width, height: currentSize.height, alignment: position.zStackAlignment)
             .overlay {
-                UnevenRoundedRectangle(
-                    topLeadingRadius: metrics.cornerRadius,
-                    bottomLeadingRadius: metrics.cornerRadius,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 0,
-                    style: .continuous
-                )
+                UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
                  .stroke(.white.opacity(0.14), lineWidth: 1)
               }
-              .offset(y: isHovered ? 0 : railHoverOffset)
+              .offset(shellOffset)
               if !isHiddenMode || isHovered {
-                 compactProviders
-                     .frame(width: metrics.idleWidth, alignment: .topTrailing)
-                     .offset(y: railHoverOffset)
-             }
+                  compactProviders
+                      .frame(
+                        width: axis == .vertical ? metrics.idleWidth : nil,
+                        height: axis == .horizontal ? metrics.idleWidth : nil,
+                        alignment: position.zStackAlignment
+                      )
+                      .offset(contentOffset)
+              }
+              if isHiddenMode && !isHovered {
+                  Image(systemName: position.hiddenHintSymbolName)
+                      .font(.system(size: 11 * metrics.scale, weight: .semibold))
+                      .foregroundStyle(Color(white: 0.58))
+                      .frame(width: hiddenPeekSize.width, height: hiddenPeekSize.height)
+                      .accessibilityLabel("Hover to open notch")
+                      .help("Hover to open notch")
+                      .offset(contentOffset)
+              }
 
-             if isHovered {
-                 topControls
-                     .frame(width: metrics.idleWidth, height: metrics.controlsHeight)
-                     .offset(y: metrics.controlsBottomSpace)
-                     .transition(.opacity)
-                 bottomControls
-                     .frame(width: metrics.idleWidth, height: metrics.controlsHeight)
-                     .offset(y: metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace + metrics.compactHeight + metrics.controlsGap)
-                     .transition(.opacity)
+              if isHovered {
+                 endControls
              }
         }
-        .frame(
-            width: metrics.idleWidth,
-            height: isHiddenMode && !isHovered
-                ? metrics.hiddenHeight
-                : isHovered ? metrics.hoverHeight : metrics.compactHeight,
-            alignment: .topTrailing
-        )
-        .contentShape(
-            UnevenRoundedRectangle(
-                topLeadingRadius: metrics.cornerRadius,
-                bottomLeadingRadius: metrics.cornerRadius,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: 0,
-                style: .continuous
-            )
-        )
-        .frame(width: metrics.idleWidth, height: metrics.hoverHeight, alignment: .topTrailing)
+        .frame(width: currentSize.width, height: currentSize.height, alignment: position.zStackAlignment)
+        .contentShape(UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous))
+        .frame(width: maxSize.width, height: maxSize.height, alignment: position.zStackAlignment)
         .opacity(hasAppeared ? 1 : 0)
-        .offset(x: hasAppeared ? 0 : 18 * metrics.scale)
+        .offset(appearOffset)
         .onAppear {
             withAnimation(.easeOut(duration: 0.32).delay(0.15)) {
                 hasAppeared = true
@@ -588,21 +668,55 @@ struct NotchContent: View {
         .preferredColorScheme(.dark)
     }
 
-    private var compactProviders: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(store.visibleProviders.enumerated()), id: \.element.id) { index, usage in
-                let rowHeight = metrics.providerItemHeight + (index < store.visibleProviders.count - 1 ? metrics.providerSpacing : 0)
-                 SidebarProviderItem(usage: usage, scale: metrics.scale, alertSettings: menuBarAlertSettings)
-                    .frame(width: metrics.idleWidth, height: metrics.providerItemHeight)
-                    .frame(width: metrics.idleWidth, height: rowHeight)
-                    .contentShape(Rectangle())
-                    .help(usage.kind.rawValue)
-                    .onHover { isHovering in
-                        onProviderHover(usage.kind, index, isHovering)
-                    }
-            }
+    @ViewBuilder private var compactProviders: some View {
+        if axis == .vertical {
+            VStack(spacing: 0) { providerRows }.padding(.vertical, 12 * metrics.scale)
+        } else {
+            HStack(spacing: 0) { providerRows }.padding(.horizontal, 12 * metrics.scale)
         }
-        .padding(.vertical, 12 * metrics.scale)
+    }
+
+    private var providerRows: some View {
+        ForEach(Array(store.visibleProviders.enumerated()), id: \.element.id) { index, usage in
+            let rowExtent = metrics.providerItemHeight + (index < store.visibleProviders.count - 1 ? metrics.providerSpacing : 0)
+            let itemSize = metrics.size(thickness: metrics.idleWidth, extent: metrics.providerItemHeight, axis: axis)
+            let rowSize = metrics.size(thickness: metrics.idleWidth, extent: rowExtent, axis: axis)
+             SidebarProviderItem(usage: usage, scale: metrics.scale, alertSettings: menuBarAlertSettings)
+                .frame(width: itemSize.width, height: itemSize.height)
+                .frame(width: rowSize.width, height: rowSize.height)
+                .contentShape(Rectangle())
+                .help(usage.kind.rawValue)
+                .onHover { isHovering in
+                    onProviderHover(usage.kind, index, isHovering)
+                }
+        }
+    }
+
+    /// Vertical positions reveal the two controls above/below the compact rail using the
+    /// existing corner-anchored offset trick; horizontal positions pin them to the bar's
+    /// leading/trailing edge instead, since the bar itself grows symmetrically from center.
+    @ViewBuilder private var endControls: some View {
+        if axis == .vertical {
+            topControls
+                .frame(width: endControlSize.width, height: endControlSize.height)
+                .offset(y: metrics.controlsBottomSpace)
+                .transition(.opacity)
+            bottomControls
+                .frame(width: endControlSize.width, height: endControlSize.height)
+                .offset(y: metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace + metrics.compactHeight + metrics.controlsGap)
+                .transition(.opacity)
+        } else {
+            topControls
+                .frame(width: endControlSize.width, height: endControlSize.height)
+                .padding(.leading, metrics.controlsBottomSpace)
+                .frame(width: maxSize.width, height: maxSize.height, alignment: .leading)
+                .transition(.opacity)
+            bottomControls
+                .frame(width: endControlSize.width, height: endControlSize.height)
+                .padding(.trailing, metrics.controlsBottomSpace)
+                .frame(width: maxSize.width, height: maxSize.height, alignment: .trailing)
+                .transition(.opacity)
+        }
     }
 
     private var topControls: some View {
@@ -610,9 +724,12 @@ struct NotchContent: View {
             .font(.system(size: 13 * metrics.scale))
             .foregroundStyle(Color(white: 0.58))
             .accessibilityLabel(isHiddenMode ? "Pin notch" : "Hide notch")
-            .help(isHiddenMode ? "Pin notch" : "Hide notch")
-            .frame(maxWidth: .infinity)
-            .frame(height: metrics.controlsHeight)
+             .help(isHiddenMode ? "Pin notch" : "Hide notch")
+             .frame(maxWidth: .infinity)
+             .frame(height: metrics.controlsHeight)
+             .onHover { isInside in
+                 (isInside ? NSCursor.pointingHand : NSCursor.arrow).set()
+             }
     }
 
     private var bottomControls: some View {
@@ -620,36 +737,67 @@ struct NotchContent: View {
             Spacer()
             Image(systemName: "gearshape")
                 .font(.system(size: 13 * metrics.scale))
-                .foregroundStyle(Color(white: 0.58))
-                .help("Settings")
-            Spacer()
-        }
-        .frame(height: metrics.controlsHeight)
-    }
+             .foregroundStyle(Color(white: 0.58))
+                 .help("Settings")
+             Spacer()
+         }
+         .frame(maxWidth: .infinity)
+         .frame(height: metrics.controlsHeight)
+         .onHover { isInside in
+             (isInside ? NSCursor.pointingHand : NSCursor.arrow).set()
+         }
+     }
 }
 
 struct NotchCardContent: View {
     let usage: ProviderUsage
     let metrics: NotchMetrics
+    let position: NotchPosition
     let backgroundOpacity: Double
     let onHover: (Bool) -> Void
 
+    /// The pointer shape always points from "right", so it only needs rotating to face
+    /// back into whichever edge the rail is anchored to.
+    private var pointerRotation: Angle {
+        switch position {
+        case .right: .degrees(0)
+        case .left: .degrees(180)
+        case .top: .degrees(-90)
+        case .bottom: .degrees(90)
+        }
+    }
+
+    private var card: some View {
+        DashboardUsageCard(usage: usage, showsAccount: true)
+            .padding(8 * metrics.scale)
+            .frame(width: metrics.cardContentWidth)
+            .background {
+                RoundedRectangle(cornerRadius: 14 * metrics.scale, style: .continuous)
+                    .fill(.black.opacity(backgroundOpacity))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14 * metrics.scale, style: .continuous)
+                            .stroke(.white.opacity(0.12), lineWidth: 1)
+                    }
+            }
+    }
+
+    private var pointer: some View {
+        let rotated = position.axis == .horizontal
+        return SideNotchPointer()
+            .fill(.black.opacity(backgroundOpacity))
+            .frame(width: 16 * metrics.scale, height: 34 * metrics.scale)
+            .rotationEffect(pointerRotation)
+            .frame(width: rotated ? 34 * metrics.scale : 16 * metrics.scale, height: rotated ? 16 * metrics.scale : 34 * metrics.scale)
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            DashboardUsageCard(usage: usage)
-                .padding(8 * metrics.scale)
-                .frame(width: metrics.cardContentWidth)
-                .background {
-                    RoundedRectangle(cornerRadius: 14 * metrics.scale, style: .continuous)
-                        .fill(.black.opacity(backgroundOpacity))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 14 * metrics.scale, style: .continuous)
-                                .stroke(.white.opacity(0.12), lineWidth: 1)
-                        }
-                }
-            SideNotchPointer()
-                .fill(.black.opacity(backgroundOpacity))
-                .frame(width: 16 * metrics.scale, height: 34 * metrics.scale)
+        Group {
+            switch position {
+            case .right: HStack(spacing: 0) { card; pointer }
+            case .left: HStack(spacing: 0) { pointer; card }
+            case .top: VStack(spacing: 0) { pointer; card }
+            case .bottom: VStack(spacing: 0) { card; pointer }
+            }
         }
         .onHover(perform: onHover)
         // This card always sits on a near-black surface regardless of the system
@@ -676,10 +824,12 @@ struct SideNotchPointer: Shape {
 /// vertical drags before child SwiftUI views can consume them.
 final class DraggableNotchPanel: NSPanel {
     var metrics = NotchMetrics(size: .medium)
+    var position: NotchPosition = .right
     var onDragMove: ((CGFloat) -> Void)?
     var onGearTap: ((NSPoint) -> Void)?
     var onEyeTap: (() -> Void)?
-    private var lastMouseScreenY: CGFloat?
+    var onContextMenu: ((NSPoint) -> Void)?
+    private var lastMouseScreenPoint: NSPoint?
     private var didDrag = false
     private var didHandleControlTap = false
 
@@ -688,43 +838,68 @@ final class DraggableNotchPanel: NSPanel {
         case .leftMouseDown:
             didDrag = false
             didHandleControlTap = routeControlTap(at: event.locationInWindow)
-            lastMouseScreenY = convertPoint(toScreen: event.locationInWindow).y
+            lastMouseScreenPoint = convertPoint(toScreen: event.locationInWindow)
         case .leftMouseDragged:
             didDrag = true
-            if let lastMouseScreenY {
-                let currentMouseScreenY = convertPoint(toScreen: event.locationInWindow).y
-                onDragMove?(currentMouseScreenY - lastMouseScreenY)
-                self.lastMouseScreenY = currentMouseScreenY
+            if let lastMouseScreenPoint {
+                let currentMouseScreenPoint = convertPoint(toScreen: event.locationInWindow)
+                let delta = position.axis == .vertical
+                    ? currentMouseScreenPoint.y - lastMouseScreenPoint.y
+                    : currentMouseScreenPoint.x - lastMouseScreenPoint.x
+                onDragMove?(delta)
+                self.lastMouseScreenPoint = currentMouseScreenPoint
             }
             return
         case .leftMouseUp:
             if !didDrag && !didHandleControlTap { _ = routeControlTap(at: event.locationInWindow) }
             didHandleControlTap = false
-            lastMouseScreenY = nil
+            lastMouseScreenPoint = nil
+        case .rightMouseDown:
+            onContextMenu?(event.locationInWindow)
+            return
         default:
             break
         }
         super.sendEvent(event)
     }
 
-    // The top and bottom control bands mirror the SwiftUI layout around the provider rail.
+    // The two control bands mirror the SwiftUI layout around the provider rail: above/below
+    // it for a vertical pill, at its leading/trailing ends for a horizontal bar.
     @discardableResult
     private func routeControlTap(at point: NSPoint) -> Bool {
-        let topControlsBottom = metrics.controlsBottomSpace
-        let topControlsTop = topControlsBottom + metrics.controlsHeight
-        let topControlsWindowBottom = metrics.hoverHeight - topControlsTop
-        let topControlsWindowTop = metrics.hoverHeight - topControlsBottom
-        if point.y >= topControlsWindowBottom && point.y <= topControlsWindowTop {
-            onEyeTap?()
-            return true
-        }
+        let endExtent = metrics.controlsHeight
+        let maxExtent = metrics.hoverHeight
 
-        let bottomControlsTop = metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace + metrics.compactHeight + metrics.controlsGap
-        let bottomControlsWindowBottom = metrics.hoverHeight - bottomControlsTop - metrics.controlsHeight
-        let bottomControlsWindowTop = metrics.hoverHeight - bottomControlsTop
-        if point.y >= bottomControlsWindowBottom && point.y <= bottomControlsWindowTop {
-            onGearTap?(point)
-            return true
+        switch position.axis {
+        case .vertical:
+            let leadingBandTop = maxExtent - metrics.controlsBottomSpace
+            let leadingBandBottom = leadingBandTop - endExtent
+            if point.y >= leadingBandBottom && point.y <= leadingBandTop {
+                onEyeTap?()
+                return true
+            }
+
+            let trailingOffset = metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace + metrics.compactHeight + metrics.controlsGap
+            let trailingBandTop = maxExtent - trailingOffset
+            let trailingBandBottom = trailingBandTop - endExtent
+            if point.y >= trailingBandBottom && point.y <= trailingBandTop {
+                onGearTap?(point)
+                return true
+            }
+        case .horizontal:
+            let leadingBandStart = metrics.controlsBottomSpace
+            let leadingBandEnd = leadingBandStart + endExtent
+            if point.x >= leadingBandStart && point.x <= leadingBandEnd {
+                onEyeTap?()
+                return true
+            }
+
+            let trailingBandEnd = maxExtent - metrics.controlsBottomSpace
+            let trailingBandStart = trailingBandEnd - endExtent
+            if point.x >= trailingBandStart && point.x <= trailingBandEnd {
+                onGearTap?(point)
+                return true
+            }
         }
 
         return false
@@ -736,29 +911,61 @@ final class NotchHostingView: NSHostingView<NotchContent> {
     var isHovered = false
     var isHiddenMode = false
     var metrics = NotchMetrics(size: .medium)
+    var position: NotchPosition = .right
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard containsVisibleSurface(point) else { return nil }
         return super.hitTest(point)
     }
 
+    /// The surface rect, in a left-based/top-based frame matching `bounds`: the thickness
+    /// axis always hugs the flush screen edge (single-sided); the extent axis hugs the top
+    /// for a vertical pill (single-sided) or centers for a horizontal bar (double-sided,
+    /// mirroring `NotchGeometry`'s centered anchoring for top/bottom).
+    private func surfaceFrame(width: CGFloat, height: CGFloat) -> CGRect {
+        switch position {
+        case .right: CGRect(x: bounds.width - width, y: 0, width: width, height: height)
+        case .left: CGRect(x: 0, y: 0, width: width, height: height)
+        case .top: CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: height)
+        case .bottom: CGRect(x: (bounds.width - width) / 2, y: bounds.height - height, width: width, height: height)
+        }
+    }
+
+    /// Whether the corner at the given quadrant (in the same left-based/top-based frame) is
+    /// one of the two rounded corners for this position — mirrors `NotchPosition.cornerRadii`.
+    private func isCornerRounded(left: Bool, top: Bool) -> Bool {
+        switch position {
+        case .right: left
+        case .left: !left
+        case .top: !top
+        case .bottom: top
+        }
+    }
+
     private func containsVisibleSurface(_ point: NSPoint) -> Bool {
         let topBasedY = isFlipped ? point.y : bounds.height - point.y
-        let surfaceWidth = isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth
-        let surfaceHeight = isHiddenMode && !isHovered
+        let thickness = isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth
+        let extent = isHiddenMode && !isHovered
             ? metrics.hiddenHeight
             : isHovered ? metrics.hoverHeight : metrics.compactHeight
-        let x = bounds.width - point.x
-        let radius = min(metrics.cornerRadius, surfaceWidth / 2, surfaceHeight / 2)
+        let size = metrics.size(thickness: thickness, extent: extent, axis: position.axis)
+        let rect = surfaceFrame(width: size.width, height: size.height)
+        let testPoint = CGPoint(x: point.x, y: topBasedY)
 
-        guard x >= 0, x <= surfaceWidth, topBasedY >= 0, topBasedY <= surfaceHeight else { return false }
-        guard x <= surfaceWidth - radius else { return true }
+        guard rect.contains(testPoint) else { return false }
 
-        let topCorner = CGPoint(x: surfaceWidth - radius, y: radius)
-        let bottomCorner = CGPoint(x: surfaceWidth - radius, y: surfaceHeight - radius)
-        let cornerCenter = topBasedY < surfaceHeight / 2 ? topCorner : bottomCorner
-        let distanceX = x - cornerCenter.x
-        let distanceY = topBasedY - cornerCenter.y
+        let radius = min(metrics.cornerRadius, rect.width / 2, rect.height / 2)
+        let inSafeBand = (testPoint.x >= rect.minX + radius && testPoint.x <= rect.maxX - radius)
+            || (testPoint.y >= rect.minY + radius && testPoint.y <= rect.maxY - radius)
+        guard !inSafeBand else { return true }
+
+        let isLeft = testPoint.x < rect.midX
+        let isTop = testPoint.y < rect.midY
+        guard isCornerRounded(left: isLeft, top: isTop) else { return true }
+
+        let cornerCenter = CGPoint(x: isLeft ? rect.minX + radius : rect.maxX - radius, y: isTop ? rect.minY + radius : rect.maxY - radius)
+        let distanceX = testPoint.x - cornerCenter.x
+        let distanceY = testPoint.y - cornerCenter.y
         return distanceX * distanceX + distanceY * distanceY <= radius * radius
     }
 }
@@ -909,6 +1116,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var pairing: PairingManager
+    @AppStorage("showAccountEmails") private var showAccountEmails = true
     let displayMode: DisplayMode
     let onSelectDisplayMode: (DisplayMode) -> Void
     let notchScreens: [NotchScreen]
@@ -918,6 +1126,8 @@ struct SettingsView: View {
     let onSelectNotchBehavior: (NotchBehavior) -> Void
     let notchSize: NotchSize
     let onSelectNotchSize: (NotchSize) -> Void
+    let notchPosition: NotchPosition
+    let onSelectNotchPosition: (NotchPosition) -> Void
     @State private var menuBarAlertColorsEnabled: Bool
     let onChangeMenuBarAlertColors: (Bool) -> Void
     @State private var cautionThreshold: Int
@@ -962,6 +1172,8 @@ struct SettingsView: View {
         onSelectNotchBehavior: @escaping (NotchBehavior) -> Void,
         notchSize: NotchSize,
         onSelectNotchSize: @escaping (NotchSize) -> Void,
+        notchPosition: NotchPosition,
+        onSelectNotchPosition: @escaping (NotchPosition) -> Void,
         menuBarAlertColorsEnabled: Bool,
         onChangeMenuBarAlertColors: @escaping (Bool) -> Void,
         menuBarAlertSettings: MenuBarAlertSettings,
@@ -992,6 +1204,8 @@ struct SettingsView: View {
         self.onSelectNotchBehavior = onSelectNotchBehavior
         self.notchSize = notchSize
         self.onSelectNotchSize = onSelectNotchSize
+        self.notchPosition = notchPosition
+        self.onSelectNotchPosition = onSelectNotchPosition
         _menuBarAlertColorsEnabled = State(initialValue: menuBarAlertColorsEnabled)
         self.onChangeMenuBarAlertColors = onChangeMenuBarAlertColors
         _cautionThreshold = State(initialValue: menuBarAlertSettings.cautionThreshold)
@@ -1074,6 +1288,9 @@ struct SettingsView: View {
                 }
                 Text("Only one option is visible at a time.")
                     .foregroundStyle(.secondary)
+                Toggle("Show provider account email", isOn: $showAccountEmails)
+                Text("Show the account email when available, or a masked API key for OpenCode Go.")
+                    .foregroundStyle(.secondary)
             }
 
             Section("Notch") {
@@ -1112,6 +1329,19 @@ struct SettingsView: View {
             }
 
             Section("Notch appearance") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Position")
+                        .font(.headline)
+                    Picker("Position", selection: Binding(get: { notchPosition }, set: onSelectNotchPosition)) {
+                        ForEach(NotchPosition.allCases) { position in
+                            Text(position.title).tag(position)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                }
+                Text("Top and bottom become a horizontal bar; left and right stay a vertical rail.")
+                    .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Size")
                         .font(.headline)
@@ -1539,8 +1769,7 @@ struct SettingsView: View {
     private func showNotchMenu(at windowPoint: NSPoint) {
         let panel = sidebarWindows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? sidebarWindow
         guard let panel, let contentView = panel.contentView else { return }
-        let screenPoint = panel.convertPoint(toScreen: windowPoint)
-        let anchor = contentView.convert(screenPoint, from: nil)
+        let anchor = contentView.convert(windowPoint, from: nil)
         buildAppMenu().popUp(positioning: nil, at: anchor, in: contentView)
     }
 
@@ -1578,26 +1807,33 @@ struct SettingsView: View {
     private var isCardHovered = false
     private var pendingCardDismiss: DispatchWorkItem?
 
+    /// A vertical pill's offset compensates for its single-corner-anchored hover growth
+    /// (see `NotchContent.railHoverOffset`); a horizontal bar needs none, since it grows
+    /// symmetrically from center already.
+    private var notchExpansionOffset: CGFloat { notchMode.position.axis == .vertical ? notchExpansion : 0 }
+
     private func configureSidebar() {
         let screen = selectedNotchScreen ?? NSScreen.main ?? NSScreen.screens.first
         sidebarWindows = screen.map { [makeSidebarWindow(for: $0)] } ?? []
         sidebarWindow = sidebarWindows.first
-        notchGeometry = NotchGeometry.current(for: screen)
+        notchGeometry = NotchGeometry.current(for: screen, position: notchMode.position)
 
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersDidChange), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
     private func makeSidebarWindow(for screen: NSScreen) -> NSPanel {
-        let geometry = NotchGeometry.current(for: screen)
-        let frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset + notchExpansion)
+        let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
+        let frame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
         let panel = DraggableNotchPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.metrics = notchMetrics
-        panel.onDragMove = { [weak self] deltaY in self?.moveNotch(by: deltaY) }
+        panel.position = notchMode.position
+        panel.onDragMove = { [weak self] delta in self?.moveNotch(by: delta) }
         panel.onGearTap = { [weak self] _ in self?.openSettings() }
         panel.onEyeTap = { [weak self] in
             guard let self else { return }
             self.setHiddenNotch(!self.notchMode.isHiddenMode)
         }
+        panel.onContextMenu = { [weak self] point in self?.showNotchMenu(at: point) }
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.isOpaque = false
@@ -1612,17 +1848,22 @@ struct SettingsView: View {
 
     private func moveNotchToSelectedScreen() {
         guard displayMode == .sidebar, let sidebarWindow, let screen = selectedNotchScreen else { return }
-        let geometry = NotchGeometry.current(for: screen)
-        let defaultFrame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchExpansion)
-        var frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset + notchExpansion)
-        frame.origin.y = min(max(frame.origin.y, screen.visibleFrame.minY), screen.visibleFrame.maxY - frame.height)
+        let axis = notchMode.position.axis
+        let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
+        let defaultFrame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchExpansionOffset)
+        var frame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
+        if axis == .vertical {
+            frame.origin.y = min(max(frame.origin.y, screen.visibleFrame.minY), screen.visibleFrame.maxY - frame.height)
+        } else {
+            frame.origin.x = min(max(frame.origin.x, screen.visibleFrame.minX), screen.visibleFrame.maxX - frame.width)
+        }
         guard !frame.equalTo(sidebarWindow.frame) else {
             notchGeometry = geometry
             return
         }
         sidebarWindow.setFrame(frame, display: true)
         notchGeometry = geometry
-        notchYOffset = frame.origin.y - defaultFrame.origin.y
+        notchAlongEdgeOffset = axis == .vertical ? frame.origin.y - defaultFrame.origin.y : frame.origin.x - defaultFrame.origin.x
     }
 
     // Building a fresh hosting view resets the SwiftUI hover state so that, on hiding,
@@ -1641,6 +1882,7 @@ struct SettingsView: View {
         let hostingView = NotchHostingView(rootView: content)
         hostingView.isHiddenMode = notchMode.isHiddenMode
         hostingView.metrics = notchMetrics
+        hostingView.position = notchMode.position
         return hostingView
     }
 
@@ -1653,24 +1895,30 @@ struct SettingsView: View {
         }
     }
 
-    private var notchYOffset: CGFloat {
-        get { UserDefaults.standard.object(forKey: "notchPositionY") as? CGFloat ?? 0 }
-        set { UserDefaults.standard.set(newValue, forKey: "notchPositionY") }
+    private var notchAlongEdgeOffset: CGFloat {
+        get { UserDefaults.standard.object(forKey: "notchAlongEdgeOffset") as? CGFloat ?? 0 }
+        set { UserDefaults.standard.set(newValue, forKey: "notchAlongEdgeOffset") }
     }
 
-    // Keep the side notch inside the visible frame while dragging, and preserve the
-    // offset so the user's preferred vertical position survives relaunches.
-    private func moveNotch(by deltaY: CGFloat) {
+    // Keep the notch inside the visible frame while dragging, and preserve the offset so
+    // the user's preferred position along its anchor edge survives relaunches. The drag
+    // delta itself is already measured along the right axis by `DraggableNotchPanel`.
+    private func moveNotch(by delta: CGFloat) {
         guard let sidebarWindow else { return }
         let screen = sidebarWindow.screen ?? NSScreen.screens.first { $0.frame.intersects(sidebarWindow.frame) } ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? sidebarWindow.frame
         var frame = sidebarWindow.frame
-        frame.origin.y = min(max(frame.origin.y + deltaY, visibleFrame.minY), visibleFrame.maxY - frame.height)
+        let axis = notchMode.position.axis
+        if axis == .vertical {
+            frame.origin.y = min(max(frame.origin.y + delta, visibleFrame.minY), visibleFrame.maxY - frame.height)
+        } else {
+            frame.origin.x = min(max(frame.origin.x + delta, visibleFrame.minX), visibleFrame.maxX - frame.width)
+        }
         sidebarWindow.setFrameOrigin(frame.origin)
 
-        notchGeometry = NotchGeometry.current(for: screen)
-        let defaultFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchExpansion)
-        notchYOffset = frame.origin.y - defaultFrame.origin.y
+        notchGeometry = NotchGeometry.current(for: screen, position: notchMode.position)
+        let defaultFrame = notchGeometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchExpansionOffset)
+        notchAlongEdgeOffset = axis == .vertical ? frame.origin.y - defaultFrame.origin.y : frame.origin.x - defaultFrame.origin.x
         if activeCardProvider != nil { positionCard(index: activeCardIndex) }
     }
 
@@ -1713,8 +1961,8 @@ struct SettingsView: View {
                 hostingView.needsLayout = true
             }
             let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) }
-            let geometry = NotchGeometry.current(for: screen)
-            window.setFrame(geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset + notchExpansion), display: true)
+            let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
+            window.setFrame(geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset), display: true)
         }
         if let activeCardProvider {
             showCard(for: activeCardProvider, index: activeCardIndex)
@@ -1733,6 +1981,29 @@ struct SettingsView: View {
 
     private func setNotchBehavior(_ behavior: NotchBehavior) {
         setHiddenNotch(behavior == .autoHide)
+    }
+
+    // Switching axis makes a saved along-edge offset meaningless (a vertical drag offset
+    // has no sensible horizontal equivalent), so dragging starts over from center/top.
+    private func setNotchPosition(_ position: NotchPosition) {
+        guard notchMode.position != position else { return }
+        notchMode.position = position
+        UserDefaults.standard.set(position.rawValue, forKey: "notchPosition")
+        notchAlongEdgeOffset = 0
+        for window in sidebarWindows {
+            (window as? DraggableNotchPanel)?.position = position
+            if let hostingView = window.contentView as? NotchHostingView {
+                hostingView.position = position
+                hostingView.needsLayout = true
+            }
+            let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? selectedNotchScreen
+            let geometry = NotchGeometry.current(for: screen, position: position)
+            window.setFrame(geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchExpansionOffset), display: true)
+            notchGeometry = geometry
+        }
+        if let activeCardProvider {
+            showCard(for: activeCardProvider, index: activeCardIndex)
+        }
     }
 
     private func setProviderHovered(_ provider: ProviderKind, index: Int, isHovered: Bool) {
@@ -1784,8 +2055,8 @@ struct SettingsView: View {
         activeCardProvider = provider
         activeCardIndex = index
         activeCardScreen = selectedNotchScreen
-        notchGeometry = NotchGeometry.current(for: activeCardScreen)
-        let cardContent = NotchCardContent(usage: usage, metrics: notchMetrics, backgroundOpacity: sidebarOpacity) { [weak self] isHovered in
+        notchGeometry = NotchGeometry.current(for: activeCardScreen, position: notchMode.position)
+        let cardContent = NotchCardContent(usage: usage, metrics: notchMetrics, position: notchMode.position, backgroundOpacity: sidebarOpacity) { [weak self] isHovered in
             self?.setCardHovered(isHovered)
         }
         cardWindow?.contentViewController = NSHostingController(rootView: cardContent)
@@ -1796,16 +2067,36 @@ struct SettingsView: View {
         cardWindow?.orderFrontRegardless()
     }
 
+    /// Attaches the detail card to whichever side of the rail has room to grow into the
+    /// screen: beside it for a vertical pill (left of a right-anchored rail, right of a
+    /// left-anchored one), above/below it for a horizontal bar (below a top-anchored bar,
+    /// above a bottom-anchored one — the bar itself already sits flush against that edge).
     private func positionCard(index: Int, height: CGFloat? = nil) {
         guard let cardWindow else { return }
         let cardHeight = height ?? max(cardWindow.contentViewController?.view.fittingSize.height ?? 0, 1)
-        let railFrame = notchGeometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.compactHeight, verticalOffset: notchYOffset)
-        let providerCenterY = railFrame.maxY - 12 * notchMetrics.scale - notchMetrics.providerItemHeight / 2
-            - CGFloat(index) * (notchMetrics.providerItemHeight + notchMetrics.providerSpacing)
-        let visibleFrame = activeCardScreen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? railFrame
-        let originY = min(max(providerCenterY - cardHeight / 2, visibleFrame.minY + 8), visibleFrame.maxY - cardHeight - 8)
-        let originX = railFrame.minX - notchMetrics.cardWidth - notchMetrics.cardSpacing
-        cardWindow.setFrame(NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight), display: true)
+        let position = notchMode.position
+        let leadInset = 12 * notchMetrics.scale
+        let itemStride = notchMetrics.providerItemHeight + notchMetrics.providerSpacing
+        let visibleFrame = activeCardScreen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? notchGeometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.compactHeight, alongEdgeOffset: notchAlongEdgeOffset)
+
+        switch position.axis {
+        case .vertical:
+            let railFrame = notchGeometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.compactHeight, alongEdgeOffset: notchAlongEdgeOffset)
+            let providerCenterY = railFrame.maxY - leadInset - notchMetrics.providerItemHeight / 2 - CGFloat(index) * itemStride
+            let originY = min(max(providerCenterY - cardHeight / 2, visibleFrame.minY + 8), visibleFrame.maxY - cardHeight - 8)
+            let originX = position == .right
+                ? railFrame.minX - notchMetrics.cardWidth - notchMetrics.cardSpacing
+                : railFrame.maxX + notchMetrics.cardSpacing
+            cardWindow.setFrame(NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight), display: true)
+        case .horizontal:
+            let railFrame = notchGeometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.compactHeight, alongEdgeOffset: notchAlongEdgeOffset)
+            let providerCenterX = railFrame.minX + leadInset + notchMetrics.providerItemHeight / 2 + CGFloat(index) * itemStride
+            let originX = min(max(providerCenterX - notchMetrics.cardWidth / 2, visibleFrame.minX + 8), visibleFrame.maxX - notchMetrics.cardWidth - 8)
+            let originY = position == .bottom
+                ? railFrame.maxY + notchMetrics.cardSpacing
+                : railFrame.minY - cardHeight - notchMetrics.cardSpacing
+            cardWindow.setFrame(NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight), display: true)
+        }
     }
 
     private var sidebarOpacity: Double {
@@ -1846,14 +2137,14 @@ struct SettingsView: View {
     private func animateSidebarIn() {
         guard !sidebarWindows.isEmpty else { return }
         let screen = selectedNotchScreen
-        notchGeometry = NotchGeometry.current(for: screen)
+        notchGeometry = NotchGeometry.current(for: screen, position: notchMode.position)
         isRailHovered = false
         isCardHovered = false
         activeCardProvider = nil
         cardWindow?.orderOut(nil)
         sidebarWindows.forEach { window in
-            let geometry = NotchGeometry.current(for: screen)
-            let frame = geometry.frame(width: notchMetrics.idleWidth, height: notchMetrics.hoverHeight, verticalOffset: notchYOffset + notchExpansion)
+            let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
+            let frame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
             window.setFrame(frame, display: true)
             window.alphaValue = 0
             window.orderFrontRegardless()
@@ -1909,6 +2200,8 @@ struct SettingsView: View {
               onSelectNotchBehavior: { [weak self] behavior in self?.setNotchBehavior(behavior) },
               notchSize: notchMode.size,
              onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
+             notchPosition: notchMode.position,
+             onSelectNotchPosition: { [weak self] position in self?.setNotchPosition(position) },
              menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
              onChangeMenuBarAlertColors: { [weak self] enabled in self?.setMenuBarAlertColorsEnabled(enabled) },
              menuBarAlertSettings: menuBarAlertSettings,

@@ -7,18 +7,30 @@ struct OpenCodeGoProvider: UsageProvider {
     var isAvailable: Bool { FileManager.default.fileExists(atPath: authURL.path) }
     let setupHint = "Sign in to OpenCode Go to create a local API credential."
 
-    private var authURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/auth.json") }
+    private var authURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+            ".local/share/opencode/auth.json")
+    }
 
     func fetch() async -> ProviderFetchResult {
         do {
             let key = try readAPIKey()
             let data = try await requestUsage(key: key)
             let usage = try JSONDecoder().decode(OpenCodeGoResponse.self, from: data).usage
-            return .loaded(ProviderUsage(kind: kind, windows: [
-                UsageWindow(title: "Current session", percent: usage.rolling.percent, resetDate: usage.rolling.resetDate),
-                UsageWindow(title: "This week", percent: usage.weekly.percent, resetDate: usage.weekly.resetDate),
-                UsageWindow(title: "This month", percent: usage.monthly.percent, resetDate: usage.monthly.resetDate)
-            ], updatedAt: Date(), error: nil))
+            return .loaded(
+                ProviderUsage(
+                    kind: kind, accountLabel: maskedKey(key),
+                    windows: [
+                        UsageWindow(
+                            title: "Current session", percent: usage.rolling.percent,
+                            resetDate: usage.rolling.resetDate),
+                        UsageWindow(
+                            title: "This week", percent: usage.weekly.percent,
+                            resetDate: usage.weekly.resetDate),
+                        UsageWindow(
+                            title: "This month", percent: usage.monthly.percent,
+                            resetDate: usage.monthly.resetDate),
+                    ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
             return .failed(kind, error.localizedDescription, retryAfter: providerError?.retryAfter)
@@ -34,7 +46,9 @@ struct OpenCodeGoProvider: UsageProvider {
             let httpResponse = response as? HTTPURLResponse
             let status = httpResponse?.statusCode ?? -1
             if status == 429 {
-                let retryAfter = httpResponse?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? pow(2, Double(attempt + 1))
+                let retryAfter =
+                    httpResponse?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+                    ?? pow(2, Double(attempt + 1))
                 guard attempt < 2 else { throw ProviderError.rateLimited(retryAfter: retryAfter) }
                 try await Task.sleep(for: .seconds(min(retryAfter, 30)))
                 continue
@@ -48,6 +62,11 @@ struct OpenCodeGoProvider: UsageProvider {
     private func readAPIKey() throws -> String {
         let data = try Data(contentsOf: authURL)
         return try JSONDecoder().decode(OpenCodeAuth.self, from: data).openCodeGo.key
+    }
+
+    private func maskedKey(_ key: String) -> String {
+        guard key.count > 8 else { return "****" }
+        return "\(key.prefix(4))...\(key.suffix(4))"
     }
 
     private struct OpenCodeAuth: Decodable {

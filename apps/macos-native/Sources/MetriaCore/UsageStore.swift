@@ -25,6 +25,7 @@ public enum ProviderKind: String, CaseIterable, Identifiable, Hashable {
 
 public struct ProviderUsage: Identifiable, Equatable {
     public let kind: ProviderKind
+    public let accountLabel: String?
     public var windows: [UsageWindow]
     public var updatedAt: Date?
     public var error: String?
@@ -32,8 +33,9 @@ public struct ProviderUsage: Identifiable, Equatable {
     public var id: ProviderKind { kind }
     public var primary: UsageWindow? { windows.first }
 
-    public init(kind: ProviderKind, windows: [UsageWindow], updatedAt: Date?, error: String?) {
+    public init(kind: ProviderKind, accountLabel: String? = nil, windows: [UsageWindow], updatedAt: Date?, error: String?) {
         self.kind = kind
+        self.accountLabel = accountLabel
         self.windows = windows
         self.updatedAt = updatedAt
         self.error = error

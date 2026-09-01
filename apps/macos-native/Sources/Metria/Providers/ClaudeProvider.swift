@@ -6,18 +6,30 @@ struct ClaudeProvider: UsageProvider {
     let kind = ProviderKind.claude
     var isAvailable: Bool { KeychainReader.hasClaudeCredentials }
     let setupHint = "Install Claude Code and sign in to make usage available."
+    private static let accountEmailCache = ClaudeAccountEmailCache()
     func fetch() async -> ProviderFetchResult {
         do {
             let credentials = try await KeychainReader.readClaudeCredentials()
+            var accessToken = credentials.accessToken
             let data: Data
             do {
-                data = try await requestUsage(token: credentials.accessToken)
+                data = try await requestUsage(token: accessToken)
             } catch ProviderError.http(401) {
-                let token = try await refreshToken(using: credentials)
-                data = try await requestUsage(token: token)
+                accessToken = try await refreshToken(using: credentials)
+                data = try await requestUsage(token: accessToken)
             }
             let value = try JSONDecoder().decode(ClaudeResponse.self, from: data)
-            return .loaded(ProviderUsage(kind: kind, windows: [
+            let accountEmail: String?
+            if let localEmail = KeychainReader.accountEmail(from: credentials) {
+                accountEmail = localEmail
+            } else if let cachedEmail = await Self.accountEmailCache.value {
+                accountEmail = cachedEmail
+            } else {
+                let email = try? await requestAccountEmail(token: accessToken)
+                await Self.accountEmailCache.store(email)
+                accountEmail = email
+            }
+            return .loaded(ProviderUsage(kind: kind, accountLabel: accountEmail, windows: [
                 UsageWindow(title: "Current session", percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
                 UsageWindow(title: "All models", percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
             ], updatedAt: Date(), error: nil))
@@ -56,23 +68,29 @@ struct ClaudeProvider: UsageProvider {
         return token.accessToken
     }
     private func requestUsage(token: String) async throws -> Data {
-        for attempt in 0..<3 {
-            var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-            request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let httpResponse = response as? HTTPURLResponse
-            let status = httpResponse?.statusCode ?? -1
-            guard status == 429 else {
-                guard status == 200 else { throw ProviderError.http(status) }
-                return data
-            }
-            let retryAfter = httpResponse?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? pow(2, Double(attempt + 1))
-            guard attempt < 2 else { throw ProviderError.rateLimited(retryAfter: retryAfter) }
-            try await Task.sleep(for: .seconds(min(retryAfter, 30)))
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let httpResponse = response as? HTTPURLResponse
+        let status = httpResponse?.statusCode ?? -1
+        guard status != 429 else {
+            let retryAfter = httpResponse?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+            throw ProviderError.rateLimited(retryAfter: retryAfter)
         }
-        throw ProviderError.unavailable
+        guard status == 200 else { throw ProviderError.http(status) }
+        return data
+    }
+
+    private func requestAccountEmail(token: String) async throws -> String? {
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ProviderError.unavailable }
+        return try JSONDecoder().decode(ProfileResponse.self, from: data).account.email
     }
     private struct ClaudeResponse: Decodable {
         let fiveHour: Limit
@@ -103,6 +121,26 @@ struct ClaudeProvider: UsageProvider {
             case accessToken = "access_token"
             case refreshToken = "refresh_token"
             case expiresIn = "expires_in"
+        }
+    }
+
+    private struct ProfileResponse: Decodable {
+        struct Account: Decodable {
+            let email: String?
+        }
+
+        let account: Account
+    }
+}
+
+private actor ClaudeAccountEmailCache {
+    private var email: String?
+
+    var value: String? { email }
+
+    func store(_ email: String?) {
+        if let email {
+            self.email = email
         }
     }
 }

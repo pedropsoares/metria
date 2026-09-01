@@ -36,6 +36,23 @@ enum KeychainReader {
         )
     }
 
+    static func accountEmail(from credentials: ClaudeCredentials) -> String? {
+        if let oauth = credentials.document["claudeAiOauth"] as? [String: Any],
+           let email = oauth["email"] as? String,
+           email.contains("@") {
+            return email
+        }
+        return tokenEmail(credentials.accessToken)
+    }
+
+    static func tokenEmail(_ token: String) -> String? {
+        let parts = token.split(separator: ".")
+        guard parts.count >= 2,
+              let data = Data(base64Encoded: String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/") + String(repeating: "=", count: (4 - parts[1].count % 4) % 4)),
+              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return ["email", "preferred_username", "unique_name"].compactMap { claims[$0] as? String }.first { $0.contains("@") }
+    }
+
     static func saveClaudeCredentials(
         _ credentials: ClaudeCredentials,
         accessToken: String,
