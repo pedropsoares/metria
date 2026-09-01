@@ -443,6 +443,16 @@ struct NotchContent: View {
     private var isHiddenMode: Bool { mode.isHiddenMode }
     private var metrics: NotchMetrics { NotchMetrics(size: mode.size) }
 
+    /// The size of the rail's visible surface. Every layer that paints the rail
+    /// (the blur and the tinted rectangle above it) has to use this, otherwise
+    /// the wider layer keeps showing while the rail is meant to be hidden.
+    private var surfaceWidth: CGFloat { isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth }
+    private var surfaceHeight: CGFloat {
+        isHiddenMode && !isHovered
+            ? metrics.hiddenHeight
+            : isHovered ? metrics.hoverHeight : metrics.compactHeight
+    }
+
     private var visibleProviders: [ProviderUsage] {
         ProviderKind.allCases
             .filter { store.enabledProviderKinds.contains($0) && store.isProviderAvailable($0) }
@@ -456,7 +466,7 @@ struct NotchContent: View {
         ZStack(alignment: .topTrailing) {
             NotchVisualEffect()
                 .opacity(backgroundOpacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: surfaceWidth, height: surfaceHeight)
                 .clipShape(UnevenRoundedRectangle(
                     topLeadingRadius: metrics.cornerRadius,
                     bottomLeadingRadius: metrics.cornerRadius,
@@ -486,13 +496,7 @@ struct NotchContent: View {
                 style: .continuous
             )
             .fill(.black.opacity(0.18 * backgroundOpacity))
-            .frame(
-                width: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
-                height: isHiddenMode && !isHovered
-                    ? metrics.hiddenHeight
-                    : isHovered ? metrics.hoverHeight : metrics.compactHeight,
-                alignment: .topTrailing
-            )
+            .frame(width: surfaceWidth, height: surfaceHeight, alignment: .topTrailing)
             .overlay {
                 UnevenRoundedRectangle(
                     topLeadingRadius: metrics.cornerRadius,
@@ -516,13 +520,7 @@ struct NotchContent: View {
                     .transition(.opacity)
             }
         }
-        .frame(
-            width: metrics.idleWidth,
-            height: isHiddenMode && !isHovered
-                ? metrics.hiddenHeight
-                : isHovered ? metrics.hoverHeight : metrics.compactHeight,
-            alignment: .topTrailing
-        )
+        .frame(width: surfaceWidth, height: surfaceHeight, alignment: .topTrailing)
         .contentShape(
             UnevenRoundedRectangle(
                 topLeadingRadius: metrics.cornerRadius,
@@ -532,14 +530,11 @@ struct NotchContent: View {
                 style: .continuous
             )
         )
-        .frame(width: metrics.idleWidth, height: metrics.hoverHeight, alignment: .topTrailing)
-        .opacity(hasAppeared ? 1 : 0)
-        .offset(x: hasAppeared ? 0 : 18 * metrics.scale)
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.32).delay(0.15)) {
-                hasAppeared = true
-            }
-        }
+        /*
+         `onHover` has to stay attached to the surface-sized view above. Applied
+         after the padding frame below it would track that frame's full size, so
+         the rail would expand with the pointer still far from a hidden rail.
+         */
         .onHover { isInside in
             pendingHoverCollapse?.cancel()
             if isInside {
@@ -552,6 +547,14 @@ struct NotchContent: View {
                     isHovered = false
                 }
                 onNotchHover(false)
+            }
+        }
+        .frame(width: metrics.idleWidth, height: metrics.hoverHeight, alignment: .topTrailing)
+        .opacity(hasAppeared ? 1 : 0)
+        .offset(x: hasAppeared ? 0 : 18 * metrics.scale)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.32).delay(0.15)) {
+                hasAppeared = true
             }
         }
     }

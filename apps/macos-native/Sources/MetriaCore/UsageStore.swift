@@ -17,6 +17,7 @@ public enum ProviderKind: String, CaseIterable, Identifiable, Hashable {
     case claude = "Claude"
     case codex = "Codex"
     case openCodeGo = "OpenCode Go"
+    case cursor = "Cursor"
 
     public var id: String { rawValue }
 }
@@ -65,6 +66,7 @@ public final class UsageStore: ObservableObject {
     private var isRefreshing = false
     private let enabledProvidersKey = "enabledProviderKinds"
     private let cachedUsageKey = "cachedProviderUsage"
+    private let knownProvidersKey = "knownProviderKinds"
 
     private struct CachedUsage: Codable {
         struct CachedWindow: Codable {
@@ -78,13 +80,26 @@ public final class UsageStore: ObservableObject {
         let updatedAt: Date?
     }
 
+    /// Provider kinds that existed before the `knownProviderKinds` migration
+    /// key was introduced. Existing installs treat these as already known so
+    /// that only genuinely new kinds (added after this point) get
+    /// auto-enabled; see `Providers auto-enablement migration` below.
+    private static let legacyProviderKinds: Set<ProviderKind> = [.claude, .codex, .openCodeGo]
+
     public init(providers: [any UsageProvider], defaults: UserDefaults = .standard) {
         self.sources = providers
         self.defaults = defaults
         let savedKinds = (defaults.array(forKey: enabledProvidersKey) as? [String] ?? [])
             .compactMap(ProviderKind.init(rawValue:))
         let availableKinds = Set(providers.filter(\.isAvailable).map(\.kind))
-        enabledProviderKinds = savedKinds.isEmpty ? availableKinds : Set(savedKinds)
+        let knownKinds = (defaults.array(forKey: knownProvidersKey) as? [String])
+            .map { Set($0.compactMap(ProviderKind.init(rawValue:))) } ?? Self.legacyProviderKinds
+        let newlyAvailableKinds = availableKinds.subtracting(knownKinds)
+        enabledProviderKinds = savedKinds.isEmpty ? availableKinds : Set(savedKinds).union(newlyAvailableKinds)
+        defaults.set(ProviderKind.allCases.map(\.rawValue), forKey: knownProvidersKey)
+        if !savedKinds.isEmpty, !newlyAvailableKinds.isEmpty {
+            defaults.set(enabledProviderKinds.map(\.rawValue), forKey: enabledProvidersKey)
+        }
         self.providers = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
             .filter { availableKinds.contains($0.kind) && enabledProviderKinds.contains($0.kind) }
     }
