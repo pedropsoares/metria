@@ -716,7 +716,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .providers: "Providers"
-        case .iPhone: "iPhone"
+        case .iPhone: "Phone"
         }
     }
     var symbol: String {
@@ -840,7 +840,7 @@ struct SettingsView: View {
         switch selectedSection {
         case .general: generalView
         case .providers: providersView
-        case .iPhone: iPhoneView
+        case .iPhone: phoneView
         }
     }
 
@@ -995,9 +995,9 @@ struct SettingsView: View {
         }
     }
 
-    private var iPhoneView: some View {
+    private var phoneView: some View {
         Form {
-            Section("Pair your iPhone") {
+            Section("Pair your phone") {
                 if let qrImage = pairing.qrImage {
                     HStack {
                         Image(nsImage: qrImage)
@@ -1070,7 +1070,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Scan the QR code with your iPhone camera, or open the PWA and enter the phrase. The local address must be reachable from your iPhone.")
+            Text("Scan the QR code with your phone's camera, or open the PWA and enter the phrase. The local address must be reachable from your phone.")
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
@@ -1082,7 +1082,7 @@ struct SettingsView: View {
                 onRegeneratePairing()
             }
         } message: {
-            Text("Any iPhone using the current QR code or phrase will stop receiving updates.")
+            Text("Any phone using the current QR code or phrase will stop receiving updates.")
         }
     }
 }

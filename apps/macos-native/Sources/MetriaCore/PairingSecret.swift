@@ -3,7 +3,7 @@ import Foundation
 import Security
 
 /// Derives a single high-entropy pairing secret into everything Metria needs to connect
-/// the Mac app to the iPhone PWA over ntfy: a routing topic and an encryption key.
+/// the Mac app to the mobile PWA over ntfy: a routing topic and an encryption key.
 ///
 /// The secret itself is represented two ways for pairing: a QR code (see `Metria`'s
 /// `PairingManager`) and a 12-word BIP-39-style phrase, mirroring how hardware wallets

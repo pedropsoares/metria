@@ -26,7 +26,7 @@ Provider selection, display mode, and sidebar opacity are persisted in `UserDefa
 
 ## Download
 
-Pick your platform, open the installer, and you're all set—after that, Metria keeps itself up to date.
+Pick your platform, open the installer, and you're all set. After that, Metria keeps itself up to date.
 
 <p align="center">
   <a href="https://github.com/yurirxmos/metria/releases">
@@ -39,21 +39,27 @@ Pick your platform, open the installer, and you're all set—after that, Metria 
 
 Prefer to see what you're getting? Browse all installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
 
+## To do
+
+- Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
+- Improve Metria compatibility and runtime support for Windows and Linux.
+- Add usage-aware sounds and animations.
+
 ## Providers
 
 - **Claude** — OAuth token read from the macOS Keychain, usage fetched from the Anthropic usage endpoint.
 - **Codex / OpenCode** — credentials read from the local `~/.local/share/opencode/auth.json` and local session files.
 - **OpenCode Go** — API key read from the same `auth.json`, usage fetched from the OpenCode Go endpoint.
 
-Providers are enabled automatically only when their local credentials or usage files are detected. Providers that are not installed remain available in Settings with setup guidance.
+Providers are *enabled automatically* only when their local credentials or usage files are detected. Providers that are not installed remain available in Settings with setup guidance.
 
 Credentials are never committed. The native macOS app reads them at runtime from the Keychain and local config files described in [the provider sources](apps/macos-native/Sources/Metria/Providers/). Electron has its own documented provider-support boundaries in [apps/electron](apps/electron/).
 
-## iPhone PWA
+## Mobile PWA
 
-Metria serves the iPhone companion locally from your Mac by default. Start Metria, then scan the QR code in **Settings > iPhone** while the iPhone and Mac are on the same Wi-Fi network. The local server port defaults to `8973` and can be changed in Settings; if it is in use, Metria tries subsequent ports automatically.
+Metria's companion PWA works on compatible iPhone and Android browsers. Start Metria, then scan the QR code in **Settings > Phone** while the phone and Mac are on the same Wi-Fi network. The local server port defaults to `8973` and can be changed in Settings; if it is in use, Metria tries subsequent ports automatically.
 
-Local HTTP access works in Safari but cannot be installed as an offline PWA because iOS requires HTTPS for that capability. Metria uses the hosted Cloudflare PWA by default at `https://metria-pwa.yuriramos2406.workers.dev`. Clear **Settings > iPhone > Custom PWA URL** to pair through the local server instead. Build and deploy the static files with:
+The local HTTP server is available for same-network pairing, but browsers require HTTPS to install a PWA or use Web Push. Metria uses the hosted Cloudflare PWA by default at `https://metria-pwa.yuriramos2406.workers.dev`. Clear **Settings > Phone > Custom PWA URL** to pair through the local server instead. Build and deploy the static files with:
 
 ```sh
 cd apps/pwa
@@ -62,11 +68,11 @@ npm run build
 npm run deploy
 ```
 
-You can replace the Cloudflare URL in **Settings > iPhone > Custom PWA URL** with any HTTPS static host.
+You can replace the Cloudflare URL in **Settings > Phone > Custom PWA URL** with any HTTPS static host.
 
-### iPhone alerts
+### Mobile alerts
 
-Install the Cloudflare-hosted PWA on your iPhone with **Add to Home Screen**, open it, and select **Enable alerts**. Metria sends the current provider usage whenever the Mac app publishes a new snapshot. The local HTTP server cannot provide system notifications because iOS requires HTTPS for Web Push.
+Install the Cloudflare-hosted PWA on your phone, open it, and select **Enable alerts**. Metria sends the current provider usage whenever the Mac app publishes a new snapshot. The local HTTP server cannot provide system notifications because Web Push requires HTTPS.
 
 ## Requirements
 
@@ -76,20 +82,26 @@ Install the Cloudflare-hosted PWA on your iPhone with **Add to Home Screen**, op
 
 ## Quick start
 
-### Install Metria
+### Mac version
 
-Download the latest `.dmg` from [GitHub Releases](https://github.com/yurirxmos/metria/releases), choosing the package for your Mac:
+Download the latest native macOS `.dmg` from [GitHub Releases](https://github.com/yurirxmos/metria/releases), choosing the package for your Mac:
 
 - **Apple Silicon** — M-series Macs.
 - **Intel** — Intel-based Macs.
 
 Open the disk image, drag `Metria.app` to `Applications`, and launch it from Finder or Spotlight. Metria runs in the menu bar and does not open a regular application window.
 
-### Launch at login
+### Electron version
 
-After installing Metria as an app, open **Settings > General**, enable **Launch at login**, and approve Metria in **System Settings > General > Login Items** if macOS requests approval.
+The Electron version supports Windows, Linux, and macOS. Download the installer for your operating system from [GitHub Releases](https://github.com/yurirxmos/metria/releases). Also you can build it on that operating system:
 
-The startup option is available for the installed `.app`. It is not registered when running the development command below.
+```sh
+cd apps/electron
+npm ci
+npm run package
+```
+
+The host-native installer is created in `apps/electron/release/`. See the [Electron documentation](apps/electron/README.md) for current platform support and provider limitations.
 
 ### Run in development
 
@@ -126,8 +138,7 @@ This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Relea
 - `apps/macos-native/Sources/MetriaCore/UsageStore.swift` — native usage state, provider seam, and refresh/retry logic.
 - `apps/macos-native/scripts/package-macos.sh` — reproducible native macOS app bundle and archive builder.
 - `apps/electron/` — parallel Electron implementation with secure main/preload/renderer boundaries.
-- `apps/pwa/` — iPhone companion PWA and its Cloudflare Worker (`public/` holds the static site, `src/worker.js` the Worker).
-
+- `apps/pwa/` — mobile companion PWA and its Cloudflare Worker (`public/` holds the static site, `src/worker.js` the Worker).
 ## Contributing
 
 Contributions are welcome! Feel free to open an issue to report a bug or suggest a feature, or open a pull request with your changes.
@@ -135,7 +146,7 @@ Contributions are welcome! Feel free to open an issue to report a bug or suggest
 - Fork the repository and create a branch from `main`.
 - Keep changes focused and follow the existing code style.
 - Run `swift build` from the repository root to verify the package compiles.
-- For the iPhone PWA, build its stylesheet with `cd apps/pwa && npm ci && npm run build`.
+- For the mobile PWA, build its stylesheet with `cd apps/pwa && npm ci && npm run build`.
 - Keep all repository text in en-US (comments, UI strings, commit messages, docs).
 - Do not commit credentials, generated `.build/` output, or local configuration.
 
