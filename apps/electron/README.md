@@ -66,8 +66,5 @@ dashboard asks which to track once, then remembers the choice in settings:
 These read-only locations are fixture-tested, not runtime-tested on
 Windows/Linux.
 
-Use `METRIA_SYNTHETIC=1 npm run dev` for a no-credential, no-provider-network
-smoke run. It generates synthetic provider data.
-
 Windows and Linux packages must be created and runtime-tested on those systems;
 they are not claimed as verified from macOS.
