@@ -231,6 +231,14 @@ Contributions are welcome! Feel free to open an issue to report a bug or suggest
 - Keep all repository text in en-US (comments, UI strings, commit messages, docs).
 - Do not commit credentials, generated build output, or local configuration.
 
+Join the Metria contributors group on WhatsApp to ask questions, share feedback, and help shape the project.
+
+<p align="center">
+  <a href="https://chat.whatsapp.com/KE2hbxgNmWYAyrUrjvU6Br?s=cl&p=i&mlu=4">
+    <img src="https://img.shields.io/badge/WhatsApp%20Group-Contributors-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="Join the WhatsApp contributors group" />
+  </a>
+</p>
+
 ### Mac version
 
 - Run `swift build` from the repository root.
