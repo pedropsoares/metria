@@ -88,12 +88,12 @@ struct UsageWidgetView: View {
 
     // MARK: - Freshness
 
-    /// The Lock Screen has room for roughly three short lines, so elapsed time is shown
-    /// as a compact stopwatch there and spelled out only where there is width for it.
-    /// Both styles re-render on their own, without spending a timeline reload.
-    private var elapsedText: some View {
+    /// When the reading was taken, as a clock time. The Home Screen is glanced at beside
+    /// the system clock, so a timestamp answers "how current is this?" at once, where a
+    /// running counter only asks the reader to do the subtraction.
+    private var lastUpdatedText: some View {
         Label {
-            Text(entry.cached?.snapshot.updatedAt ?? entry.date, style: isAccessory ? .timer : .relative)
+            Text(entry.cached?.snapshot.updatedAt ?? entry.date, style: .time)
                 .lineLimit(1)
         } icon: {
             Image(systemName: "clock")
@@ -102,8 +102,20 @@ struct UsageWidgetView: View {
         .labelStyle(.titleAndIcon)
     }
 
+    /// The Lock Screen shows the wait instead: the clock is already right above the
+    /// widget, so what it cannot tell you is when the next reading lands.
+    private var countdownLabel: some View {
+        Label {
+            countdownText
+        } icon: {
+            Image(systemName: "clock")
+        }
+        .labelStyle(.titleAndIcon)
+    }
+
     /// Clamped because a late reload puts `nextReloadDate` in the past, and an inverted
-    /// range traps at runtime — the very case this countdown exists to reveal.
+    /// range traps at runtime — the very case this countdown exists to reveal. It
+    /// re-renders on its own, without spending a timeline reload.
     private var countdownText: some View {
         let now = Date()
         let end = max(entry.nextReloadDate, now.addingTimeInterval(1))
@@ -145,7 +157,7 @@ struct UsageWidgetView: View {
                 .lineLimit(isAccessory ? 2 : 3)
                 .minimumScaleFactor(0.85)
             if entry.cached != nil {
-                elapsedText.foregroundStyle(.secondary)
+                lastUpdatedText.foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -195,7 +207,7 @@ struct UsageWidgetView: View {
             Gauge(value: min(max(provider.percent, 0), 100), in: 0...100) { EmptyView() }
                 .gaugeStyle(.accessoryLinearCapacity)
                 .frame(height: 6)
-            elapsedText
+            countdownLabel
         }
     }
 
@@ -225,7 +237,7 @@ struct UsageWidgetView: View {
                     .padding(.top, 4)
             }
             Spacer(minLength: 6)
-            elapsedText.foregroundStyle(.secondary)
+            lastUpdatedText.foregroundStyle(.secondary)
         }
     }
 
@@ -244,7 +256,7 @@ struct UsageWidgetView: View {
             }
             .frame(maxHeight: .infinity)
             HStack(spacing: 6) {
-                elapsedText
+                lastUpdatedText
                 Spacer(minLength: 4)
                 countdownText
             }

@@ -663,6 +663,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Entitlements/MetriaWidgets.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YY79DR943D;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Generated/MetriaWidgets-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Metria Usage";
@@ -685,6 +686,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Entitlements/MetriaWidgets.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YY79DR943D;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Generated/MetriaWidgets-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Metria Usage";
@@ -848,6 +850,7 @@
 				CODE_SIGN_ENTITLEMENTS = Entitlements/MetriaMobile.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YY79DR943D;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Generated/MetriaMobile-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Metria;
@@ -873,6 +876,7 @@
 				CODE_SIGN_ENTITLEMENTS = Entitlements/MetriaMobile.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YY79DR943D;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Generated/MetriaMobile-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Metria;
