@@ -790,6 +790,7 @@ struct NotchMetrics {
     var controlsHeight: CGFloat { 24 * scale }
     var controlsGap: CGFloat { 0 }
     var controlsBottomSpace: CGFloat { 0 }
+    var interactionMargin: CGFloat { 8 * scale }
 
     /// Maps a (thickness, extent) pair — thickness being the fixed cross-axis size, extent
     /// the size along the growth axis — onto an actual (width, height), swapped for a
@@ -827,6 +828,7 @@ struct NotchContent: View {
     let onProviderTap: (ProviderKind) -> Void
     @State private var isHovered = false
     @State private var hasAppeared = false
+    @State private var pendingHoverCollapse: DispatchWorkItem?
 
     private var isHiddenMode: Bool { mode.isHiddenMode }
     private var metrics: NotchMetrics {
@@ -848,6 +850,22 @@ struct NotchContent: View {
         let size = metrics.size(
             thickness: metrics.idleWidth, extent: metrics.hoverHeight, axis: axis)
         return size
+    }
+    private var trackingSize: CGSize {
+        let extent =
+            (isHiddenMode && !isHovered
+                ? metrics.hiddenHeight : isHovered ? metrics.hoverHeight : metrics.railExtent)
+            + metrics.interactionMargin * 2
+        return metrics.size(
+            thickness: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
+            extent: extent,
+            axis: axis)
+    }
+    private var maxTrackingSize: CGSize {
+        metrics.size(
+            thickness: metrics.idleWidth,
+            extent: metrics.hoverHeight + metrics.interactionMargin * 2,
+            axis: axis)
     }
     private var hiddenPeekSize: CGSize {
         metrics.size(thickness: metrics.hiddenWidth, extent: metrics.hiddenHeight, axis: axis)
@@ -944,24 +962,34 @@ struct NotchContent: View {
                 squareSideExtension: metrics.squareSideExtension
             )
         )
-        // `.onHover` tracks the exact frame it's attached to (it doesn't respect an
-        // outer `.contentShape`), so it must sit on the `currentSize`-framed view here —
-        // before the frame below pads it out to `maxSize` for the growth-room trick —
-        // or hovering anywhere in that invisible padding would trigger it prematurely.
+        // Track a small invisible margin around the active surface. It prevents the shelf
+        // from collapsing while the cursor moves between the rail and an end control.
+        .frame(
+            width: trackingSize.width,
+            height: trackingSize.height,
+            alignment: position.zStackAlignment)
         .onHover { isInside in
+            pendingHoverCollapse?.cancel()
             if isInside {
                 withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
                     isHovered = true
                 }
                 onNotchHover(true)
             } else {
-                withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
-                    isHovered = false
+                let collapse = DispatchWorkItem {
+                    withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
+                        isHovered = false
+                    }
+                    onNotchHover(false)
                 }
-                onNotchHover(false)
+                pendingHoverCollapse = collapse
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: collapse)
             }
         }
-        .frame(width: maxSize.width, height: maxSize.height, alignment: position.zStackAlignment)
+        .frame(
+            width: maxTrackingSize.width,
+            height: maxTrackingSize.height,
+            alignment: position.zStackAlignment)
         .opacity(hasAppeared ? 1 : 0)
         .offset(appearOffset)
         .onAppear {
@@ -1185,8 +1213,13 @@ final class DraggableNotchPanel: NSPanel {
         case .leftMouseDown:
             didDrag = false
             didHandleControlTap = routeControlTap(at: event.locationInWindow)
+            if didHandleControlTap {
+                lastMouseScreenPoint = nil
+                return
+            }
             lastMouseScreenPoint = convertPoint(toScreen: event.locationInWindow)
         case .leftMouseDragged:
+            guard !didHandleControlTap else { return }
             didDrag = true
             if let lastMouseScreenPoint {
                 let currentMouseScreenPoint = convertPoint(toScreen: event.locationInWindow)
@@ -1199,7 +1232,12 @@ final class DraggableNotchPanel: NSPanel {
             }
             return
         case .leftMouseUp:
-            if !didDrag && !didHandleControlTap { _ = routeControlTap(at: event.locationInWindow) }
+            if didHandleControlTap {
+                didHandleControlTap = false
+                lastMouseScreenPoint = nil
+                return
+            }
+            if !didDrag { _ = routeControlTap(at: event.locationInWindow) }
             didHandleControlTap = false
             lastMouseScreenPoint = nil
         case .rightMouseDown:
@@ -1219,32 +1257,36 @@ final class DraggableNotchPanel: NSPanel {
     private func routeControlTap(at point: NSPoint) -> Bool {
         let endExtent = metrics.controlsHeight
         let maxExtent = metrics.hoverHeight
+        let interactionMargin = metrics.interactionMargin
 
         switch position.axis {
         case .vertical:
             let half = maxExtent / 2
-            let leadingBandBottom = half + metrics.railExtent / 2 + metrics.controlsGap
+            let leadingBandBottom =
+                interactionMargin + half + metrics.railExtent / 2 + metrics.controlsGap
             let leadingBandTop = leadingBandBottom + endExtent
             if point.y >= leadingBandBottom && point.y <= leadingBandTop {
                 onEyeTap?()
                 return true
             }
 
-            let trailingBandTop = half - metrics.railExtent / 2 - metrics.controlsGap
+            let trailingBandTop =
+                interactionMargin + half - metrics.railExtent / 2 - metrics.controlsGap
             let trailingBandBottom = trailingBandTop - endExtent
             if point.y >= trailingBandBottom && point.y <= trailingBandTop {
                 onGearTap?(point)
                 return true
             }
         case .horizontal:
-            let leadingBandStart = metrics.controlsBottomSpace
+            let leadingBandStart = interactionMargin + metrics.controlsBottomSpace
             let leadingBandEnd = leadingBandStart + endExtent
             if point.x >= leadingBandStart && point.x <= leadingBandEnd {
                 onEyeTap?()
                 return true
             }
 
-            let trailingBandEnd = maxExtent - metrics.controlsBottomSpace
+            let trailingBandEnd =
+                interactionMargin + maxExtent - metrics.controlsBottomSpace
             let trailingBandStart = trailingBandEnd - endExtent
             if point.x >= trailingBandStart && point.x <= trailingBandEnd {
                 onGearTap?(point)
@@ -1302,7 +1344,8 @@ final class NotchHostingView: NSHostingView<NotchContent> {
             isHiddenMode && !isHovered
             ? metrics.hiddenHeight
             : isHovered ? metrics.hoverHeight : metrics.compactHeight
-        let size = metrics.size(thickness: thickness, extent: extent, axis: position.axis)
+        let interactionExtent = extent + metrics.interactionMargin * 2
+        let size = metrics.size(thickness: thickness, extent: interactionExtent, axis: position.axis)
         let rect = surfaceFrame(width: size.width, height: size.height)
         let testPoint = CGPoint(x: point.x, y: topBasedY)
 
@@ -2478,6 +2521,18 @@ extension NSMenu {
     private var notchExpansionOffset: CGFloat {
         notchMode.position.axis == .vertical ? notchExpansion : 0
     }
+    private var notchPanelExtent: CGFloat {
+        notchMetrics.hoverHeight + notchMetrics.interactionMargin * 2
+    }
+    private var notchPanelOffsetAdjustment: CGFloat {
+        notchMode.position.axis == .vertical ? notchMetrics.interactionMargin : 0
+    }
+    private var defaultNotchPanelOffset: CGFloat {
+        notchExpansionOffset + notchPanelOffsetAdjustment
+    }
+    private var currentNotchPanelOffset: CGFloat {
+        notchAlongEdgeOffset + defaultNotchPanelOffset
+    }
 
     private func configureSidebar() {
         let screen = selectedNotchScreen ?? NSScreen.main ?? NSScreen.screens.first
@@ -2493,8 +2548,8 @@ extension NSMenu {
     private func makeSidebarWindow(for screen: NSScreen) -> NSPanel {
         let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
         let frame = geometry.frame(
-            thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
-            alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
+            thickness: notchMetrics.idleWidth, extent: notchPanelExtent,
+            alongEdgeOffset: currentNotchPanelOffset)
         let panel = DraggableNotchPanel(
             contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
             defer: false)
@@ -2524,11 +2579,11 @@ extension NSMenu {
         let axis = notchMode.position.axis
         let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
         let defaultFrame = geometry.frame(
-            thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
-            alongEdgeOffset: notchExpansionOffset)
+            thickness: notchMetrics.idleWidth, extent: notchPanelExtent,
+            alongEdgeOffset: defaultNotchPanelOffset)
         var frame = geometry.frame(
-            thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
-            alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
+            thickness: notchMetrics.idleWidth, extent: notchPanelExtent,
+            alongEdgeOffset: currentNotchPanelOffset)
         if axis == .vertical {
             frame.origin.y = min(
                 max(frame.origin.y, screen.visibleFrame.minY),
@@ -2607,8 +2662,8 @@ extension NSMenu {
 
         notchGeometry = NotchGeometry.current(for: screen, position: notchMode.position)
         let defaultFrame = notchGeometry.frame(
-            thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
-            alongEdgeOffset: notchExpansionOffset)
+            thickness: notchMetrics.idleWidth, extent: notchPanelExtent,
+            alongEdgeOffset: defaultNotchPanelOffset)
         notchAlongEdgeOffset =
             axis == .vertical
             ? frame.origin.y - defaultFrame.origin.y : frame.origin.x - defaultFrame.origin.x
@@ -2657,8 +2712,8 @@ extension NSMenu {
             let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
             window.setFrame(
                 geometry.frame(
-                    thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
-                    alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset), display: true)
+                    thickness: notchMetrics.idleWidth, extent: notchPanelExtent,
+                    alongEdgeOffset: currentNotchPanelOffset), display: true)
         }
         if let activeCardProvider {
             showCard(for: activeCardProvider, index: activeCardIndex)
@@ -2697,8 +2752,8 @@ extension NSMenu {
             let geometry = NotchGeometry.current(for: screen, position: position)
             window.setFrame(
                 geometry.frame(
-                    thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
-                    alongEdgeOffset: notchExpansionOffset), display: true)
+                    thickness: notchMetrics.idleWidth, extent: notchPanelExtent,
+                    alongEdgeOffset: defaultNotchPanelOffset), display: true)
             notchGeometry = geometry
         }
         if let activeCardProvider {
@@ -2951,8 +3006,8 @@ extension NSMenu {
         sidebarWindows.forEach { window in
             let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
             let frame = geometry.frame(
-                thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
-                alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
+                thickness: notchMetrics.idleWidth, extent: notchPanelExtent,
+                alongEdgeOffset: currentNotchPanelOffset)
             window.setFrame(frame, display: true)
             window.alphaValue = 0
             window.orderFrontRegardless()
