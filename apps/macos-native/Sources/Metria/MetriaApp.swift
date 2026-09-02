@@ -454,8 +454,8 @@ enum NotchPosition: String, CaseIterable, Identifiable {
 
     var zStackAlignment: Alignment {
         switch self {
-        case .right: .topTrailing
-        case .left: .topLeading
+        case .right: .trailing
+        case .left: .leading
         case .top: .top
         case .bottom: .bottom
         }
@@ -594,18 +594,6 @@ struct NotchContent: View {
     private var position: NotchPosition { mode.position }
     private var axis: NotchAxis { position.axis }
 
-    /// Compensates the single-corner-anchored vertical pill so its flush edge stays
-    /// visually fixed as it grows into the hover shelf. The horizontal bar needs no such
-    /// compensation: its `.top`/`.bottom` alignment already centers the narrower idle
-    /// content within the oversized hover window for free.
-    private var railHoverOffset: CGFloat { axis == .vertical ? metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace : 0 }
-    /// The growing shell (background + stroke) starts pulled in by `railHoverOffset` and
-    /// relaxes to 0 on hover, so it visually grows outward around the static content below.
-    private var shellOffset: CGSize { alongAxisOffset(isHovered ? 0 : railHoverOffset) }
-    /// The provider rail itself never moves — it stays pinned at its compact position while
-    /// the shell grows around it, so the icons don't jump when the notch expands.
-    private var contentOffset: CGSize { alongAxisOffset(railHoverOffset) }
-
     private var currentSize: CGSize {
         metrics.size(
             thickness: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
@@ -616,10 +604,6 @@ struct NotchContent: View {
     private var maxSize: CGSize { metrics.size(thickness: metrics.idleWidth, extent: metrics.hoverHeight, axis: axis) }
     private var hiddenPeekSize: CGSize { metrics.size(thickness: metrics.hiddenWidth, extent: metrics.hiddenHeight, axis: axis) }
     private var endControlSize: CGSize { metrics.size(thickness: metrics.idleWidth, extent: metrics.controlsHeight, axis: axis) }
-
-    private func alongAxisOffset(_ value: CGFloat) -> CGSize {
-        axis == .vertical ? CGSize(width: 0, height: value) : CGSize(width: value, height: 0)
-    }
 
     private var appearOffset: CGSize {
         guard !hasAppeared else { return .zero }
@@ -642,7 +626,6 @@ struct NotchContent: View {
                 UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
                      .fill(.black.opacity(0.72 * backgroundOpacity))
                  }
-                 .offset(shellOffset)
             /*
              The native visual effect view is required here because the notch is
              hosted in an AppKit panel outside the normal SwiftUI window hierarchy.
@@ -654,7 +637,6 @@ struct NotchContent: View {
                 UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
                  .stroke(.white.opacity(0.14), lineWidth: 1)
               }
-              .offset(shellOffset)
               if !isHiddenMode || isHovered {
                   compactProviders
                       .frame(
@@ -662,7 +644,6 @@ struct NotchContent: View {
                         height: axis == .horizontal ? metrics.idleWidth : nil,
                         alignment: position.zStackAlignment
                       )
-                      .offset(contentOffset)
               }
               if isHiddenMode && !isHovered {
                   Image(systemName: position.hiddenHintSymbolName)
@@ -671,7 +652,6 @@ struct NotchContent: View {
                       .frame(width: hiddenPeekSize.width, height: hiddenPeekSize.height)
                       .accessibilityLabel("Hover to open notch")
                       .help("Hover to open notch")
-                      .offset(contentOffset)
               }
 
               if isHovered {
@@ -680,11 +660,10 @@ struct NotchContent: View {
         }
         .frame(width: currentSize.width, height: currentSize.height, alignment: position.zStackAlignment)
         .contentShape(UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous))
-        /*
-         `onHover` has to stay attached to the surface-sized view above. Applied
-         after the padding frame below it would track that frame's full size, so
-         the rail would expand with the pointer still far from a hidden rail.
-         */
+        // `.onHover` tracks the exact frame it's attached to (it doesn't respect an
+        // outer `.contentShape`), so it must sit on the `currentSize`-framed view here —
+        // before the frame below pads it out to `maxSize` for the growth-room trick —
+        // or hovering anywhere in that invisible padding would trigger it prematurely.
         .onHover { isInside in
             if isInside {
                 withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
@@ -746,11 +725,11 @@ struct NotchContent: View {
         if axis == .vertical {
             topControls
                 .frame(width: endControlSize.width, height: endControlSize.height)
-                .offset(y: metrics.controlsBottomSpace)
+                .offset(y: -(metrics.compactHeight / 2 + metrics.controlsGap + metrics.controlsHeight / 2))
                 .transition(.opacity)
             bottomControls
                 .frame(width: endControlSize.width, height: endControlSize.height)
-                .offset(y: metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace + metrics.compactHeight + metrics.controlsGap)
+                .offset(y: metrics.compactHeight / 2 + metrics.controlsGap + metrics.controlsHeight / 2)
                 .transition(.opacity)
         } else {
             topControls
@@ -911,8 +890,10 @@ final class DraggableNotchPanel: NSPanel {
         super.sendEvent(event)
     }
 
-    // The two control bands mirror the SwiftUI layout around the provider rail: above/below
-    // it for a vertical pill, at its leading/trailing ends for a horizontal bar.
+    // The two control bands mirror the SwiftUI layout around the provider rail: centered
+    // above/below it for a vertical pill (`maxExtent / 2` is the rail's fixed center, since
+    // the window reserves symmetric space around it), at its leading/trailing ends for a
+    // horizontal bar.
     @discardableResult
     private func routeControlTap(at point: NSPoint) -> Bool {
         let endExtent = metrics.controlsHeight
@@ -920,15 +901,15 @@ final class DraggableNotchPanel: NSPanel {
 
         switch position.axis {
         case .vertical:
-            let leadingBandTop = maxExtent - metrics.controlsBottomSpace
-            let leadingBandBottom = leadingBandTop - endExtent
+            let half = maxExtent / 2
+            let leadingBandBottom = half + metrics.compactHeight / 2 + metrics.controlsGap
+            let leadingBandTop = leadingBandBottom + endExtent
             if point.y >= leadingBandBottom && point.y <= leadingBandTop {
                 onEyeTap?()
                 return true
             }
 
-            let trailingOffset = metrics.controlsHeight + metrics.controlsGap + metrics.controlsBottomSpace + metrics.compactHeight + metrics.controlsGap
-            let trailingBandTop = maxExtent - trailingOffset
+            let trailingBandTop = half - metrics.compactHeight / 2 - metrics.controlsGap
             let trailingBandBottom = trailingBandTop - endExtent
             if point.y >= trailingBandBottom && point.y <= trailingBandTop {
                 onGearTap?(point)
@@ -1993,9 +1974,11 @@ private extension NSMenu {
     private var pendingCardDismiss: DispatchWorkItem?
     private var pendingCardShow: DispatchWorkItem?
 
-    /// A vertical pill's offset compensates for its single-corner-anchored hover growth
-    /// (see `NotchContent.railHoverOffset`); a horizontal bar needs none, since it grows
-    /// symmetrically from center already.
+    /// The window is always created at its full hover size, so a vertical pill's window
+    /// is shifted up by `notchExpansion` to pre-reserve that extra room evenly split above
+    /// and below the compact rail's fixed center — `NotchContent` centers its content on
+    /// that same axis, so the rail neither moves nor needs its own compensating offset. A
+    /// horizontal bar needs none: it already grows centered on its width axis for free.
     private var notchExpansionOffset: CGFloat { notchMode.position.axis == .vertical ? notchExpansion : 0 }
 
     private func configureSidebar() {

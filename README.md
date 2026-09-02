@@ -1,6 +1,11 @@
 # Metria
 
-*A native macOS app and parallel Electron app that track your AI coding assistant usage in real time.*
+*A native macOS app that tracks your AI coding assistant usage in real time.*
+
+> A fork of [yurirxmos/metria](https://github.com/yurirxmos/metria) that adds a
+> Cursor provider and iPhone pairing on the macOS side. The Windows/Linux and
+> iOS apps live in their own repositories — see
+> [Related repositories](#related-repositories).
 
 <p align="center">
   <img src="https://i.imgur.com/shpAcSm.gif" alt="Metria demo" width="720" />
@@ -20,18 +25,16 @@
 - [To do](#to-do)
 - [Providers](#providers)
 - [Mobile PWA](#mobile-pwa)
-- [iOS app](#ios-app)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Project layout](#project-layout)
+- [Related repositories](#related-repositories)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## What it does
 
-Both desktop versions show current session and monthly usage percentages for supported AI providers.
-
-### Mac version
+Metria shows current session and monthly usage percentages for supported AI providers.
 
 - **Floating sidebar** — hover a provider logo to preview its usage card.
 - **Menu bar** — compact text labels for each provider.
@@ -39,36 +42,15 @@ Both desktop versions show current session and monthly usage percentages for sup
 
 The native app stores provider selection, display mode, sidebar position, and opacity in macOS `UserDefaults`.
 
-### Electron version
-
-- **Usage widget** — a right-edge widget for provider usage cards on Windows and Linux.
-- **System tray** — compact access to provider usage and controls.
-- **Dashboard window** — detailed per-provider cards and usage gauges.
-
-The Electron app stores its settings in its own `com.metria.electron` application-data namespace.
-
 ## Download
 
-Pick your platform, open the installer, and you're all set. Browse all installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
-
-### Mac version
+Pick your platform, open the installer, and you're all set. Browse macOS installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
 
 Download the native `.dmg` for Apple Silicon or Intel Macs.
 
-### Electron version
-
-Download the Windows `.exe` or Linux `.AppImage`. Electron releases are for Windows and Linux only; macOS is served by the native app.
-
 ## To do
 
-### Mac version
-
-- The iOS companion app (`apps/ios`) is source-only and unverified on real hardware; see its [README section](#ios-app) and run Plan 004's Phase 0 device gate before shipping it.
-- Build a native Android app to improve usage update delivery alongside the existing PWA.
-
-### Electron version
-
-- Improve Metria compatibility and runtime support for Windows and Linux.
+- Build a native Android app to improve usage update delivery alongside the existing PWA. The iOS app already exists in [its own repository](https://github.com/pedropsoares/metria-ios); the PWA remains the Android path.
 
 ### Shared
 
@@ -78,29 +60,16 @@ Download the Windows `.exe` or Linux `.AppImage`. Electron releases are for Wind
 
 Providers are enabled automatically only when their local credentials or usage files are detected. Providers that are not installed remain available in Settings with setup guidance.
 
-### Mac version
-
 - **Claude** — OAuth token read from the macOS Keychain, usage fetched from the Anthropic usage endpoint.
 - **Codex / OpenCode** — credentials read from `~/.local/share/opencode/auth.json` and local session files.
 - **OpenCode Go** — API key read from the same `auth.json`, usage fetched from the OpenCode Go endpoint.
-- **Cursor** — JWT read from Cursor's `state.vscdb` (VS Code global storage SQLite database), usage fetched from Cursor's dashboard endpoint. This endpoint is not published by Cursor and can change without notice, outside this project's control.
+- **Cursor** — session JWT read from Cursor's `state.vscdb` (its VS Code-derived global storage), usage fetched from the endpoint Cursor's own dashboard calls. That endpoint is not published by Cursor and can change without notice, outside this project's control. Cursor is the only provider that reports what a cycle costs, so its card can show dollars as well as a percentage.
 
 The native app reads credentials at runtime from the Keychain and local configuration files. See the [native provider sources](apps/macos-native/Sources/Metria/Providers/).
 
-### Electron version
-
-- **Claude** — credentials read from `~/.claude/.credentials.json` on Unix and from the equivalent host or WSL location on Windows.
-- **Codex** — credentials and the newest session read from `CODEX_HOME`/`~/.codex`, including WSL locations on Windows.
-- **OpenCode Go** — credentials read from `XDG_DATA_HOME`/`~/.local/share/opencode/auth.json` on Unix, `%APPDATA%` on Windows, or the WSL path.
-- **Cursor** — JWT read from Cursor's `state.vscdb` (VS Code global storage SQLite database) on the host, usage fetched from Cursor's dashboard endpoint. Host-only: Cursor is not read from WSL. This endpoint is not published by Cursor and can change without notice, outside this project's control.
-
-Electron discovers provider data on the host filesystem and, on Windows, in installed WSL distributions. See the [Electron provider documentation](apps/electron/README.md).
-
-Credentials are never committed. Both versions read them at runtime from their documented local sources.
+Credentials are never committed. The native app reads them at runtime from its documented local sources.
 
 ## Mobile PWA
-
-### Mac version
 
 Metria's companion PWA works on compatible iPhone and Android browsers. Start the native Mac app, then scan the QR code in **Settings > Phone** while the phone and Mac are on the same Wi-Fi network. The local server port defaults to `8973` and can be changed in Settings; if it is in use, Metria tries subsequent ports automatically.
 
@@ -119,85 +88,13 @@ You can replace the Cloudflare URL in **Settings > Phone > Custom PWA URL** with
 
 Install the Cloudflare-hosted PWA on your phone, open it, and select **Enable alerts**. Metria sends the current provider usage whenever the Mac app publishes a new snapshot. The local HTTP server cannot provide system notifications because Web Push requires HTTPS.
 
-### Electron version
-
-The Electron version does not include phone pairing, the local PWA server, QR pairing, or mobile alerts.
-
-## iOS app
-
-A native SwiftUI companion with Home Screen and Lock Screen widgets lives under
-`apps/ios`, alongside the PWA rather than replacing it — the PWA remains the
-Android path. Pair it the same way as the PWA: scan the Mac's Settings > Phone
-QR code, or enter the 12-word phrase.
-
-The app reads usage over two transports, local network first: `GET /snapshot`
-from the Mac's local server on the same Wi-Fi, falling back to the same
-encrypted ntfy relay the Mac already publishes to when the phone is off that
-network. Widgets refresh on iOS's own schedule — roughly every 15 minutes at
-best, not live — and always show the true age of the last reading alongside
-the number, including when both transports are unreachable.
-
-**Status**: source-only. Building it requires
-[XcodeGen](https://github.com/yonaskolb/XcodeGen) and a full Xcode install (not
-just Command Line Tools):
-
-```sh
-cd apps/ios
-xcodegen generate --spec project.yml
-open MetriaMobile.xcodeproj
-```
-
-The `MetriaMobile` scheme builds the app and its widget extension, and runs in
-the simulator with no further setup.
-
-### Running on your iPhone
-
-1. Create `apps/ios/Local.xcconfig` (gitignored) with your team identifier:
-
-   ```
-   DEVELOPMENT_TEAM = ABCDE12345
-   ```
-
-   Find it in Xcode under **Settings > Accounts > (your Apple ID) > Manage
-   Certificates**, or under Membership details at
-   [developer.apple.com/account](https://developer.apple.com/account).
-
-2. Regenerate the project (`xcodegen generate --spec project.yml`) and pick your
-   iPhone as the run destination.
-
-3. If Xcode reports that the bundle identifier is unavailable, change
-   `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` to something unique to you —
-   the widget extension's identifier must stay prefixed by the app's.
-
-The app and widget request the `group.com.metria.shared` App Group and a
-matching Keychain access group; they share the cached usage snapshot through
-them. **A signing team that cannot provision those capabilities will fail here**
-— that is exactly Plan 004's Phase 0 gate, and it is the first thing to confirm
-on real hardware. Note also that a free Personal Team signature expires after 7
-days, after which the app and its widgets stop working until reinstalled from
-Xcode; an Apple Developer Program membership avoids that.
-
-See
-[`plans/004-ios-companion-app-widgets.md`](plans/004-ios-companion-app-widgets.md)
-for the full design, its Phase 0 device gate, and what remains unverified.
-
 ## Requirements
-
-### Mac version
 
 - macOS 13 or later
 - A Swift toolchain (Swift 5.9+) for building from source
 - Xcode 26.0+ and XcodeGen for opening and building the Xcode project
 
-### Electron version
-
-- Windows or Linux for the supported desktop application
-- Node.js 22+ and npm for building from source
-- Windows and Linux builds must be created and runtime-tested on their respective platforms
-
 ## Quick start
-
-### Mac version
 
 Download the latest native macOS `.dmg` from [GitHub Releases](https://github.com/yurirxmos/metria/releases), choosing the package for your Mac:
 
@@ -214,21 +111,7 @@ Open the disk image, drag `Metria.app` to `Applications`, and launch it from Fin
 >
 > Then launch the app normally.
 
-### Electron version
-
-The Electron version supports Windows and Linux. Download the installer for your operating system from [GitHub Releases](https://github.com/yurirxmos/metria/releases). You can also build it on that operating system:
-
-```sh
-cd apps/electron
-npm ci
-npm run package
-```
-
-The host-native installer is created in `apps/electron/release/`. See the [Electron documentation](apps/electron/README.md) for current platform support and provider limitations.
-
 ### Run in development
-
-#### Mac version
 
 ```sh
 swift build
@@ -259,40 +142,14 @@ and `CODE_SIGN_IDENTITY` from the command line or an xcconfig.
 
 This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `macos-v*` tag is pushed, then publish a signed Sparkle appcast per architecture through the dedicated `macos-latest` update channel (Sparkle's `generate_appcast` cannot mix two architectures under one bundle version, so each build points at its own feed). Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is only ad hoc signed and macOS Gatekeeper will still show an unidentified-developer warning.
 
-To publish a native macOS release without starting the Electron workflow:
+To publish a native macOS release:
 
 ```sh
 git tag macos-v0.2.0
 git push origin macos-v0.2.0
 ```
 
-#### Electron version
-
-Run the Electron app on Windows or Linux:
-
-```sh
-cd apps/electron
-npm ci
-npm run dev
-```
-
-Run the Electron checks and create a host-native installer with:
-
-```sh
-npm run check
-npm run package
-```
-
-Electron artifacts are written to `apps/electron/release/`. macOS packaging is not configured for Electron. Push an `electron-v*` tag to package and publish only the Windows/Linux app; its updater uses the dedicated `electron-latest` channel.
-
-```sh
-git tag electron-v0.2.0
-git push origin electron-v0.2.0
-```
-
 ## Project layout
-
-### Mac version
 
 - `apps/macos-native/Sources/Metria/MetriaApp.swift` — native macOS entrypoint, AppKit coordinator, pairing, and views.
 - `apps/macos-native/Sources/Metria/Providers/` — native macOS provider implementations and credential readers.
@@ -300,13 +157,25 @@ git push origin electron-v0.2.0
 - `apps/macos-native/Resources/AppIcon.icon` — Icon Composer source for the native app icon.
 - `apps/macos-native/scripts/package-macos.sh` — reproducible native macOS app bundle and archive builder.
 
-### Electron version
-
-- `apps/electron/` — parallel Windows/Linux implementation with secure main/preload/renderer boundaries.
-
 ### Mobile PWA
 
 - `apps/pwa/` — mobile companion PWA and its Cloudflare Worker (`public/` holds the static site, `src/worker.js` the Worker).
+
+## Related repositories
+
+Metria is one product across three codebases. This repository is the native
+macOS app and the companion PWA.
+
+| Repository | What it holds |
+|---|---|
+| [pedropsoares/metria](https://github.com/pedropsoares/metria) (here) | Native macOS app and the mobile PWA. Fork of [yurirxmos/metria](https://github.com/yurirxmos/metria). |
+| [pedropsoares/metria-win-linux](https://github.com/pedropsoares/metria-win-linux) | The Windows and Linux Electron app. Fork of [yurirxmos/metria-win-linux](https://github.com/yurirxmos/metria-win-linux). |
+| [pedropsoares/metria-ios](https://github.com/pedropsoares/metria-ios) | The native iOS app and its Home Screen and Lock Screen widgets. |
+
+The pairing derivations in `apps/macos-native/Sources/MetriaCore` are duplicated
+in the other two repositories on purpose, and must stay byte-identical: one
+phone pairs with either desktop app, so changing a derivation in one place
+without the others breaks pairing.
 
 ## Contributing
 
@@ -325,16 +194,8 @@ Join the Metria contributors group on WhatsApp to ask questions, share feedback,
   </a>
 </p>
 
-### Mac version
-
 - Run `swift build` from the repository root.
 - Runtime-test native macOS changes on macOS 13 or later.
-
-### Electron version
-
-- Run `cd apps/electron && npm ci && npm run check`.
-- Create and runtime-test Windows and Linux packages on their respective platforms.
-- Do not claim Electron macOS support; macOS uses the native app.
 
 ### Mobile PWA
 
