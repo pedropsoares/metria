@@ -291,13 +291,23 @@ struct UsageWidgetView: View {
     /// Identity on the left (logo, name, reset), magnitude on the right, and a
     /// bar between them. Rows expand so two providers still fill a medium widget.
     private func providerRow(_ provider: UsageSnapshot.Provider) -> some View {
-        HStack(spacing: 10) {
+        let parts = provider.spendParts(spendDisplay)
+        // A medium row has one subtitle's worth of space. Money takes it when it is being
+        // shown next to the percentage, because stacking both under the magnitude squeezes
+        // the bar and truncates the reset text.
+        return HStack(spacing: 10) {
             logo(for: provider, size: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(provider.name)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(1)
-                if let resetDate = provider.resetDate {
+                if parts.showsPercent, let spend = parts.spend {
+                    Text(spend)
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if let resetDate = provider.resetDate {
                     Text("Resets \(resetDate, style: .relative)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -306,11 +316,8 @@ struct UsageWidgetView: View {
             }
             .frame(minWidth: 64, alignment: .leading)
             usageBar(provider)
-            VStack(alignment: .trailing, spacing: 0) {
-                percentText(provider, size: 15, weight: .semibold)
-                spendCaption(provider)
-            }
-            .frame(width: provider.spendParts(spendDisplay).spend == nil ? 42 : 92, alignment: .trailing)
+            percentText(provider, size: 15, weight: .semibold)
+                .frame(width: parts.showsPercent ? 42 : 84, alignment: .trailing)
         }
     }
 
