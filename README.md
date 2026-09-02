@@ -38,9 +38,6 @@ Metria shows current session and monthly usage percentages for supported AI prov
 
 The native app stores provider selection, display mode, sidebar position, and opacity in macOS `UserDefaults`.
 
-The Windows/Linux desktop version is maintained separately in the public
-[metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux).
-
 ## Download
 
 Pick your platform, open the installer, and you're all set. Browse macOS installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
@@ -49,17 +46,11 @@ Pick your platform, open the installer, and you're all set. Browse macOS install
 
 Download the native `.dmg` for Apple Silicon or Intel Macs.
 
-Windows and Linux installers are available in the [metria-win-linux releases](https://github.com/yurirxmos/metria-win-linux/releases).
-
 ## To do
 
 ### Mac version
 
 - Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
-
-### Windows and Linux
-
-- Improve Metria compatibility and runtime support for Windows and Linux.
 
 ### Shared
 
@@ -100,8 +91,6 @@ You can replace the Cloudflare URL in **Settings > Phone > Custom PWA URL** with
 
 Install the Cloudflare-hosted PWA on your phone, open it, and select **Enable alerts**. Metria sends the current provider usage whenever the Mac app publishes a new snapshot. The local HTTP server cannot provide system notifications because Web Push requires HTTPS.
 
-The Windows/Linux desktop version does not include phone pairing, the local PWA server, QR pairing, or mobile alerts. See its [documentation](https://github.com/yurirxmos/metria-win-linux#readme).
-
 ## Requirements
 
 ### Mac version
@@ -109,8 +98,6 @@ The Windows/Linux desktop version does not include phone pairing, the local PWA 
 - macOS 13 or later
 - A Swift toolchain (Swift 5.9+) for building from source
 - Xcode 26.0+ and XcodeGen for opening and building the Xcode project
-
-Windows and Linux requirements are documented in the [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux#development).
 
 ## Quick start
 
@@ -130,10 +117,6 @@ Open the disk image, drag `Metria.app` to `Applications`, and launch it from Fin
 > ```
 >
 > Then launch the app normally.
-
-### Windows and Linux
-
-The Electron desktop version is maintained in the separate [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux). Download installers from its [GitHub Releases](https://github.com/yurirxmos/metria-win-linux/releases).
 
 ### Run in development
 
@@ -175,10 +158,6 @@ git tag macos-v0.2.0
 git push origin macos-v0.2.0
 ```
 
-#### Windows and Linux
-
-Development and release instructions live in the [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux).
-
 ## Project layout
 
 ### Mac version
@@ -188,8 +167,6 @@ Development and release instructions live in the [metria-win-linux repository](h
 - `apps/macos-native/Sources/MetriaCore/UsageStore.swift` — native usage state, provider seam, and refresh/retry logic.
 - `apps/macos-native/Resources/AppIcon.icon` — Icon Composer source for the native app icon.
 - `apps/macos-native/scripts/package-macos.sh` — reproducible native macOS app bundle and archive builder.
-
-The Windows/Linux implementation lives in the separate [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux).
 
 ### Mobile PWA
 
@@ -216,10 +193,6 @@ Join the Metria contributors group on WhatsApp to ask questions, share feedback,
 
 - Run `swift build` from the repository root.
 - Runtime-test native macOS changes on macOS 13 or later.
-
-### Windows and Linux
-
-- Follow the build and runtime-testing instructions in the [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux).
 
 ### Mobile PWA
 
