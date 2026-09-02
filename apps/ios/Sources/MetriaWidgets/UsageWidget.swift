@@ -73,6 +73,10 @@ struct UsageWidgetView: View {
         family == .accessoryCircular || family == .accessoryRectangular || family == .accessoryInline
     }
 
+    /// Read straight from the App Group the app writes to: the extension has no settings
+    /// screen of its own, and a timeline reload is what brings a change over.
+    private var spendDisplay: SpendDisplay { MetriaAppGroup.spendDisplay }
+
     var body: some View {
         Group {
             if !entry.isPaired {
@@ -125,10 +129,28 @@ struct UsageWidgetView: View {
     }
 
     private func percentText(_ provider: UsageSnapshot.Provider, size: CGFloat, weight: Font.Weight = .semibold) -> some View {
-        Text("\(Int(provider.percent.rounded()))%")
-            .font(.system(size: size, weight: weight))
+        let parts = provider.spendParts(spendDisplay)
+        // Money is a longer string than "52%", so it renders a size down and scales.
+        return Text(parts.showsPercent ? "\(Int(provider.percent.rounded()))%" : parts.spend ?? "")
+            .font(.system(size: parts.showsPercent ? size : size * 0.7, weight: weight))
             .monospacedDigit()
+            .minimumScaleFactor(0.6)
+            .lineLimit(1)
             .foregroundStyle(isAccessory ? AnyShapeStyle(.primary) : AnyShapeStyle(UsagePresentation.color(for: provider.percent)))
+    }
+
+    /// The money half when the percentage already has the magnitude slot to itself.
+    @ViewBuilder
+    private func spendCaption(_ provider: UsageSnapshot.Provider) -> some View {
+        let parts = provider.spendParts(spendDisplay)
+        if parts.showsPercent, let spend = parts.spend {
+            Text(spend)
+                .font(.caption2)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func logo(for provider: UsageSnapshot.Provider, size: CGFloat) -> some View {
@@ -229,6 +251,8 @@ struct UsageWidgetView: View {
                 .lineLimit(1)
             usageBar(provider)
                 .padding(.top, 8)
+            spendCaption(provider)
+                .padding(.top, 4)
             if let resetDate = provider.resetDate {
                 Text("Resets \(resetDate, style: .relative)")
                     .font(.caption2)
@@ -282,8 +306,11 @@ struct UsageWidgetView: View {
             }
             .frame(minWidth: 64, alignment: .leading)
             usageBar(provider)
-            percentText(provider, size: 15, weight: .semibold)
-                .frame(width: 42, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 0) {
+                percentText(provider, size: 15, weight: .semibold)
+                spendCaption(provider)
+            }
+            .frame(width: provider.spendParts(spendDisplay).spend == nil ? 42 : 92, alignment: .trailing)
         }
     }
 

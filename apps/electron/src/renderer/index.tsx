@@ -1,8 +1,8 @@
 import { useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
-import { clampPercent, DEFAULT_REFRESH_INTERVAL_SECONDS, gaugeColor, PROVIDER_LOGOS, statusDotColor } from "../shared/types";
-import type { PairingInfo, ProviderKind, ProviderSourceChoice, ProviderUsage, UsageWindow } from "../shared/types";
+import { clampPercent, DEFAULT_REFRESH_INTERVAL_SECONDS, DEFAULT_SPEND_DISPLAY, gaugeColor, PROVIDER_LOGOS, statusDotColor, usageParts } from "../shared/types";
+import type { PairingInfo, ProviderKind, ProviderSourceChoice, ProviderUsage, SpendDisplay, UsageWindow } from "../shared/types";
 import "./app.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
@@ -21,17 +21,26 @@ function sourceValue(source: ProviderSourceChoice | null): string {
 function percentage(value: number): string { return `${clampPercent(value).toFixed(0)}%`; }
 function date(value: string | null): string { return value ? `Resets ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))}` : "No reset time available"; }
 
+function useSpendDisplay(): SpendDisplay {
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => window.metria.getSettings() });
+  return settings.data?.spendDisplay ?? DEFAULT_SPEND_DISPLAY;
+}
+
 function UsageRow({ window: row }: { window: UsageWindow }): JSX.Element {
+  const parts = usageParts(row, useSpendDisplay());
   return (
     <div className="mt-[18px] first:mt-0">
       <div className="flex justify-between gap-4">
         <span>{row.title}</span>
-        <strong className="font-mono text-lg">{percentage(row.percent)}</strong>
+        <strong className="font-mono text-lg">{parts.percent ? percentage(row.percent) : parts.spend}</strong>
       </div>
       <div className="my-[9px] h-2 overflow-hidden rounded-[99px] bg-[#1c1c1e]">
         <i className="block h-full rounded-[99px]" style={{ background: gaugeColor(row.percent), width: percentage(row.percent) }} />
       </div>
-      <small className="text-dim">{date(row.resetDate)}</small>
+      <div className="flex justify-between gap-4">
+        <small className="text-dim">{date(row.resetDate)}</small>
+        {parts.percent && parts.spend && <small className="font-mono text-dim">{parts.spend}</small>}
+      </div>
     </div>
   );
 }
@@ -221,6 +230,10 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
     mutationFn: (seconds: number) => window.metria.setRefreshInterval(seconds),
     onSuccess: (next) => queryClient.setQueryData(["settings"], next)
   });
+  const setSpendDisplay = useMutation({
+    mutationFn: (display: SpendDisplay) => window.metria.setSpendDisplay(display),
+    onSuccess: (next) => queryClient.setQueryData(["settings"], next)
+  });
   const setLoginItem = useMutation({
     mutationFn: (enabled: boolean) => window.metria.setLaunchAtLogin(enabled),
     onSuccess: (status) => { queryClient.setQueryData(["login-item"], status); setNotice(status.message); }
@@ -231,6 +244,7 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
   });
   const quit = useMutation({ mutationFn: () => window.metria.quit() });
   const currentInterval = (useQuery({ queryKey: ["settings"], queryFn: () => window.metria.getSettings() }).data ?? { refreshIntervalSeconds: DEFAULT_REFRESH_INTERVAL_SECONDS }).refreshIntervalSeconds;
+  const spendDisplay = useSpendDisplay();
   const providerSources = useProviderSources();
   const setProviderSource = useMutation({
     mutationFn: (variables: { kind: ProviderKind; source: ProviderSourceChoice }) => window.metria.setProviderSource(variables.kind, variables.source),
@@ -279,6 +293,23 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
               {intervalOptions.map((seconds) => <option key={seconds} value={seconds}>{Math.round(seconds / 60)} min</option>)}
             </select>
           </div>
+        </section>
+
+        <section className="mt-6">
+          <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Usage display</h3>
+          <div className="mt-2.5 flex items-center gap-2.5">
+            <label className="text-dim" htmlFor="spend-display">Show usage as</label>
+            <select id="spend-display" className="cursor-pointer border border-line2 bg-surface px-2.5 py-1.5 text-fg"
+              value={spendDisplay}
+              onChange={(event) => setSpendDisplay.mutate(event.target.value as SpendDisplay)}
+              disabled={setSpendDisplay.isPending}
+            >
+              <option value="percent">Percentage</option>
+              <option value="dollars">Dollars</option>
+              <option value="both">Both</option>
+            </select>
+          </div>
+          <p className="m-0 mt-2 leading-relaxed text-dim">Cursor is the only provider that reports what a cycle costs; the others always show a percentage.</p>
         </section>
 
         {wslDetected && sourceOptions.length > 0 && (

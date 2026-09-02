@@ -1,4 +1,5 @@
 import Foundation
+import MetriaCore
 
 /// The App Group container the app and widget extension share for the cached snapshot.
 /// Must match the entitlements declared in `apps/ios/project.yml`.
@@ -15,4 +16,10 @@ public enum MetriaAppGroup {
     public static var containerURL: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
     }
+
+    /// Settings both targets read. The widget extension has no UI of its own for them, so
+    /// the app writes here and the extension picks the value up on its next render.
+    public static var defaults: UserDefaults { UserDefaults(suiteName: identifier) ?? .standard }
+
+    public static var spendDisplay: SpendDisplay { SpendFormat.display(in: defaults) }
 }

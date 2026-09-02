@@ -33,6 +33,19 @@ test("keeps dates at second precision and omits an unknown reset date", () => {
   assert.equal("resetDate" in snapshot.providers[0]!, false);
 });
 
+// Paired phones and the PWA render "$130 / $250" from these, so the amounts have to
+// survive the trip; a provider that reports no money must not gain empty fields.
+test("carries the primary window's spend amounts when the provider reports them", () => {
+  const snapshot = buildSnapshot([
+    provider("Cursor", [{ title: "This cycle", percent: 52, resetDate: null, usedCents: 13000, limitCents: 25000 }]),
+    provider("Claude", [{ title: "Session", percent: 12, resetDate: null }])
+  ]);
+  assert.deepEqual(snapshot.providers, [
+    { name: "Cursor", percent: 52, usedCents: 13000, limitCents: 25000 },
+    { name: "Claude", percent: 12 }
+  ]);
+});
+
 test("seals the snapshot the way CryptoKit's combined sealed box is laid out", () => {
   const key = encryptionKeyFromSecret(Buffer.from("00112233445566778899aabbccddeeff", "hex"));
   const payload = Buffer.from(JSON.stringify(buildSnapshot([provider("Claude", [{ title: "Session", percent: 42, resetDate: null }])])), "utf8");

@@ -80,24 +80,39 @@ private struct ConnectionChip: View {
 
 private struct ProviderCard: View {
     let provider: UsageSnapshot.Provider
+    @AppStorage(SpendFormat.defaultsKey, store: MetriaAppGroup.defaults) private var spendDisplay = SpendDisplay.both
 
     var body: some View {
+        let parts = provider.spendParts(spendDisplay)
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 UsagePresentation.logo(for: provider.name, size: 24)
                 Text(provider.name).font(.headline)
                 Spacer()
-                Text("\(Int(provider.percent.rounded()))%")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundStyle(UsagePresentation.color(for: provider.percent))
+                if parts.showsPercent {
+                    Text("\(Int(provider.percent.rounded()))%")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(UsagePresentation.color(for: provider.percent))
+                } else if let spend = parts.spend {
+                    Text(spend)
+                        .font(.system(size: 22, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(UsagePresentation.color(for: provider.percent))
+                }
             }
             ProgressView(value: min(max(provider.percent, 0), 100), total: 100)
                 .tint(UsagePresentation.color(for: provider.percent))
-            if let resetDate = provider.resetDate {
-                Text("Resets \(resetDate, style: .relative)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack {
+                if let resetDate = provider.resetDate {
+                    Text("Resets \(resetDate, style: .relative)")
+                }
+                Spacer()
+                if parts.showsPercent, let spend = parts.spend {
+                    Text(spend).monospacedDigit()
+                }
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .padding(16)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))

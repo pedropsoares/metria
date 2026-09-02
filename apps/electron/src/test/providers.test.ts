@@ -63,7 +63,7 @@ test("parseCursorWindows keeps a missing cycle end as no reset date", () => {
 
 test("parseCursorWindows measures a plan against its included limit", () => {
   const payload = JSON.stringify({ planUsage: { includedSpend: 1500, limit: 2000, totalPercentUsed: 0 } });
-  assert.deepEqual(parseCursorWindows(payload), [{ title: "This cycle", percent: 75, resetDate: null }]);
+  assert.deepEqual(parseCursorWindows(payload), [{ title: "This cycle", percent: 75, usedCents: 1500, limitCents: 2000, resetDate: null }]);
 });
 
 test("parseCursorWindows falls back to the seat spend limit for team and enterprise accounts", () => {
@@ -74,18 +74,25 @@ test("parseCursorWindows falls back to the seat spend limit for team and enterpr
     billingCycleEnd: "1790812800000"
   });
   assert.deepEqual(parseCursorWindows(payload), [
-    { title: "This cycle", percent: 20, resetDate: new Date(1790812800000).toISOString() }
+    { title: "This cycle", percent: 20, usedCents: 9000, limitCents: 45000, resetDate: new Date(1790812800000).toISOString() }
   ]);
 });
 
 test("parseCursorWindows prefers an individual seat limit over the overall one", () => {
   const payload = JSON.stringify({ spendLimitUsage: { individualUsed: 100, individualLimit: 400, overallUsed: 9000, overallLimit: 45000 } });
-  assert.deepEqual(parseCursorWindows(payload), [{ title: "This cycle", percent: 25, resetDate: null }]);
+  assert.deepEqual(parseCursorWindows(payload), [{ title: "This cycle", percent: 25, usedCents: 100, limitCents: 400, resetDate: null }]);
 });
 
 test("parseCursorWindows caps a seat over its limit at 100 percent", () => {
   const payload = JSON.stringify({ spendLimitUsage: { individualUsed: 900, individualLimit: 400 } });
-  assert.deepEqual(parseCursorWindows(payload), [{ title: "This cycle", percent: 100, resetDate: null }]);
+  assert.deepEqual(parseCursorWindows(payload), [{ title: "This cycle", percent: 100, usedCents: 900, limitCents: 400, resetDate: null }]);
+});
+
+// A bare percentage carries no money, so the card has nothing to print but the percent.
+test("parseCursorWindows leaves out amounts when Cursor reports only a percentage", () => {
+  const window = parseCursorWindows(JSON.stringify({ planUsage: { totalPercentUsed: 42.5 } }))[0]!;
+  assert.equal("usedCents" in window, false);
+  assert.equal("limitCents" in window, false);
 });
 
 test("parseCursorWindows rejects a payload without plan usage", () => {

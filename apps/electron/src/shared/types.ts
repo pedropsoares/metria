@@ -4,7 +4,14 @@ export interface UsageWindow {
   title: string;
   percent: number;
   resetDate: string | null;
+  /** What the window costs, in cents, when the provider measures money rather than a
+   * bare percentage (Cursor). Present as a pair or not at all. */
+  usedCents?: number;
+  limitCents?: number;
 }
+
+/** How a window carrying spend amounts prints its magnitude. */
+export type SpendDisplay = "percent" | "dollars" | "both";
 
 export interface ProviderUsage {
   kind: ProviderKind;
@@ -17,6 +24,7 @@ export interface ProviderUsage {
 
 export interface AppSettings {
   refreshIntervalSeconds: number;
+  spendDisplay: SpendDisplay;
   enabledProviders: ProviderKind[];
   widgetYOffset: number;
   providerSource: Partial<Record<ProviderKind, ProviderSourceChoice>>;
@@ -63,6 +71,7 @@ export interface MetriaApi {
   uninstall(): Promise<UninstallResult>;
   quit(): Promise<void>;
   setRefreshInterval(seconds: number): Promise<AppSettings>;
+  setSpendDisplay(display: SpendDisplay): Promise<AppSettings>;
   getProviderSources(): Promise<ProviderSourceInfo[]>;
   setProviderSource(kind: ProviderKind, source: ProviderSourceChoice): Promise<AppSettings>;
   getPairing(): Promise<PairingInfo>;
@@ -128,6 +137,33 @@ export function providerShortLabel(kind: ProviderKind): string {
   return kind === "OpenCode Go" ? "Go" : kind;
 }
 
+export function isSpendDisplay(value: unknown): value is SpendDisplay {
+  return value === "percent" || value === "dollars" || value === "both";
+}
+
+/** Cursor reports cents. Whole dollars drop the decimals so the common case reads as
+ * money ("$130") instead of accounting ("$130.00"). */
+export function formatCents(cents: number): string {
+  const dollars = cents / 100;
+  return `$${Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2)}`;
+}
+
+/** The money half of a window's readout — "$130 / $250" — or null for a provider that
+ * only ever reports a percentage. */
+export function spendText(window: UsageWindow): string | null {
+  return typeof window.usedCents === "number" && typeof window.limitCents === "number"
+    ? `${formatCents(window.usedCents)} / ${formatCents(window.limitCents)}`
+    : null;
+}
+
+/** Which halves of the readout a window shows. A window without amounts always keeps its
+ * percentage, so choosing "dollars" never blanks out Claude, Codex, or OpenCode Go. */
+export function usageParts(window: UsageWindow, display: SpendDisplay): { percent: boolean; spend: string | null } {
+  const spend = spendText(window);
+  if (!spend) return { percent: true, spend: null };
+  return { percent: display !== "dollars", spend: display === "percent" ? null : spend };
+}
+
 export function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
@@ -144,6 +180,7 @@ export const WIDGET_ITEM_HEIGHT = 52;
 export const CARD_WIDTH = 316;
 export const DEFAULT_WIDGET_Y_OFFSET = 12;
 export const DEFAULT_REFRESH_INTERVAL_SECONDS = 300;
+export const DEFAULT_SPEND_DISPLAY: SpendDisplay = "both";
 export const DEFAULT_NTFY_SERVER = "https://ntfy.sh";
 export const DEFAULT_LOCAL_SERVER_PORT = 8973;
 /** The hosted PWA the native app pairs against by default; an empty setting pairs

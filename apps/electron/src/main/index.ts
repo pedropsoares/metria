@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, screen, shel
 import { autoUpdater } from "electron-updater";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { ALL_PROVIDER_KINDS, CARD_WIDTH, isProviderKind, PROVIDER_LOGOS, providerShortLabel, WIDGET_ITEM_HEIGHT } from "../shared/types";
+import { ALL_PROVIDER_KINDS, CARD_WIDTH, isProviderKind, isSpendDisplay, PROVIDER_LOGOS, providerShortLabel, WIDGET_ITEM_HEIGHT } from "../shared/types";
 import { LocalPWAServer } from "./local-pwa-server";
 import { NtfyPublisher } from "./ntfy";
 import { PairingStore } from "./pairing";
@@ -468,6 +468,15 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 60) throw new Error("Invalid refresh interval.");
     const next = settings.setRefreshInterval(seconds);
     restartRefreshTimer();
+    return next;
+  });
+  ipcMain.handle("metria:set-spend-display", (event, display: unknown) => {
+    requireTrustedSender(event);
+    if (!isSpendDisplay(display)) throw new Error("Invalid usage display.");
+    const next = settings.setSpendDisplay(display);
+    // The card window keeps its own settings snapshot, so tell it to re-read.
+    widgetWindow?.webContents.send("metria:settings-changed");
+    cardWindow?.webContents.send("metria:settings-changed");
     return next;
   });
   ipcMain.handle("metria:get-provider-sources", (event) => {

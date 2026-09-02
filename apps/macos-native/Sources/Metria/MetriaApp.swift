@@ -146,7 +146,8 @@ private extension Data {
             updatedAt: Date(),
             providers: providers.compactMap { usage in
                 guard let primary = usage.primary else { return nil }
-                return .init(name: usage.kind.rawValue, percent: primary.percent, resetDate: primary.resetDate)
+                return .init(name: usage.kind.rawValue, percent: primary.percent, resetDate: primary.resetDate,
+                             usedCents: primary.usedCents, limitCents: primary.limitCents)
             }
         )
         let encoder = UsageSnapshotCoding.makeEncoder()
@@ -235,6 +236,7 @@ struct UsageCard: View {
     let usage: ProviderUsage
     var width: CGFloat = 390
     var scale: CGFloat = 1
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
     private var isCompact: Bool { width < 390 }
     /// The progress bar's available width, mirroring this view's own horizontal padding
     /// so it no longer needs a `GeometryReader` (and the extra layout pass that comes
@@ -253,7 +255,14 @@ struct UsageCard: View {
                     VStack(alignment: .leading, spacing: (isCompact ? 5 : 8) * scale) {
                         HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
                         ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: max(0, barWidth * window.percent / 100)) }.frame(height: (isCompact ? 5 : 7) * scale)
-                        Text("\(Int(window.percent.rounded()))% Used").font(.system(size: (isCompact ? 11 : 15) * scale))
+                        let parts = window.spendParts(spendDisplay)
+                        HStack(spacing: (isCompact ? 6 : 10) * scale) {
+                            if parts.showsPercent { Text("\(Int(window.percent.rounded()))% Used") }
+                            if let spend = parts.spend {
+                                Spacer(minLength: 0)
+                                Text(spend).monospacedDigit()
+                            }
+                        }.font(.system(size: (isCompact ? 11 : 15) * scale))
                     }
                 }
             }
@@ -288,6 +297,7 @@ struct DashboardUsageCard: View {
     let showsAccount: Bool
     var hiddenWindowTitles: Set<String> = []
     @AppStorage("showAccountEmails") private var showAccountEmails = true
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
 
     private var visibleWindows: [UsageWindow] {
         usage.windows.filter { !hiddenWindowTitles.contains($0.title) }
@@ -309,20 +319,33 @@ struct DashboardUsageCard: View {
                 } else {
                     ForEach(visibleWindows) { window in
                         let color = GaugeColor.color(for: window.percent)
+                        let parts = window.spendParts(spendDisplay)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(window.title)
                                 Spacer()
-                                Text("\(Int(window.percent.rounded()))%")
-                                    .foregroundStyle(color)
-                                    .monospacedDigit()
+                                if parts.showsPercent {
+                                    Text("\(Int(window.percent.rounded()))%")
+                                        .foregroundStyle(color)
+                                        .monospacedDigit()
+                                } else if let spend = parts.spend {
+                                    Text(spend)
+                                        .foregroundStyle(color)
+                                        .monospacedDigit()
+                                }
                             }
                             .font(.subheadline)
                             ProgressView(value: min(max(window.percent, 0), 100), total: 100)
                                 .tint(color)
-                            Text(window.resetText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            HStack {
+                                Text(window.resetText)
+                                Spacer()
+                                if parts.showsPercent, let spend = parts.spend {
+                                    Text(spend).monospacedDigit()
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -1181,6 +1204,7 @@ struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var pairing: PairingManager
     @AppStorage("showAccountEmails") private var showAccountEmails = true
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
     @State private var showsNotch: Bool
     let onToggleNotch: (Bool) -> Void
     @State private var showsMenuBar: Bool
@@ -1395,6 +1419,13 @@ struct SettingsView: View {
                 .disabled(showsMenuBar && !showsNotch)
                 Toggle("Show provider account email", isOn: $showAccountEmails)
                 Text("Show the account email when available, or a masked API key for OpenCode Go.")
+                    .foregroundStyle(.secondary)
+                Picker("Show usage as", selection: $spendDisplay) {
+                    ForEach(SpendDisplay.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                Text("Cursor is the only provider that reports what a cycle costs; the others always show a percentage.")
                     .foregroundStyle(.secondary)
             }
 

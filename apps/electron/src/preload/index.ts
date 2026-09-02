@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { CardShowPayload, MetriaApi, ProviderKind, ProviderSourceChoice } from "../shared/types";
+import type { CardShowPayload, MetriaApi, ProviderKind, ProviderSourceChoice, SpendDisplay } from "../shared/types";
 
 const api: MetriaApi = {
   getUsage: () => ipcRenderer.invoke("metria:get-usage"),
@@ -22,6 +22,7 @@ const api: MetriaApi = {
   uninstall: () => ipcRenderer.invoke("metria:uninstall"),
   quit: () => ipcRenderer.invoke("metria:quit"),
   setRefreshInterval: (seconds: number) => ipcRenderer.invoke("metria:set-refresh-interval", seconds),
+  setSpendDisplay: (display: SpendDisplay) => ipcRenderer.invoke("metria:set-spend-display", display),
   getProviderSources: () => ipcRenderer.invoke("metria:get-provider-sources"),
   setProviderSource: (kind: ProviderKind, source: ProviderSourceChoice) => ipcRenderer.invoke("metria:set-provider-source", kind, source),
   getPairing: () => ipcRenderer.invoke("metria:get-pairing"),

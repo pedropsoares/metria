@@ -9,7 +9,7 @@ import type { ProviderUsage } from "../shared/types";
  */
 export interface SnapshotPayload {
   updatedAt: string;
-  providers: { name: string; percent: number; resetDate?: string }[];
+  providers: { name: string; percent: number; resetDate?: string; usedCents?: number; limitCents?: number }[];
 }
 
 export function buildSnapshot(providers: ProviderUsage[], now = new Date()): SnapshotPayload {
@@ -19,7 +19,10 @@ export function buildSnapshot(providers: ProviderUsage[], now = new Date()): Sna
       const primary = provider.windows[0];
       if (!primary) return [];
       const resetDate = iso8601(primary.resetDate ? new Date(primary.resetDate) : null);
-      return [{ name: provider.kind, percent: primary.percent, ...(resetDate ? { resetDate } : {}) }];
+      const spend = typeof primary.usedCents === "number" && typeof primary.limitCents === "number"
+        ? { usedCents: primary.usedCents, limitCents: primary.limitCents }
+        : {};
+      return [{ name: provider.kind, percent: primary.percent, ...(resetDate ? { resetDate } : {}), ...spend }];
     })
   };
 }

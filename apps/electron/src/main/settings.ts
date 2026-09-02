@@ -1,11 +1,12 @@
 import { app } from "electron";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ALL_PROVIDER_KINDS, DEFAULT_LOCAL_SERVER_PORT, DEFAULT_NTFY_SERVER, DEFAULT_PWA_URL, DEFAULT_REFRESH_INTERVAL_SECONDS, DEFAULT_WIDGET_Y_OFFSET, isProviderKind } from "../shared/types";
-import type { AppSettings, ProviderKind, ProviderSourceChoice } from "../shared/types";
+import { ALL_PROVIDER_KINDS, DEFAULT_LOCAL_SERVER_PORT, DEFAULT_NTFY_SERVER, DEFAULT_PWA_URL, DEFAULT_REFRESH_INTERVAL_SECONDS, DEFAULT_SPEND_DISPLAY, DEFAULT_WIDGET_Y_OFFSET, isProviderKind, isSpendDisplay } from "../shared/types";
+import type { AppSettings, ProviderKind, ProviderSourceChoice, SpendDisplay } from "../shared/types";
 
 const defaults: AppSettings = {
   refreshIntervalSeconds: DEFAULT_REFRESH_INTERVAL_SECONDS,
+  spendDisplay: DEFAULT_SPEND_DISPLAY,
   enabledProviders: [...ALL_PROVIDER_KINDS],
   widgetYOffset: DEFAULT_WIDGET_Y_OFFSET,
   providerSource: {},
@@ -22,6 +23,7 @@ export class SettingsStore {
       const parsed = JSON.parse(readFileSync(this.path, "utf8")) as Partial<AppSettings>;
       return {
         refreshIntervalSeconds: Number.isFinite(parsed.refreshIntervalSeconds) ? Math.max(60, Number(parsed.refreshIntervalSeconds)) : defaults.refreshIntervalSeconds,
+        spendDisplay: isSpendDisplay(parsed.spendDisplay) ? parsed.spendDisplay : defaults.spendDisplay,
         enabledProviders: Array.isArray(parsed.enabledProviders) ? parsed.enabledProviders.filter(isProviderKind) : defaults.enabledProviders,
         widgetYOffset: Number.isFinite(parsed.widgetYOffset) && Number(parsed.widgetYOffset) >= 0 ? Number(parsed.widgetYOffset) : defaults.widgetYOffset,
         providerSource: normalizeProviderSource(parsed.providerSource),
@@ -37,6 +39,8 @@ export class SettingsStore {
   setRefreshInterval(seconds: number): AppSettings {
     return this.save({ ...this.load(), refreshIntervalSeconds: Math.max(60, Math.round(seconds)) });
   }
+
+  setSpendDisplay(spendDisplay: SpendDisplay): AppSettings { return this.save({ ...this.load(), spendDisplay }); }
 
   setNtfyServer(server: string): AppSettings { return this.save({ ...this.load(), ntfyServer: normalizeNtfyServer(server) }); }
 

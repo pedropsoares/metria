@@ -211,25 +211,30 @@ export function parseCursorWindows(data: string): UsageWindow[] {
   } catch {
     throw new Error("Cursor returned an unreadable usage response.");
   }
-  const percent = cursorPercent(parsed);
-  if (percent === undefined) throw new Error("Cursor did not report plan usage for this account.");
+  const measure = cursorMeasure(parsed);
+  if (measure === undefined) throw new Error("Cursor did not report plan usage for this account.");
   const cycleEnd = Number(parsed.billingCycleEnd);
-  return [{ title: "This cycle", percent, resetDate: Number.isFinite(cycleEnd) && cycleEnd > 0 ? new Date(cycleEnd).toISOString() : null }];
+  return [{ title: "This cycle", ...measure, resetDate: Number.isFinite(cycleEnd) && cycleEnd > 0 ? new Date(cycleEnd).toISOString() : null }];
 }
 
 /** Follows the order Cursor's own usage bar uses: a plan with a real included
  * limit is measured against that limit, and an account whose quota lives in a
  * seat spend limit — team and enterprise seats, which report a `planUsage` of
- * all zeroes — is measured against the seat's individual, then overall, limit. */
-function cursorPercent(parsed: CursorUsageResponse): number | undefined {
-  const ratio = (used?: number, limit?: number): number | undefined =>
-    typeof used === "number" && typeof limit === "number" && limit > 0 ? Math.min((used / limit) * 100, 100) : undefined;
+ * all zeroes — is measured against the seat's individual, then overall, limit.
+ * Every amount Cursor sends is in cents, and the pair that produced the percent
+ * travels with it so a card can print "$130 / $250" for the same bar. The last
+ * fallback is a bare percentage, which carries no amounts to show. */
+function cursorMeasure(parsed: CursorUsageResponse): { percent: number; usedCents?: number; limitCents?: number } | undefined {
+  const spent = (used?: number, limit?: number): { percent: number; usedCents: number; limitCents: number } | undefined =>
+    typeof used === "number" && typeof limit === "number" && limit > 0
+      ? { percent: Math.min((used / limit) * 100, 100), usedCents: used, limitCents: limit }
+      : undefined;
   const plan = parsed.planUsage;
   const spend = parsed.spendLimitUsage;
-  return ratio(plan?.includedSpend, plan?.limit)
-    ?? ratio(spend?.individualUsed, spend?.individualLimit)
-    ?? ratio(spend?.overallUsed, spend?.overallLimit)
-    ?? (typeof plan?.totalPercentUsed === "number" ? plan.totalPercentUsed : undefined);
+  return spent(plan?.includedSpend, plan?.limit)
+    ?? spent(spend?.individualUsed, spend?.individualLimit)
+    ?? spent(spend?.overallUsed, spend?.overallLimit)
+    ?? (typeof plan?.totalPercentUsed === "number" ? { percent: plan.totalPercentUsed } : undefined);
 }
 
 /** Reads the JWT `exp` claim without verifying the signature: Metria only wants
