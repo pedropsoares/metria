@@ -162,6 +162,11 @@ export function parseOpenCodeGoWindows(data: string): UsageWindow[] {
 
 const CURSOR_TOKEN_KEY = "cursorAuth/accessToken";
 const CURSOR_USAGE_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
+/** Without `includePooledUsage`, a team or enterprise account gets a stub answer
+ * back — no `planUsage`, no `spendLimitUsage`, and a billing cycle whose start
+ * and end are the same instant — which read as "this account has no usage".
+ * The flag is what makes the server fill in the seat's real spend and limit. */
+const CURSOR_USAGE_BODY = JSON.stringify({ includePooledUsage: true });
 
 /** Reads the JWT Cursor stores in its VS Code-derived global storage and calls
  * the same endpoint the Cursor dashboard uses. Host-only: see
@@ -180,7 +185,7 @@ class CursorProvider implements Provider {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         "Connect-Protocol-Version": "1"
-      }, { method: "POST", body: "{}" });
+      }, { method: "POST", body: CURSOR_USAGE_BODY });
       return loaded(this.kind, parseCursorWindows(data));
     } catch (error) {
       // There is no refresh grant to use, so an unauthorized token is a sign-in prompt.
@@ -193,17 +198,38 @@ class CursorProvider implements Provider {
   }
 }
 
+interface CursorUsageResponse {
+  planUsage?: { includedSpend?: number; limit?: number; totalPercentUsed?: number } | null;
+  spendLimitUsage?: { individualUsed?: number; individualLimit?: number; overallUsed?: number; overallLimit?: number } | null;
+  billingCycleEnd?: string;
+}
+
 export function parseCursorWindows(data: string): UsageWindow[] {
-  let parsed: { planUsage?: { totalPercentUsed?: number } | null; billingCycleEnd?: string };
+  let parsed: CursorUsageResponse;
   try {
-    parsed = JSON.parse(data) as typeof parsed;
+    parsed = JSON.parse(data) as CursorUsageResponse;
   } catch {
     throw new Error("Cursor returned an unreadable usage response.");
   }
-  const percent = parsed?.planUsage?.totalPercentUsed;
-  if (typeof percent !== "number") throw new Error("Cursor did not report plan usage for this account.");
+  const percent = cursorPercent(parsed);
+  if (percent === undefined) throw new Error("Cursor did not report plan usage for this account.");
   const cycleEnd = Number(parsed.billingCycleEnd);
   return [{ title: "This cycle", percent, resetDate: Number.isFinite(cycleEnd) && cycleEnd > 0 ? new Date(cycleEnd).toISOString() : null }];
+}
+
+/** Follows the order Cursor's own usage bar uses: a plan with a real included
+ * limit is measured against that limit, and an account whose quota lives in a
+ * seat spend limit — team and enterprise seats, which report a `planUsage` of
+ * all zeroes — is measured against the seat's individual, then overall, limit. */
+function cursorPercent(parsed: CursorUsageResponse): number | undefined {
+  const ratio = (used?: number, limit?: number): number | undefined =>
+    typeof used === "number" && typeof limit === "number" && limit > 0 ? Math.min((used / limit) * 100, 100) : undefined;
+  const plan = parsed.planUsage;
+  const spend = parsed.spendLimitUsage;
+  return ratio(plan?.includedSpend, plan?.limit)
+    ?? ratio(spend?.individualUsed, spend?.individualLimit)
+    ?? ratio(spend?.overallUsed, spend?.overallLimit)
+    ?? (typeof plan?.totalPercentUsed === "number" ? plan.totalPercentUsed : undefined);
 }
 
 /** Reads the JWT `exp` claim without verifying the signature: Metria only wants
