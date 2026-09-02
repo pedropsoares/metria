@@ -806,6 +806,7 @@ struct NotchMetrics {
 /// borderless panel.
 @MainActor final class NotchMode: ObservableObject {
     @Published var isHiddenMode = UserDefaults.standard.bool(forKey: "hiddenNotch")
+    @Published var isOpeningSettings = false
     @Published var size =
         NotchSize(rawValue: UserDefaults.standard.string(forKey: "notchSize") ?? "") ?? .medium
     @Published var position =
@@ -1086,12 +1087,21 @@ struct NotchContent: View {
     private var bottomControls: some View {
         HStack(spacing: metrics.controlsSpacing) {
             Spacer()
-            Image(systemName: "gearshape")
-                .font(.system(size: 11 * metrics.scale))
-                .foregroundStyle(Color(white: 0.58))
-                .frame(width: 24 * metrics.scale, height: 24 * metrics.scale)
-                .background(Circle().fill(Color.black))
-                .help("Settings")
+            Group {
+                if mode.isOpeningSettings {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Opening settings")
+                        .help("Opening settings")
+                } else {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 11 * metrics.scale))
+                        .foregroundStyle(Color(white: 0.58))
+                        .help("Settings")
+                }
+            }
+            .frame(width: 24 * metrics.scale, height: 24 * metrics.scale)
+            .background(Circle().fill(Color.black))
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -1503,6 +1513,18 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .providers: "square.stack.3d.up"
         case .iPhone: "iphone"
         }
+    }
+}
+
+private struct SettingsLoadingView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.regular)
+            Text("Opening Settings…")
+                .foregroundStyle(.secondary)
+        }
+        .frame(minWidth: 680, minHeight: 500)
     }
 }
 
@@ -2556,7 +2578,7 @@ extension NSMenu {
         panel.metrics = notchMetrics
         panel.position = notchMode.position
         panel.onDragMove = { [weak self] delta in self?.moveNotch(by: delta) }
-        panel.onGearTap = { [weak self] _ in self?.openSettings() }
+        panel.onGearTap = { [weak self] _ in self?.openSettingsFromNotch() }
         panel.onEyeTap = { [weak self] in
             guard let self else { return }
             self.setHiddenNotch(!self.notchMode.isHiddenMode)
@@ -3040,9 +3062,8 @@ extension NSMenu {
         }
     }
 
-    @objc private func openSettings() {
-        let window =
-            settingsWindow
+    private func settingsWindowForPresentation() -> NSWindow {
+        settingsWindow
             ?? {
                 let window = NSWindow(
                     contentRect: NSRect(x: 0, y: 0, width: 720, height: 580),
@@ -3054,6 +3075,30 @@ extension NSMenu {
                 settingsWindow = window
                 return window
             }()
+    }
+
+    private func presentSettingsWindow(_ window: NSWindow) {
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func openSettingsFromNotch() {
+        guard !notchMode.isOpeningSettings else { return }
+        notchMode.isOpeningSettings = true
+
+        let window = settingsWindowForPresentation()
+        window.contentViewController = NSHostingController(rootView: SettingsLoadingView())
+        presentSettingsWindow(window)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.openSettings()
+            self.notchMode.isOpeningSettings = false
+        }
+    }
+
+    @objc private func openSettings() {
+        let window = settingsWindowForPresentation()
         window.contentViewController = NSHostingController(
             rootView: SettingsView(
                 store: store,
@@ -3109,8 +3154,7 @@ extension NSMenu {
                 canCheckForUpdates: updater.isConfigured,
                 onCheckForUpdates: { [weak self] in self?.updater.checkForUpdates(nil) }
             ))
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        presentSettingsWindow(window)
     }
 
     // Notch and menu bar can both be visible at once, so the anchor can't be inferred
