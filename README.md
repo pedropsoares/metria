@@ -20,6 +20,7 @@
 - [To do](#to-do)
 - [Providers](#providers)
 - [Mobile PWA](#mobile-pwa)
+- [iOS app](#ios-app)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Project layout](#project-layout)
@@ -62,7 +63,8 @@ Download the Windows `.exe` or Linux `.AppImage`. Electron releases are for Wind
 
 ### Mac version
 
-- Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
+- The iOS companion app (`apps/ios`) is source-only and unverified on real hardware; see its [README section](#ios-app) and run Plan 004's Phase 0 device gate before shipping it.
+- Build a native Android app to improve usage update delivery alongside the existing PWA.
 
 ### Electron version
 
@@ -119,6 +121,64 @@ Install the Cloudflare-hosted PWA on your phone, open it, and select **Enable al
 ### Electron version
 
 The Electron version does not include phone pairing, the local PWA server, QR pairing, or mobile alerts.
+
+## iOS app
+
+A native SwiftUI companion with Home Screen and Lock Screen widgets lives under
+`apps/ios`, alongside the PWA rather than replacing it — the PWA remains the
+Android path. Pair it the same way as the PWA: scan the Mac's Settings > Phone
+QR code, or enter the 12-word phrase.
+
+The app reads usage over two transports, local network first: `GET /snapshot`
+from the Mac's local server on the same Wi-Fi, falling back to the same
+encrypted ntfy relay the Mac already publishes to when the phone is off that
+network. Widgets refresh on iOS's own schedule — roughly every 15 minutes at
+best, not live — and always show the true age of the last reading alongside
+the number, including when both transports are unreachable.
+
+**Status**: source-only. Building it requires
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) and a full Xcode install (not
+just Command Line Tools):
+
+```sh
+cd apps/ios
+xcodegen generate --spec project.yml
+open MetriaMobile.xcodeproj
+```
+
+The `MetriaMobile` scheme builds the app and its widget extension, and runs in
+the simulator with no further setup.
+
+### Running on your iPhone
+
+1. Create `apps/ios/Local.xcconfig` (gitignored) with your team identifier:
+
+   ```
+   DEVELOPMENT_TEAM = ABCDE12345
+   ```
+
+   Find it in Xcode under **Settings > Accounts > (your Apple ID) > Manage
+   Certificates**, or under Membership details at
+   [developer.apple.com/account](https://developer.apple.com/account).
+
+2. Regenerate the project (`xcodegen generate --spec project.yml`) and pick your
+   iPhone as the run destination.
+
+3. If Xcode reports that the bundle identifier is unavailable, change
+   `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` to something unique to you —
+   the widget extension's identifier must stay prefixed by the app's.
+
+The app and widget request the `group.com.metria.shared` App Group and a
+matching Keychain access group; they share the cached usage snapshot through
+them. **A signing team that cannot provision those capabilities will fail here**
+— that is exactly Plan 004's Phase 0 gate, and it is the first thing to confirm
+on real hardware. Note also that a free Personal Team signature expires after 7
+days, after which the app and its widgets stop working until reinstalled from
+Xcode; an Apple Developer Program membership avoids that.
+
+See
+[`plans/004-ios-companion-app-widgets.md`](plans/004-ios-companion-app-widgets.md)
+for the full design, its Phase 0 device gate, and what remains unverified.
 
 ## Requirements
 
