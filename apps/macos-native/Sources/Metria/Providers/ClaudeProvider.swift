@@ -30,7 +30,7 @@ struct ClaudeProvider: UsageProvider {
                 await Self.accountEmailCache.store(email)
                 accountEmail = email
             }
-            return .loaded(ProviderUsage(kind: kind, accountLabel: accountEmail, windows: [
+            return .loaded(ProviderUsage(kind: kind, accountLabel: accountEmail, planLabel: KeychainReader.planLabel(from: credentials), windows: [
                 UsageWindow(title: "Current session", percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
                 UsageWindow(title: "All models", percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
             ], updatedAt: Date(), error: nil))

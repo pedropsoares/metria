@@ -45,7 +45,11 @@ struct CodexProvider: UsageProvider {
                 return .failed(kind, error.localizedDescription, retryAfter: error.retryAfter)
             }
             let value = try JSONDecoder().decode(OpenAIUsageResponse.self, from: data)
-            return .loaded(ProviderUsage(kind: kind, accountLabel: credentials.idToken.flatMap(KeychainReader.tokenEmail) ?? KeychainReader.tokenEmail(credentials.accessToken), windows: [
+            return .loaded(ProviderUsage(
+                kind: kind,
+                accountLabel: credentials.idToken.flatMap(KeychainReader.tokenEmail) ?? KeychainReader.tokenEmail(credentials.accessToken),
+                planLabel: credentials.idToken.flatMap(planLabel),
+                windows: [
                 UsageWindow(title: "Current session", percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
                 UsageWindow(title: "All models", percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
             ], updatedAt: Date(), error: nil))
@@ -53,6 +57,20 @@ struct CodexProvider: UsageProvider {
             let providerError = error as? ProviderError
             return .failed(kind, error.localizedDescription, retryAfter: providerError?.retryAfter)
         }
+    }
+    /// Decodes the ChatGPT plan (e.g. "Plus", "Pro", "Team") from the `id_token` JWT's
+    /// `https://api.openai.com/auth` claim. Best-effort — this claim is undocumented and
+    /// has been observed missing from some token refresh paths.
+    private func planLabel(from idToken: String) -> String? {
+        let parts = idToken.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+        guard let data = Data(base64Encoded: payload),
+              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let auth = claims["https://api.openai.com/auth"] as? [String: Any],
+              let planType = auth["chatgpt_plan_type"] as? String, !planType.isEmpty else { return nil }
+        return planType.capitalized
     }
     private func fetchLocalUsage() -> ProviderFetchResult {
         let candidates = findCandidates()

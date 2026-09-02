@@ -235,21 +235,53 @@ struct UsageCard: View {
     let usage: ProviderUsage
     var width: CGFloat = 390
     var scale: CGFloat = 1
+    var showsAccount: Bool = false
+    var hiddenWindowTitles: Set<String> = []
+    var backgroundOpacity: Double = 1
+    @AppStorage("showAccountEmails") private var showAccountEmails = true
+
     private var isCompact: Bool { width < 390 }
+    private var visibleWindows: [UsageWindow] { usage.windows.filter { !hiddenWindowTitles.contains($0.title) } }
     /// The progress bar's available width, mirroring this view's own horizontal padding
     /// so it no longer needs a `GeometryReader` (and the extra layout pass that comes
     /// with one) just to size itself.
     private var barWidth: CGFloat { width - 2 * (isCompact ? 14 : 24) * scale }
     var body: some View {
         VStack(alignment: .leading, spacing: (isCompact ? 10 : 18) * scale) {
-            HStack(spacing: (isCompact ? 6 : 10) * scale) { ProviderLogo(provider: usage.kind, size: (isCompact ? 17 : 24) * scale); Text(usage.kind.rawValue).font(.system(size: (isCompact ? 15 : 22) * scale, weight: .medium)); Spacer(); Circle().fill(usage.error == nil ? .green : .orange).frame(width: (isCompact ? 5 : 7) * scale, height: (isCompact ? 5 : 7) * scale) }
+            HStack(spacing: (isCompact ? 6 : 10) * scale) {
+                ProviderLogo(provider: usage.kind, size: (isCompact ? 17 : 24) * scale)
+                Text(usage.kind.rawValue).font(.system(size: (isCompact ? 15 : 22) * scale, weight: .medium))
+                if showsAccount && showAccountEmails, let accountLabel = usage.accountLabel {
+                    Text(accountLabel)
+                        .font(.system(size: (isCompact ? 10 : 13) * scale))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                if usage.error == nil, let planLabel = usage.planLabel {
+                    Text(planLabel)
+                        .font(.system(size: (isCompact ? 9 : 12) * scale, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, (isCompact ? 5 : 7) * scale)
+                        .padding(.vertical, (isCompact ? 2 : 3) * scale)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                } else {
+                    Circle().fill(usage.error == nil ? .green : .orange).frame(width: (isCompact ? 5 : 7) * scale, height: (isCompact ? 5 : 7) * scale)
+                }
+            }
             if usage.windows.isEmpty {
                 Label(usage.error ?? "Waiting for usage data...", systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill")
                     .font(.system(size: (isCompact ? 10 : 13) * scale))
                     .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
                     .lineLimit(3)
+            } else if visibleWindows.isEmpty {
+                Label("All usage windows for \(usage.kind.rawValue) are hidden. Enable one in Settings.", systemImage: "eye.slash")
+                    .font(.system(size: (isCompact ? 10 : 13) * scale))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
             } else {
-                ForEach(usage.windows) { window in
+                ForEach(visibleWindows) { window in
                     VStack(alignment: .leading, spacing: (isCompact ? 5 : 8) * scale) {
                         HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
                         ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: max(0, barWidth * window.percent / 100)) }.frame(height: (isCompact ? 5 : 7) * scale)
@@ -258,7 +290,7 @@ struct UsageCard: View {
                 }
             }
             if let error = usage.error { Text(error).font(.system(size: (isCompact ? 9 : 12) * scale)).foregroundStyle(.secondary).lineLimit(2) }
-        }.padding(.horizontal, (isCompact ? 14 : 24) * scale).padding(.vertical, (isCompact ? 16 : 28) * scale).frame(width: width).background(.black).clipShape(RoundedRectangle(cornerRadius: (isCompact ? 16 : 24) * scale)).foregroundStyle(.white)
+        }.padding(.horizontal, (isCompact ? 14 : 24) * scale).padding(.vertical, (isCompact ? 16 : 28) * scale).frame(width: width).background(Color.black.opacity(backgroundOpacity)).clipShape(RoundedRectangle(cornerRadius: (isCompact ? 16 : 24) * scale)).foregroundStyle(.white)
     }
 }
 
@@ -344,7 +376,15 @@ struct DashboardUsageCard: View {
                          .textSelection(.enabled)
                  }
                 Spacer()
-                if usage.error == nil {
+                if usage.error == nil, let planLabel = usage.planLabel {
+                    Text(planLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                        .help("\(usage.kind.rawValue) plan")
+                } else if usage.error == nil {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.green)
@@ -518,7 +558,13 @@ struct NotchMetrics {
     init(size: NotchSize) { scale = size.scale }
 
     var idleWidth: CGFloat { 80 * scale }
-    var compactHeight: CGFloat { 236 * scale }
+    /// Sized to fit every known provider stacked in `compactProviders`, so the rail never
+    /// overflows its own fixed-height container — derived from the same row metrics that
+    /// view uses, rather than a magic constant that has to be hand-updated per provider.
+    var compactHeight: CGFloat {
+        let count = CGFloat(ProviderKind.allCases.count)
+        return count * providerItemHeight + max(count - 1, 0) * providerSpacing + 24 * scale
+    }
     var hoverHeight: CGFloat { compactHeight + (controlsHeight + controlsGap + controlsBottomSpace) * 2 }
     var hiddenWidth: CGFloat { 18 * scale }
     var hiddenHeight: CGFloat { 80 * scale }
@@ -608,7 +654,7 @@ struct NotchContent: View {
              hosted in an AppKit panel outside the normal SwiftUI window hierarchy.
              */
             UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
-            .fill(.black.opacity(0.24 * backgroundOpacity))
+            .fill(.black.opacity(backgroundOpacity))
              .frame(width: currentSize.width, height: currentSize.height, alignment: position.zStackAlignment)
             .overlay {
                 UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
@@ -771,18 +817,19 @@ struct NotchCardContent: View {
         }
     }
 
+    /// `UsageCard` (not the popover's `DashboardUsageCard`/`GroupBox`) so the whole card —
+    /// fonts, padding, corner radius — scales with the notch size setting instead of only
+    /// its outer frame, and its background/corners come from this view alone, with no
+    /// separate stroked overlay on top.
     private var card: some View {
-        DashboardUsageCard(usage: usage, showsAccount: true, hiddenWindowTitles: hiddenWindowTitles)
-            .padding(8 * metrics.scale)
-            .frame(width: metrics.cardContentWidth)
-            .background {
-                RoundedRectangle(cornerRadius: 14 * metrics.scale, style: .continuous)
-                    .fill(.black.opacity(backgroundOpacity))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14 * metrics.scale, style: .continuous)
-                            .stroke(.white.opacity(0.12), lineWidth: 1)
-                    }
-            }
+        UsageCard(
+            usage: usage,
+            width: metrics.cardContentWidth,
+            scale: metrics.scale,
+            showsAccount: true,
+            hiddenWindowTitles: hiddenWindowTitles,
+            backgroundOpacity: backgroundOpacity
+        )
     }
 
     private var pointer: some View {
@@ -1013,6 +1060,7 @@ struct SidebarProviderItem: View {
         case .claude: return .orange
         case .codex: return .blue
         case .openCodeGo: return .white
+        case .cursor: return .indigo
         }
     }
 
@@ -1897,7 +1945,50 @@ private extension NSMenu {
         let panel = sidebarWindows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? sidebarWindow
         guard let panel, let contentView = panel.contentView else { return }
         let anchor = contentView.convert(windowPoint, from: nil)
-        buildAppMenu().popUp(positioning: nil, at: anchor, in: contentView)
+        buildNotchMenu().popUp(positioning: nil, at: anchor, in: contentView)
+    }
+
+    /// Same as `buildAppMenu()`, with a "Position" submenu inserted for switching which
+    /// screen edge the notch anchors to — handy right where you're already looking at it,
+    /// without a trip through Settings.
+    private func buildNotchMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "", symbolName: "rectangle.dock")
+        let notchItem = menu.addItem(withTitle: "Show notch", action: #selector(toggleNotchVisibility), keyEquivalent: "", symbolName: "capsule")
+        notchItem.state = showsNotch ? .on : .off
+        notchItem.isEnabled = !(showsNotch && !showsMenuBar)
+        let menuBarItem = menu.addItem(withTitle: "Show in menu bar", action: #selector(toggleMenuBarVisibility), keyEquivalent: "", symbolName: "menubar.rectangle")
+        menuBarItem.state = showsMenuBar ? .on : .off
+        menuBarItem.isEnabled = !(showsMenuBar && !showsNotch)
+
+        let positionItem = menu.addItem(withTitle: "Position", action: nil, keyEquivalent: "")
+        positionItem.image = NSImage(systemSymbolName: "square.dashed.inset.filled", accessibilityDescription: nil)
+        let positionMenu = NSMenu()
+        for position in NotchPosition.allCases {
+            let item = positionMenu.addItem(withTitle: position.title, action: #selector(selectNotchPositionFromMenu(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = position.rawValue
+            item.state = notchMode.position == position ? .on : .off
+        }
+        positionItem.submenu = positionMenu
+
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",", symbolName: "gearshape")
+        if updater.isConfigured {
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: "", symbolName: "arrow.trianglehead.2.clockwise")
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q", symbolName: "power")
+        menu.items.forEach { $0.target = self }
+        if updater.isConfigured {
+            menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target = updater
+        }
+        return menu
+    }
+
+    @objc private func selectNotchPositionFromMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let position = NotchPosition(rawValue: raw) else { return }
+        setNotchPosition(position)
     }
 
     private func configurePopover() { popover = NSPopover(); popover.behavior = .transient; popover.contentSize = NSSize(width: 440, height: 700); popover.contentViewController = NSHostingController(rootView: PopoverContent(store: store)) }
@@ -2143,13 +2234,20 @@ private extension NSMenu {
             isRailHovered = true
             pendingCardDismiss?.cancel()
             pendingCardShow?.cancel()
-            // Wait for the shell's own hover spring to settle before revealing the card,
-            // so it doesn't pop in ahead of the notch finishing its expand animation.
-            let workItem = DispatchWorkItem { [weak self] in
-                self?.showCard(for: provider, index: index)
+            if activeCardProvider != nil {
+                // A card is already on screen for another provider — switch right away.
+                // The settle delay below only matters for the very first reveal, while
+                // the shell itself is still mid-expansion.
+                showCard(for: provider, index: index)
+            } else {
+                // Wait for the shell's own hover spring to settle before revealing the card,
+                // so it doesn't pop in ahead of the notch finishing its expand animation.
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.showCard(for: provider, index: index)
+                }
+                pendingCardShow = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: workItem)
             }
-            pendingCardShow = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: workItem)
         } else {
             pendingCardShow?.cancel()
             if hoveredProvider == provider {
@@ -2181,6 +2279,7 @@ private extension NSMenu {
     private func showCard(for provider: ProviderKind, index: Int) {
         let usage = store.providers.first(where: { $0.kind == provider })
             ?? ProviderUsage(kind: provider, windows: [], updatedAt: nil, error: nil)
+        let isAlreadyVisible = cardWindow?.isVisible == true
 
         if cardWindow == nil {
             let window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -2210,12 +2309,20 @@ private extension NSMenu {
         cardWindow?.layoutIfNeeded()
         let cardHeight = max(cardWindow?.contentViewController?.view.fittingSize.height ?? 0, 1)
         positionCard(index: index, height: cardHeight)
-        cardWindow?.alphaValue = 0
-        cardWindow?.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.16
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            cardWindow?.animator().alphaValue = 1
+        if isAlreadyVisible {
+            // Already on screen for a previous provider — swap content in place instead
+            // of fading out to nothing and back in, which reads as a stutter when
+            // switching between providers quickly.
+            cardWindow?.alphaValue = 1
+            cardWindow?.orderFrontRegardless()
+        } else {
+            cardWindow?.alphaValue = 0
+            cardWindow?.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                cardWindow?.animator().alphaValue = 1
+            }
         }
     }
 
