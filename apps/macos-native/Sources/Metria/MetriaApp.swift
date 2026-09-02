@@ -2224,6 +2224,10 @@ extension NSMenu {
         statusItem.menu = buildAppMenu()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        releaseNotchPanels()
+    }
+
     private var ntfyServer: String {
         get { UserDefaults.standard.string(forKey: "ntfyServer") ?? "https://ntfy.sh" }
         set { UserDefaults.standard.set(newValue, forKey: "ntfyServer") }
@@ -2557,14 +2561,30 @@ extension NSMenu {
     }
 
     private func configureSidebar() {
+        releaseNotchPanels()
         let screen = selectedNotchScreen ?? NSScreen.main ?? NSScreen.screens.first
         sidebarWindows = screen.map { [makeSidebarWindow(for: $0)] } ?? []
         sidebarWindow = sidebarWindows.first
         notchGeometry = NotchGeometry.current(for: screen, position: notchMode.position)
 
+        NotificationCenter.default.removeObserver(
+            self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(screenParametersDidChange),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    private func releaseNotchPanels() {
+        resetNotchInteractionState()
+        cardWindow?.contentViewController = nil
+        cardWindow?.close()
+        cardWindow = nil
+        sidebarWindows.forEach {
+            $0.contentView = nil
+            $0.close()
+        }
+        sidebarWindows.removeAll()
+        sidebarWindow = nil
     }
 
     private func makeSidebarWindow(for screen: NSScreen) -> NSPanel {
