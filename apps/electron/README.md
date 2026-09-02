@@ -35,9 +35,29 @@ Electron stores its settings in its own `com.metria.electron` application-data
 namespace. It must not modify native Metria's UserDefaults, Keychain services,
 Sparkle feed, or app bundle.
 
-Phone pairing and phone sync (the hosted-PWA feature) are not included in the
-Electron implementation. It does not run a loopback PWA server, generate pairing
-links, or post encrypted snapshots to `ntfy.sh`.
+## Phone pairing
+
+Settings → Pair your phone shows the same QR code and 12-word phrase the native
+macOS app shows, and the pairing derivations are byte-identical, so a phone can
+be paired with either app:
+
+- `src/main/pairing-secret.ts` ports `Sources/MetriaCore/PairingSecret.swift`:
+  one 128-bit secret, HKDF-SHA256 for the ntfy topic, the AES-256 key, and the
+  local `/snapshot` token, and the BIP-39 phrase that carries the same entropy.
+- The secret lives in `pairing.json` inside the app's own data folder, written
+  0600 and encrypted with Electron's `safeStorage` (DPAPI on Windows, the login
+  keyring on Linux) whenever the platform provides OS-backed encryption. It is
+  never written to the macOS Keychain.
+- `src/main/local-pwa-server.ts` serves the PWA from `apps/pwa/public` over the
+  LAN, plus `/snapshot` — the plaintext snapshot, released only to a request
+  carrying a pairing-derived token. Only the PWA's own file names are served;
+  paths are matched against a fixed list, never resolved on disk.
+- `src/main/ntfy.ts` posts each refreshed snapshot to the pairing topic on an
+  HTTPS ntfy server, sealed with AES-256-GCM in CryptoKit's combined layout, so
+  the relay only ever sees ciphertext and a derived topic name.
+- `src/main/qr.ts` draws the pairing link as a QR code (byte mode, correction
+  level M) — the job Core Image does for the native app. Its test decodes the
+  drawn code with the PWA's vendored jsQR.
 
 ## Parity and platform support
 
@@ -45,7 +65,7 @@ links, or post encrypted snapshots to `ntfy.sh`.
 | --- | --- | --- |
 | Dashboard, tray, provider controls | Yes | Yes |
 | Side notch | Yes | Usage widget window (Windows/Linux) |
-| Hosted-PWA QR pairing | Yes | No |
+| Hosted-PWA QR pairing | Yes | Yes |
 | Launch at login | macOS service | Windows login item, XDG desktop-autostart entry |
 | Auto-update | Sparkle, signed appcast | Yes, silent via GitHub Releases |
 | Provider data from WSL | No | Yes: providers stored in WSL distros are discovered and selectable per provider |

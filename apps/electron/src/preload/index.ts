@@ -23,7 +23,14 @@ const api: MetriaApi = {
   quit: () => ipcRenderer.invoke("metria:quit"),
   setRefreshInterval: (seconds: number) => ipcRenderer.invoke("metria:set-refresh-interval", seconds),
   getProviderSources: () => ipcRenderer.invoke("metria:get-provider-sources"),
-  setProviderSource: (kind: ProviderKind, source: ProviderSourceChoice) => ipcRenderer.invoke("metria:set-provider-source", kind, source)
+  setProviderSource: (kind: ProviderKind, source: ProviderSourceChoice) => ipcRenderer.invoke("metria:set-provider-source", kind, source),
+  getPairing: () => ipcRenderer.invoke("metria:get-pairing"),
+  regeneratePairing: () => ipcRenderer.invoke("metria:regenerate-pairing"),
+  setNtfyServer: (server: string) => ipcRenderer.invoke("metria:set-ntfy-server", server),
+  setLocalServerPort: (port: number) => ipcRenderer.invoke("metria:set-local-server-port", port),
+  setCustomPwaUrl: (url: string) => ipcRenderer.invoke("metria:set-custom-pwa-url", url),
+  copyText: (text: string) => ipcRenderer.invoke("metria:copy-text", text),
+  onPairingChanged: (callback: () => void) => { ipcRenderer.on("metria:pairing-changed", () => callback()); }
 };
 
 contextBridge.exposeInMainWorld("metria", Object.freeze(api));

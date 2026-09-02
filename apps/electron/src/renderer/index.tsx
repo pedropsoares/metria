@@ -2,7 +2,7 @@ import { useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
 import { clampPercent, DEFAULT_REFRESH_INTERVAL_SECONDS, gaugeColor, PROVIDER_LOGOS, statusDotColor } from "../shared/types";
-import type { ProviderKind, ProviderSourceChoice, ProviderUsage, UsageWindow } from "../shared/types";
+import type { PairingInfo, ProviderKind, ProviderSourceChoice, ProviderUsage, UsageWindow } from "../shared/types";
 import "./app.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
@@ -119,6 +119,88 @@ function SourceChoiceModal(): JSX.Element {
   );
 }
 
+const PAIRING_KEY = ["pairing"] as const;
+const FIELD_CLASS = "w-full border border-line2 bg-surface px-2.5 py-1.5 font-mono text-xs text-fg";
+const BUTTON_CLASS = "cursor-pointer border border-line2 bg-transparent px-3 py-1.5 text-[#d8d8dc] disabled:opacity-55";
+
+/** Text field that commits on Enter or blur, the way the native Settings fields do. */
+function CommittingField({ id, value, placeholder, onCommit }: { id: string; value: string; placeholder: string; onCommit: (value: string) => void }): JSX.Element {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  return (
+    <input id={id} className={FIELD_CLASS} value={draft} placeholder={placeholder} spellCheck={false}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => { if (draft !== value) onCommit(draft); }}
+      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+  );
+}
+
+/** Pairing pane: the QR code and 12-word phrase a phone connects with, plus the
+ * addresses that code points at. Mirrors the native app's Phone settings tab. */
+function PairingSection(): JSX.Element {
+  const [revealed, setRevealed] = useState(false);
+  const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
+  const pairing = useQuery({ queryKey: PAIRING_KEY, queryFn: () => window.metria.getPairing() });
+  const update = (next: PairingInfo): void => { queryClient.setQueryData(PAIRING_KEY, next); };
+  const regenerate = useMutation({ mutationFn: () => window.metria.regeneratePairing(), onSuccess: (next) => { update(next); setConfirmingRegenerate(false); } });
+  const setServer = useMutation({ mutationFn: (server: string) => window.metria.setNtfyServer(server), onSuccess: update });
+  const setPort = useMutation({ mutationFn: (port: number) => window.metria.setLocalServerPort(port), onSuccess: update });
+  const setPwaUrl = useMutation({ mutationFn: (url: string) => window.metria.setCustomPwaUrl(url), onSuccess: update });
+  useEffect(() => {
+    window.metria.onPairingChanged(() => { void queryClient.invalidateQueries({ queryKey: PAIRING_KEY }); });
+  }, []);
+  const info = pairing.data;
+  const phrase = info?.words.join(" ") ?? "";
+  return (
+    <section className="mt-6">
+      <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Pair your phone</h3>
+      {info?.qrDataUrl
+        ? <img className="mt-3 h-[148px] w-[148px] [image-rendering:pixelated]" src={info.qrDataUrl} alt="Pairing QR code" />
+        : <p className="m-0 mt-3 text-dim">Starting the local server…</p>}
+      <p className="m-0 mt-3 break-all font-mono text-xs text-mute">{revealed ? phrase : "•".repeat(44)}</p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+        <button type="button" className={BUTTON_CLASS} onClick={() => setRevealed(!revealed)}>{revealed ? "Hide" : "Show"} phrase</button>
+        <button type="button" className={BUTTON_CLASS} onClick={() => void window.metria.copyText(phrase)} disabled={!phrase}>Copy phrase</button>
+        <button type="button" className={BUTTON_CLASS} onClick={() => void window.metria.copyText(info?.link ?? "")} disabled={!info?.link}>Copy link</button>
+        <button type="button" className="cursor-pointer border border-[#ff453a]/60 px-3 py-1.5 text-[#ff6961] disabled:opacity-55"
+          onClick={() => setConfirmingRegenerate(true)} disabled={regenerate.isPending}>Regenerate</button>
+      </div>
+      {confirmingRegenerate && (
+        <div className="mt-2.5 border border-line2 p-3">
+          <p className="m-0 leading-relaxed text-dim">Any phone using the current QR code or phrase will stop receiving updates.</p>
+          <div className="mt-2.5 flex gap-2.5">
+            <button type="button" className="cursor-pointer border border-[#ff453a]/60 px-3 py-1.5 text-[#ff6961]" onClick={() => regenerate.mutate()} disabled={regenerate.isPending}>Regenerate</button>
+            <button type="button" className={BUTTON_CLASS} onClick={() => setConfirmingRegenerate(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      <div className="mt-4 grid gap-3">
+        <div>
+          <label className="text-dim" htmlFor="ntfy-server">Ntfy server</label>
+          <CommittingField id="ntfy-server" value={info?.ntfyServer ?? ""} placeholder="https://ntfy.sh" onCommit={(value) => setServer.mutate(value)} />
+        </div>
+        <div>
+          <label className="text-dim" htmlFor="local-address">Local address</label>
+          <p id="local-address" className="m-0 mt-1.5 break-all font-mono text-xs text-mute">{info?.localUrl ?? "No local network address available"}</p>
+        </div>
+        <div>
+          <label className="text-dim" htmlFor="local-port">Local server port</label>
+          <CommittingField id="local-port" value={String(info?.localServerPort ?? "")} placeholder="8973"
+            onCommit={(value) => { const port = Number(value); if (Number.isInteger(port) && port > 0 && port <= 65535) setPort.mutate(port); }} />
+        </div>
+        <div>
+          <label className="text-dim" htmlFor="pwa-url">Custom PWA URL</label>
+          <CommittingField id="pwa-url" value={info?.customPwaUrl ?? ""} placeholder="https://…" onCommit={(value) => setPwaUrl.mutate(value)} />
+        </div>
+      </div>
+      <p className="m-0 mt-3 leading-relaxed text-dim">
+        Scan the QR code with your phone's camera, or open the PWA and enter the phrase. Leave the custom URL empty to pair
+        through this computer on the same Wi-Fi; the local address must be reachable from your phone.
+      </p>
+    </section>
+  );
+}
+
 const REFRESH_OPTIONS = [300, 600, 900, 1800];
 const PLATFORM_LABEL: Record<string, string> = { win32: "Windows", linux: "Linux", darwin: "macOS" };
 
@@ -219,6 +301,8 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
             ))}
           </section>
         )}
+
+        <PairingSection />
 
         <section className="mt-6">
           <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Updates</h3>

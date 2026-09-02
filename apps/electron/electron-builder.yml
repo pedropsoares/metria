@@ -10,6 +10,9 @@ files:
 extraResources:
   - from: ../Assets
     to: MetriaPWA
+  # The PWA the local pairing server hands to a phone, alongside the shared logos.
+  - from: ../pwa/public
+    to: MetriaPWA
 win:
   target:
     - nsis

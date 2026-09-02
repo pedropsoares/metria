@@ -20,6 +20,21 @@ export interface AppSettings {
   enabledProviders: ProviderKind[];
   widgetYOffset: number;
   providerSource: Partial<Record<ProviderKind, ProviderSourceChoice>>;
+  ntfyServer: string;
+  localServerPort: number;
+  customPwaUrl: string;
+}
+
+/** Everything the dashboard needs to show the pairing pane: the QR code and phrase a
+ * phone pairs with, plus the addresses that code points at. */
+export interface PairingInfo {
+  words: string[];
+  link: string;
+  qrDataUrl: string;
+  localUrl: string | null;
+  ntfyServer: string;
+  localServerPort: number;
+  customPwaUrl: string;
 }
 
 export interface CardShowPayload {
@@ -50,6 +65,13 @@ export interface MetriaApi {
   setRefreshInterval(seconds: number): Promise<AppSettings>;
   getProviderSources(): Promise<ProviderSourceInfo[]>;
   setProviderSource(kind: ProviderKind, source: ProviderSourceChoice): Promise<AppSettings>;
+  getPairing(): Promise<PairingInfo>;
+  regeneratePairing(): Promise<PairingInfo>;
+  setNtfyServer(server: string): Promise<PairingInfo>;
+  setLocalServerPort(port: number): Promise<PairingInfo>;
+  setCustomPwaUrl(url: string): Promise<PairingInfo>;
+  copyText(text: string): Promise<void>;
+  onPairingChanged(callback: () => void): void;
 }
 
 export interface LoginItemStatus { available: boolean; enabled: boolean; message: string; }
@@ -122,4 +144,9 @@ export const WIDGET_ITEM_HEIGHT = 52;
 export const CARD_WIDTH = 316;
 export const DEFAULT_WIDGET_Y_OFFSET = 12;
 export const DEFAULT_REFRESH_INTERVAL_SECONDS = 300;
+export const DEFAULT_NTFY_SERVER = "https://ntfy.sh";
+export const DEFAULT_LOCAL_SERVER_PORT = 8973;
+/** The hosted PWA the native app pairs against by default; an empty setting pairs
+ * through this machine's own LAN server instead. */
+export const DEFAULT_PWA_URL = "https://metria-pwa.yuriramos2406.workers.dev";
 export const PRESENCE_CACHE_TTL_MS = 30_000;
