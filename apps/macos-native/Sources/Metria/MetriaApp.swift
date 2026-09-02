@@ -213,18 +213,35 @@ struct MenuBarAlertSettings {
         warningColor: .systemOrange,
         criticalColor: .systemRed
     )
+
+    func usageColor(for percent: Double, fallback: Color) -> Color {
+        if percent >= Double(criticalThreshold) { return Color(nsColor: criticalColor) }
+        if percent >= Double(warningThreshold) { return Color(nsColor: warningColor) }
+        if percent >= Double(cautionThreshold) { return Color(nsColor: cautionColor) }
+        return fallback
+    }
 }
 
 struct ProviderLogo: View {
     let provider: ProviderKind
     let size: CGFloat
+    @AppStorage("whiteProviderLogos") private var whiteProviderLogos = false
 
     var body: some View {
         if let image = provider.logo {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: size, height: size)
+            if whiteProviderLogos {
+                Image(nsImage: image)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+                    .foregroundStyle(.white)
+            } else {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+            }
         } else {
             Image(systemName: provider.symbol)
                 .font(.system(size: size * 0.7, weight: .light))
@@ -253,6 +270,7 @@ struct UsageCard: View {
     var showsAccount: Bool = false
     var hiddenWindowTitles: Set<String> = []
     var backgroundOpacity: Double = 1
+    var alertSettings: MenuBarAlertSettings = .default
     @AppStorage("showAccountEmails") private var showAccountEmails = true
 
     private var isCompact: Bool { width < 390 }
@@ -314,8 +332,10 @@ struct UsageCard: View {
                             Text(window.resetText).foregroundStyle(.secondary)
                         }.font(.system(size: (isCompact ? 10 : 15) * scale))
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Color(white: 0.17))
-                            Capsule().fill(GaugeColor.color(for: window.percent)).frame(
+                            Capsule().fill(Color(white: 0.10))
+                            Capsule().fill(
+                                alertSettings.usageColor(for: window.percent, fallback: .green)
+                            ).frame(
                                 width: max(0, barWidth * window.percent / 100))
                         }.frame(height: (isCompact ? 5 : 7) * scale)
                         Text("\(Int(window.percent.rounded()))% Used").font(
@@ -363,6 +383,7 @@ struct DashboardUsageCard: View {
     let usage: ProviderUsage
     let showsAccount: Bool
     var hiddenWindowTitles: Set<String> = []
+    var alertSettings: MenuBarAlertSettings = .default
     @AppStorage("showAccountEmails") private var showAccountEmails = true
 
     private var visibleWindows: [UsageWindow] {
@@ -390,7 +411,7 @@ struct DashboardUsageCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(visibleWindows) { window in
-                        let color = GaugeColor.color(for: window.percent)
+                        let color = alertSettings.usageColor(for: window.percent, fallback: .green)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(window.title)
@@ -443,11 +464,15 @@ struct DashboardUsageCard: View {
                 }
             }
         }
+        .padding(16)
+        .background(Color.black)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 }
 
 struct PopoverContent: View {
     @ObservedObject var store: UsageStore
+    let alertSettings: MenuBarAlertSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -479,7 +504,8 @@ struct PopoverContent: View {
                             DashboardUsageCard(
                                 usage: $0, showsAccount: true,
                                 hiddenWindowTitles: store.hiddenWindowTitlesByProvider[$0.kind]
-                                    ?? [])
+                                    ?? [],
+                                alertSettings: alertSettings)
                         }
                     }
                 }
@@ -493,6 +519,8 @@ struct PopoverContent: View {
         }
         .padding(12)
         .frame(width: 440, height: 700)
+        .background(Color.black)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -560,7 +588,8 @@ struct NotchShape: Shape {
     let squareSideExtension: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        let extensionAmount = position.axis == .vertical
+        let extensionAmount =
+            position.axis == .vertical
             ? min(squareSideExtension, rect.height / 3)
             : min(squareSideExtension, rect.width / 3)
         let cornerRadius = min(radius, rect.width / 2, rect.height / 2)
@@ -574,22 +603,28 @@ struct NotchShape: Shape {
             path.addCurve(
                 to: CGPoint(x: rect.minX + cornerRadius, y: rect.minY + extensionAmount),
                 control1: CGPoint(x: rect.maxX, y: rect.minY + extensionAmount * 0.65),
-                control2: CGPoint(x: rect.minX + cornerRadius * 1.35, y: rect.minY + extensionAmount)
+                control2: CGPoint(
+                    x: rect.minX + cornerRadius * 1.35, y: rect.minY + extensionAmount)
             )
             path.addCurve(
                 to: CGPoint(x: rect.minX, y: roundedTop),
-                control1: CGPoint(x: rect.minX + cornerRadius * 0.45, y: rect.minY + extensionAmount),
-                control2: CGPoint(x: rect.minX, y: rect.minY + extensionAmount + cornerRadius * 0.45)
+                control1: CGPoint(
+                    x: rect.minX + cornerRadius * 0.45, y: rect.minY + extensionAmount),
+                control2: CGPoint(
+                    x: rect.minX, y: rect.minY + extensionAmount + cornerRadius * 0.45)
             )
             path.addLine(to: CGPoint(x: rect.minX, y: roundedBottom))
             path.addCurve(
                 to: CGPoint(x: rect.minX + cornerRadius, y: rect.maxY - extensionAmount),
-                control1: CGPoint(x: rect.minX, y: rect.maxY - extensionAmount - cornerRadius * 0.45),
-                control2: CGPoint(x: rect.minX + cornerRadius * 0.45, y: rect.maxY - extensionAmount)
+                control1: CGPoint(
+                    x: rect.minX, y: rect.maxY - extensionAmount - cornerRadius * 0.45),
+                control2: CGPoint(
+                    x: rect.minX + cornerRadius * 0.45, y: rect.maxY - extensionAmount)
             )
             path.addCurve(
                 to: CGPoint(x: rect.maxX, y: rect.maxY),
-                control1: CGPoint(x: rect.minX + cornerRadius * 1.35, y: rect.maxY - extensionAmount),
+                control1: CGPoint(
+                    x: rect.minX + cornerRadius * 1.35, y: rect.maxY - extensionAmount),
                 control2: CGPoint(x: rect.maxX, y: rect.maxY - extensionAmount * 0.65)
             )
         case .left:
@@ -597,22 +632,28 @@ struct NotchShape: Shape {
             path.addCurve(
                 to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY + extensionAmount),
                 control1: CGPoint(x: rect.minX, y: rect.minY + extensionAmount * 0.65),
-                control2: CGPoint(x: rect.maxX - cornerRadius * 1.35, y: rect.minY + extensionAmount)
+                control2: CGPoint(
+                    x: rect.maxX - cornerRadius * 1.35, y: rect.minY + extensionAmount)
             )
             path.addCurve(
                 to: CGPoint(x: rect.maxX, y: roundedTop),
-                control1: CGPoint(x: rect.maxX - cornerRadius * 0.45, y: rect.minY + extensionAmount),
-                control2: CGPoint(x: rect.maxX, y: rect.minY + extensionAmount + cornerRadius * 0.45)
+                control1: CGPoint(
+                    x: rect.maxX - cornerRadius * 0.45, y: rect.minY + extensionAmount),
+                control2: CGPoint(
+                    x: rect.maxX, y: rect.minY + extensionAmount + cornerRadius * 0.45)
             )
             path.addLine(to: CGPoint(x: rect.maxX, y: roundedBottom))
             path.addCurve(
                 to: CGPoint(x: rect.maxX - cornerRadius, y: rect.maxY - extensionAmount),
-                control1: CGPoint(x: rect.maxX, y: rect.maxY - extensionAmount - cornerRadius * 0.45),
-                control2: CGPoint(x: rect.maxX - cornerRadius * 0.45, y: rect.maxY - extensionAmount)
+                control1: CGPoint(
+                    x: rect.maxX, y: rect.maxY - extensionAmount - cornerRadius * 0.45),
+                control2: CGPoint(
+                    x: rect.maxX - cornerRadius * 0.45, y: rect.maxY - extensionAmount)
             )
             path.addCurve(
                 to: CGPoint(x: rect.minX, y: rect.maxY),
-                control1: CGPoint(x: rect.maxX - cornerRadius * 0.85, y: rect.maxY - extensionAmount),
+                control1: CGPoint(
+                    x: rect.maxX - cornerRadius * 0.85, y: rect.maxY - extensionAmount),
                 control2: CGPoint(x: rect.minX, y: rect.maxY - extensionAmount * 0.65)
             )
         case .top:
@@ -733,7 +774,9 @@ struct NotchMetrics {
         return count * providerItemHeight + max(count - 1, 0) * providerSpacing + 24 * scale
     }
     var railExtent: CGFloat { compactHeight + squareSideExtension * 2 }
-    var hoverHeight: CGFloat { railExtent + (controlsHeight + controlsGap + controlsBottomSpace) * 2 }
+    var hoverHeight: CGFloat {
+        railExtent + (controlsHeight + controlsGap + controlsBottomSpace) * 2
+    }
     var hiddenWidth: CGFloat { 18 * scale }
     var hiddenHeight: CGFloat { 80 * scale }
     var cornerRadius: CGFloat { 40 * scale }
@@ -744,9 +787,9 @@ struct NotchMetrics {
     var cardWidth: CGFloat { 316 * scale }
     var cardContentWidth: CGFloat { 300 * scale }
     var controlsSpacing: CGFloat { 14 * scale }
-    var controlsHeight: CGFloat { 26 * scale }
-    var controlsGap: CGFloat { 1 * scale }
-    var controlsBottomSpace: CGFloat { 2 * scale }
+    var controlsHeight: CGFloat { 24 * scale }
+    var controlsGap: CGFloat { 0 }
+    var controlsBottomSpace: CGFloat { 0 }
 
     /// Maps a (thickness, extent) pair — thickness being the fixed cross-axis size, extent
     /// the size along the growth axis — onto an actual (width, height), swapped for a
@@ -802,7 +845,8 @@ struct NotchContent: View {
         return size
     }
     private var maxSize: CGSize {
-        let size = metrics.size(thickness: metrics.idleWidth, extent: metrics.hoverHeight, axis: axis)
+        let size = metrics.size(
+            thickness: metrics.idleWidth, extent: metrics.hoverHeight, axis: axis)
         return size
     }
     private var hiddenPeekSize: CGSize {
@@ -998,10 +1042,10 @@ struct NotchContent: View {
 
     private var topControls: some View {
         Image(systemName: isHiddenMode ? "pin.fill" : "eye.slash")
-            .font(.system(size: 13 * metrics.scale))
+            .font(.system(size: 11 * metrics.scale))
             .foregroundStyle(Color(white: 0.58))
-            .frame(width: 28 * metrics.scale, height: 26 * metrics.scale)
-            .background(Capsule().fill(Color.black))
+            .frame(width: 24 * metrics.scale, height: 24 * metrics.scale)
+            .background(Circle().fill(Color.black))
             .accessibilityLabel(isHiddenMode ? "Pin notch" : "Hide notch")
             .help(isHiddenMode ? "Pin notch" : "Hide notch")
             .frame(maxWidth: .infinity)
@@ -1015,10 +1059,10 @@ struct NotchContent: View {
         HStack(spacing: metrics.controlsSpacing) {
             Spacer()
             Image(systemName: "gearshape")
-                .font(.system(size: 13 * metrics.scale))
+                .font(.system(size: 11 * metrics.scale))
                 .foregroundStyle(Color(white: 0.58))
-                .frame(width: 28 * metrics.scale, height: 26 * metrics.scale)
-                .background(Capsule().fill(Color.black))
+                .frame(width: 24 * metrics.scale, height: 24 * metrics.scale)
+                .background(Circle().fill(Color.black))
                 .help("Settings")
             Spacer()
         }
@@ -1036,6 +1080,7 @@ struct NotchCardContent: View {
     let metrics: NotchMetrics
     let position: NotchPosition
     let backgroundOpacity: Double
+    let alertSettings: MenuBarAlertSettings
     let onHover: (Bool) -> Void
 
     /// The pointer shape always points from "right", so it only needs rotating to face
@@ -1060,7 +1105,8 @@ struct NotchCardContent: View {
             scale: metrics.scale,
             showsAccount: true,
             hiddenWindowTitles: hiddenWindowTitles,
-            backgroundOpacity: backgroundOpacity
+            backgroundOpacity: backgroundOpacity,
+            alertSettings: alertSettings
         )
     }
 
@@ -1314,18 +1360,13 @@ struct SidebarProviderItem: View {
         if percent >= Double(alertSettings.cautionThreshold) {
             return Color(nsColor: alertSettings.cautionColor)
         }
-        switch usage.kind {
-        case .claude: return .orange
-        case .codex: return .blue
-        case .openCodeGo: return .white
-        case .cursor: return .indigo
-        }
+        return .green
     }
 
     var body: some View {
         VStack(spacing: 3 * scale) {
             ZStack {
-                Circle().stroke(Color(white: 0.18), lineWidth: 5 * scale)
+                Circle().stroke(Color(white: 0.10), lineWidth: 5 * scale)
                 Circle().trim(from: 0, to: displayedPercent / 100)
                     .stroke(
                         progressColor, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round)
@@ -1342,7 +1383,7 @@ struct SidebarProviderItem: View {
     }
 
     private func animatePercent(to percent: Double, delay: Double = 0) {
-        withAnimation(.easeOut(duration: 0.65).delay(delay)) {
+        withAnimation(.easeOut(duration: 1.2).delay(delay)) {
             displayedPercent = percent
         }
     }
@@ -1471,6 +1512,7 @@ struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var pairing: PairingManager
     @AppStorage("showAccountEmails") private var showAccountEmails = true
+    @AppStorage("whiteProviderLogos") private var whiteProviderLogos = false
     @State private var showsNotch: Bool
     let onToggleNotch: (Bool) -> Void
     @State private var showsMenuBar: Bool
@@ -1688,9 +1730,6 @@ struct SettingsView: View {
                     )
                 )
                 .disabled(showsMenuBar && !showsNotch)
-                Toggle("Show provider account email", isOn: $showAccountEmails)
-                Text("Show the account email when available, or a masked API key for OpenCode Go.")
-                    .foregroundStyle(.secondary)
             }
 
             Section("Notch") {
@@ -1714,6 +1753,8 @@ struct SettingsView: View {
                     "Keep the provider rail visible or collapse it until you hover over the notch."
                 )
                 .foregroundStyle(.secondary)
+                Toggle("Show provider info", isOn: $showAccountEmails)
+                Toggle("Use white theme", isOn: $whiteProviderLogos)
             }
 
             Section("Menu bar") {
@@ -2176,6 +2217,9 @@ extension NSMenu {
         saveMenuBarAlertColor(settings.criticalColor, forKey: "menuBarCriticalColor")
         updateStatusItem(store.providers)
         sidebarWindows.forEach { $0.contentView = makeHostingView() }
+        popover?.contentViewController = NSHostingController(
+            rootView: PopoverContent(store: store, alertSettings: menuBarAlertSettings)
+        )
     }
 
     private func menuBarAlertColor(forKey key: String, fallback: NSColor) -> NSColor {
@@ -2377,7 +2421,9 @@ extension NSMenu {
         popover = NSPopover()
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 440, height: 700)
-        popover.contentViewController = NSHostingController(rootView: PopoverContent(store: store))
+        popover.contentViewController = NSHostingController(
+            rootView: PopoverContent(store: store, alertSettings: menuBarAlertSettings)
+        )
     }
 
     private var notchGeometry = NotchGeometry.current()
@@ -2736,7 +2782,8 @@ extension NSMenu {
             hiddenWindowTitles: store.hiddenWindowTitlesByProvider[provider] ?? [],
             metrics: notchMetrics,
             position: notchMode.position,
-            backgroundOpacity: sidebarOpacity
+            backgroundOpacity: sidebarOpacity,
+            alertSettings: menuBarAlertSettings
         ) { [weak self] isHovered in
             self?.setCardHovered(isHovered)
         }
@@ -2784,7 +2831,8 @@ extension NSMenu {
                 thickness: notchMetrics.idleWidth, extent: notchMetrics.railExtent,
                 alongEdgeOffset: notchAlongEdgeOffset)
             let providerCenterY =
-                railFrame.maxY - leadInset - notchMetrics.providerItemHeight / 2 - CGFloat(index)
+                railFrame.maxY - notchMetrics.squareSideExtension - leadInset
+                - notchMetrics.providerItemHeight / 2 - CGFloat(index)
                 * itemStride
             let originY = min(
                 max(providerCenterY - cardHeight / 2, visibleFrame.minY + 8),
@@ -2801,7 +2849,8 @@ extension NSMenu {
                 thickness: notchMetrics.idleWidth, extent: notchMetrics.railExtent,
                 alongEdgeOffset: notchAlongEdgeOffset)
             let providerCenterX =
-                railFrame.minX + leadInset + notchMetrics.providerItemHeight / 2 + CGFloat(index)
+                railFrame.minX + notchMetrics.squareSideExtension + leadInset
+                + notchMetrics.providerItemHeight / 2 + CGFloat(index)
                 * itemStride
             let originX = min(
                 max(providerCenterX - notchMetrics.cardWidth / 2, visibleFrame.minX + 8),
