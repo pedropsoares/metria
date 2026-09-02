@@ -84,10 +84,7 @@ private struct ProviderCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                if let name = UsagePresentation.logoAssetName(for: provider.name),
-                   let logo = UsagePresentation.image(named: name) {
-                    logo.resizable().scaledToFit().frame(width: 24, height: 24)
-                }
+                UsagePresentation.logo(for: provider.name, size: 24)
                 Text(provider.name).font(.headline)
                 Spacer()
                 Text("\(Int(provider.percent.rounded()))%")

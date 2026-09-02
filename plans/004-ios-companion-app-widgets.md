@@ -408,4 +408,18 @@ Manual checks with the Mac app running:
   survives cellular and a sleeping Wi-Fi link. (An earlier revision of this plan
   cut the relay; that cut was reversed the same day.) APNs push remains out of
   scope — see "Alternatives" for what it would cost.
-- *(Phase 0 results go here before any product code is written.)*
+- **Phase 0 item 1 answered 2026-09-01 on a free Personal Team.** With
+  "Automatically manage signing" and a Personal Team, Xcode provisioned
+  `group.com.metria.shared` for both `MetriaMobile` (`com.metria.ios.app`) and
+  `MetriaWidgets`, and the project built for an iPhone destination. **App Groups
+  is therefore available without the paid membership here**, which makes the
+  Apple Developer Program a convenience — the 7-day signature — rather than a
+  precondition. Items 2 through 5 remain unmeasured: a successful build proves
+  entitlement provisioning, not that the widget extension can read a Keychain
+  item the app wrote, reach the LAN, or hold its reload budget. Item 2 deserves
+  particular attention because `PairingStore` omits `kSecAttrAccessGroup` and
+  relies on both targets declaring the same first entitled group
+  (`apps/ios/Sources/MetriaMobileKit/AppGroup.swift:5-10`); Xcode's Signing &
+  Capabilities pane showed App Groups and Background Modes but no Keychain
+  Sharing row, so confirm the entitlement reached the profile.
+- *(Remaining Phase 0 results go here before any product code is written.)*

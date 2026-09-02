@@ -42,6 +42,14 @@ targets:
     platform: iOS
     sources:
       - path: Sources/MetriaWidgets
+      - path: ../../Assets/claude-logo.png
+        buildPhase: resources
+      - path: ../../Assets/codex-logo.png
+        buildPhase: resources
+      - path: ../../Assets/cursor-logo.png
+        buildPhase: resources
+      - path: ../../Assets/opencode-logo.png
+        buildPhase: resources
     dependencies:
       - target: MetriaCore
       - target: MetriaMobileKit
@@ -126,6 +134,7 @@ targets:
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
         INFOPLIST_KEY_CFBundleDisplayName: Metria
+        INFOPLIST_KEY_CFBundleIconName: AppIcon
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       groups: [shared]

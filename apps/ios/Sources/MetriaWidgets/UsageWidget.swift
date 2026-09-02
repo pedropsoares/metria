@@ -120,15 +120,7 @@ struct UsageWidgetView: View {
     }
 
     private func logo(for provider: UsageSnapshot.Provider, size: CGFloat) -> some View {
-        Group {
-            if let name = UsagePresentation.logoAssetName(for: provider.name),
-               let image = UsagePresentation.image(named: name) {
-                image.resizable().scaledToFit()
-            } else {
-                Image(systemName: "chart.bar.fill").resizable().scaledToFit()
-            }
-        }
-        .frame(width: size, height: size)
+        UsagePresentation.logo(for: provider.name, size: size)
     }
 
     // MARK: - States
@@ -211,10 +203,10 @@ struct UsageWidgetView: View {
 
     private func smallView(provider: UsageSnapshot.Provider) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                logo(for: provider, size: 16)
+            HStack(spacing: 8) {
+                logo(for: provider, size: 22)
                 Text(provider.name)
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 refreshButton
@@ -223,9 +215,8 @@ struct UsageWidgetView: View {
             percentText(provider, size: 40, weight: .semibold)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
-            ProgressView(value: min(max(provider.percent, 0), 100), total: 100)
-                .tint(UsagePresentation.color(for: provider.percent))
-                .padding(.top, 6)
+            usageBar(provider)
+                .padding(.top, 8)
             if let resetDate = provider.resetDate {
                 Text("Resets \(resetDate, style: .relative)")
                     .font(.caption2)
@@ -245,13 +236,13 @@ struct UsageWidgetView: View {
                 Spacer(minLength: 0)
                 refreshButton
             }
-            Spacer(minLength: 8)
-            VStack(spacing: 7) {
+            VStack(spacing: 0) {
                 ForEach((entry.cached?.snapshot.providers ?? []).prefix(4), id: \.name) { provider in
                     providerRow(provider)
+                        .frame(maxHeight: .infinity)
                 }
             }
-            Spacer(minLength: 8)
+            .frame(maxHeight: .infinity)
             HStack(spacing: 6) {
                 elapsedText
                 Spacer(minLength: 4)
@@ -261,20 +252,41 @@ struct UsageWidgetView: View {
         }
     }
 
-    /// One dense, scannable line per provider: identity on the left, magnitude on the
-    /// right, and the bar between them carrying the comparison at a glance.
+    /// Identity on the left (logo, name, reset), magnitude on the right, and a
+    /// bar between them. Rows expand so two providers still fill a medium widget.
     private func providerRow(_ provider: UsageSnapshot.Provider) -> some View {
-        HStack(spacing: 8) {
-            logo(for: provider, size: 16)
-            Text(provider.name)
-                .font(.caption)
-                .lineLimit(1)
-                .frame(width: 72, alignment: .leading)
-            ProgressView(value: min(max(provider.percent, 0), 100), total: 100)
-                .tint(UsagePresentation.color(for: provider.percent))
-            percentText(provider, size: 13, weight: .semibold)
-                .frame(width: 40, alignment: .trailing)
+        HStack(spacing: 10) {
+            logo(for: provider, size: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(provider.name)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                if let resetDate = provider.resetDate {
+                    Text("Resets \(resetDate, style: .relative)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(minWidth: 64, alignment: .leading)
+            usageBar(provider)
+            percentText(provider, size: 15, weight: .semibold)
+                .frame(width: 42, alignment: .trailing)
         }
+    }
+
+    private func usageBar(_ provider: UsageSnapshot.Provider) -> some View {
+        let fraction = min(max(provider.percent, 0), 100) / 100
+        return Capsule()
+            .fill(Color.primary.opacity(0.12))
+            .frame(height: 10)
+            .overlay(alignment: .leading) {
+                GeometryReader { geo in
+                    Capsule()
+                        .fill(UsagePresentation.color(for: provider.percent))
+                        .frame(width: geo.size.width * fraction)
+                }
+            }
     }
 
     private var refreshButton: some View {

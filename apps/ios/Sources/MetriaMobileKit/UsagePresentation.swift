@@ -25,10 +25,35 @@ public enum UsagePresentation {
     /// The provider logos ship as loose PNGs copied from `Assets/` (the same files the
     /// macOS app and the PWA use) rather than as an asset catalog, and SwiftUI's
     /// `Image(_:)` resolves catalog entries only — so load them from the bundle by path.
+    /// Look in `Bundle.main` so the same helper works in the app and in the widget
+    /// extension, each of which copies the PNGs into its own product.
     public static func image(named name: String) -> Image? {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
-              let uiImage = UIImage(contentsOfFile: url.path) else { return nil }
-        return Image(uiImage: uiImage)
+        guard let uiImage = uiImage(named: name) else { return nil }
+        return Image(uiImage: uiImage.withRenderingMode(.alwaysOriginal))
+    }
+
+    public static func logo(for providerName: String, size: CGFloat) -> some View {
+        Group {
+            if let name = logoAssetName(for: providerName), let image = image(named: name) {
+                image.resizable().scaledToFit()
+            } else {
+                Image(systemName: "chart.bar.fill").resizable().scaledToFit()
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    private static func uiImage(named name: String) -> UIImage? {
+        if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+           let image = UIImage(contentsOfFile: url.path) {
+            return image
+        }
+        if let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "Assets"),
+           let image = UIImage(contentsOfFile: url.path) {
+            return image
+        }
+        return UIImage(named: name)
     }
 }
 

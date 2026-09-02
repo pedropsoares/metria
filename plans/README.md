@@ -64,3 +64,9 @@ rather than committing to an undocumented vendor endpoint sight unseen.
 - Deriving Cursor usage by counting local Cursor session files: rejected. That
   records requests made, not the account quota, so any percentage would be
   invented rather than measured.
+- Making the iOS app fully standalone and retiring the Mac mirror: rejected.
+  None of the four provider credentials the Mac reads (Claude Keychain OAuth,
+  Cursor's session JWT, the OpenCode-managed Codex token, the OpenCode Go key)
+  can be discovered by the phone on its own, and Cursor's own dashboard API key
+  was confirmed not to authenticate its usage RPC even though the RPC accepted
+  the key everywhere else — so the Mac mirror stays the only universal path.
