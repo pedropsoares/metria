@@ -1,6 +1,6 @@
 # Metria
 
-*A native macOS app and parallel Electron app that track your AI coding assistant usage in real time.*
+*A native macOS app that tracks your AI coding assistant usage in real time.*
 
 <p align="center">
   <img src="https://i.imgur.com/shpAcSm.gif" alt="Metria demo" width="720" />
@@ -28,7 +28,7 @@
 
 ## What it does
 
-Both desktop versions show current session and monthly usage percentages for supported AI providers.
+Metria shows current session and monthly usage percentages for supported AI providers.
 
 ### Mac version
 
@@ -38,25 +38,18 @@ Both desktop versions show current session and monthly usage percentages for sup
 
 The native app stores provider selection, display mode, sidebar position, and opacity in macOS `UserDefaults`.
 
-### Electron version
-
-- **Usage widget** — a right-edge widget for provider usage cards on Windows and Linux.
-- **System tray** — compact access to provider usage and controls.
-- **Dashboard window** — detailed per-provider cards and usage gauges.
-
-The Electron app stores its settings in its own `com.metria.electron` application-data namespace.
+The Windows/Linux desktop version is maintained separately in the public
+[metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux).
 
 ## Download
 
-Pick your platform, open the installer, and you're all set. Browse all installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
+Pick your platform, open the installer, and you're all set. Browse macOS installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
 
 ### Mac version
 
 Download the native `.dmg` for Apple Silicon or Intel Macs.
 
-### Electron version
-
-Download the Windows `.exe` or Linux `.AppImage`. Electron releases are for Windows and Linux only; macOS is served by the native app.
+Windows and Linux installers are available in the [metria-win-linux releases](https://github.com/yurirxmos/metria-win-linux/releases).
 
 ## To do
 
@@ -64,7 +57,7 @@ Download the Windows `.exe` or Linux `.AppImage`. Electron releases are for Wind
 
 - Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
 
-### Electron version
+### Windows and Linux
 
 - Improve Metria compatibility and runtime support for Windows and Linux.
 
@@ -84,15 +77,7 @@ Providers are enabled automatically only when their local credentials or usage f
 
 The native app reads credentials at runtime from the Keychain and local configuration files. See the [native provider sources](apps/macos-native/Sources/Metria/Providers/).
 
-### Electron version
-
-- **Claude** — credentials read from `~/.claude/.credentials.json` on Unix and from the equivalent host or WSL location on Windows.
-- **Codex** — credentials and the newest session read from `CODEX_HOME`/`~/.codex`, including WSL locations on Windows.
-- **OpenCode Go** — credentials read from `XDG_DATA_HOME`/`~/.local/share/opencode/auth.json` on Unix, `%APPDATA%` on Windows, or the WSL path.
-
-Electron discovers provider data on the host filesystem and, on Windows, in installed WSL distributions. See the [Electron provider documentation](apps/electron/README.md).
-
-Credentials are never committed. Both versions read them at runtime from their documented local sources.
+Credentials are never committed. The native app reads them at runtime from its documented local sources.
 
 ## Mobile PWA
 
@@ -115,9 +100,7 @@ You can replace the Cloudflare URL in **Settings > Phone > Custom PWA URL** with
 
 Install the Cloudflare-hosted PWA on your phone, open it, and select **Enable alerts**. Metria sends the current provider usage whenever the Mac app publishes a new snapshot. The local HTTP server cannot provide system notifications because Web Push requires HTTPS.
 
-### Electron version
-
-The Electron version does not include phone pairing, the local PWA server, QR pairing, or mobile alerts.
+The Windows/Linux desktop version does not include phone pairing, the local PWA server, QR pairing, or mobile alerts. See its [documentation](https://github.com/yurirxmos/metria-win-linux#readme).
 
 ## Requirements
 
@@ -127,11 +110,7 @@ The Electron version does not include phone pairing, the local PWA server, QR pa
 - A Swift toolchain (Swift 5.9+) for building from source
 - Xcode 26.0+ and XcodeGen for opening and building the Xcode project
 
-### Electron version
-
-- Windows or Linux for the supported desktop application
-- Node.js 22+ and npm for building from source
-- Windows and Linux builds must be created and runtime-tested on their respective platforms
+Windows and Linux requirements are documented in the [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux#development).
 
 ## Quick start
 
@@ -152,17 +131,9 @@ Open the disk image, drag `Metria.app` to `Applications`, and launch it from Fin
 >
 > Then launch the app normally.
 
-### Electron version
+### Windows and Linux
 
-The Electron version supports Windows and Linux. Download the installer for your operating system from [GitHub Releases](https://github.com/yurirxmos/metria/releases). You can also build it on that operating system:
-
-```sh
-cd apps/electron
-npm ci
-npm run package
-```
-
-The host-native installer is created in `apps/electron/release/`. See the [Electron documentation](apps/electron/README.md) for current platform support and provider limitations.
+The Electron desktop version is maintained in the separate [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux). Download installers from its [GitHub Releases](https://github.com/yurirxmos/metria-win-linux/releases).
 
 ### Run in development
 
@@ -197,36 +168,16 @@ and `CODE_SIGN_IDENTITY` from the command line or an xcconfig.
 
 This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `macos-v*` tag is pushed, then publish a signed Sparkle appcast per architecture through the dedicated `macos-latest` update channel (Sparkle's `generate_appcast` cannot mix two architectures under one bundle version, so each build points at its own feed). Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is only ad hoc signed and macOS Gatekeeper will still show an unidentified-developer warning.
 
-To publish a native macOS release without starting the Electron workflow:
+To publish a native macOS release:
 
 ```sh
 git tag macos-v0.2.0
 git push origin macos-v0.2.0
 ```
 
-#### Electron version
+#### Windows and Linux
 
-Run the Electron app on Windows or Linux:
-
-```sh
-cd apps/electron
-npm ci
-npm run dev
-```
-
-Run the Electron checks and create a host-native installer with:
-
-```sh
-npm run check
-npm run package
-```
-
-Electron artifacts are written to `apps/electron/release/`. macOS packaging is not configured for Electron. Push an `electron-v*` tag to package and publish only the Windows/Linux app; its updater uses the dedicated `electron-latest` channel.
-
-```sh
-git tag electron-v0.2.0
-git push origin electron-v0.2.0
-```
+Development and release instructions live in the [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux).
 
 ## Project layout
 
@@ -238,9 +189,7 @@ git push origin electron-v0.2.0
 - `apps/macos-native/Resources/AppIcon.icon` — Icon Composer source for the native app icon.
 - `apps/macos-native/scripts/package-macos.sh` — reproducible native macOS app bundle and archive builder.
 
-### Electron version
-
-- `apps/electron/` — parallel Windows/Linux implementation with secure main/preload/renderer boundaries.
+The Windows/Linux implementation lives in the separate [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux).
 
 ### Mobile PWA
 
@@ -268,11 +217,9 @@ Join the Metria contributors group on WhatsApp to ask questions, share feedback,
 - Run `swift build` from the repository root.
 - Runtime-test native macOS changes on macOS 13 or later.
 
-### Electron version
+### Windows and Linux
 
-- Run `cd apps/electron && npm ci && npm run check`.
-- Create and runtime-test Windows and Linux packages on their respective platforms.
-- Do not claim Electron macOS support; macOS uses the native app.
+- Follow the build and runtime-testing instructions in the [metria-win-linux repository](https://github.com/yurirxmos/metria-win-linux).
 
 ### Mobile PWA
 
