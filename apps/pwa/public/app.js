@@ -68,7 +68,7 @@ function usageColor(percent) {
 }
 
 function providerLogo(name) {
-  return { Claude: "claude-logo.png", Codex: "codex-logo.png", "OpenCode Go": "opencode-logo.png" }[name] || "";
+  return { Claude: "claude-logo.png", Codex: "codex-logo.png", "OpenCode Go": "opencode-logo.png", Cursor: "cursor-logo.png" }[name] || "";
 }
 
 function formatDate(value) {

@@ -1,21 +1,32 @@
 # Implementation Plans
 
-Generated on 2026-08-31 at commit `f5bbbe2`. This is a planning-only migration
-assessment. Execute the plan in order; it deliberately begins with a proof of
-concept rather than committing the project to a framework before its difficult
-desktop integrations are demonstrated.
+Planning-only documents. Each plan records the state of the code at the commit
+it was written against and must be re-checked with its own drift check before
+implementation. Plan 001 is a migration assessment that deliberately begins
+with a proof of concept rather than committing the project to a framework
+before its difficult desktop integrations are demonstrated. Plans 002 and 003
+add a single provider to each desktop app and begin with a research gate
+rather than committing to an undocumented vendor endpoint sight unseen.
 
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |---|---|---|---|---|---|
 | 001 | Add a maintainable Electron companion without replacing native macOS | P1 | L | — | TODO |
+| 002 | Add a Cursor usage provider to the native macOS app | P2 | M | — | TODO |
+| 003 | Add a Cursor usage provider to the Electron app | P2 | M | 002 (phase 0) | TODO |
 
 ## Dependency notes
 
 - The framework decision gate in phase 1 blocks all production-port work. Do
   not start platform UI, credential migration, or release automation until the
   proof of concept passes on all three operating systems.
+- Plan 002 phase 0 is a confirmation step shared by both Cursor plans: the
+  credential location and the usage endpoint are documented in Plan 002's
+  Evidence section, but they are not a published Cursor contract, so they must
+  be confirmed against the Cursor version at hand before code is written. Plan
+  003 consumes those findings and must not re-derive them. Once confirmed, 002
+  and 003 can be implemented in parallel; neither blocks the other.
 
 ## Findings considered and rejected
 
@@ -28,3 +39,9 @@ desktop integrations are demonstrated.
 - A direct Swift cross-compile or SwiftUI reuse in Electron: rejected. The
   current executable is macOS-native and Electron cannot import SwiftUI/AppKit;
   only versioned data/protocol contracts and test fixtures may be shared.
+- A single cross-app Cursor implementation: rejected for the same reason. The
+  two Cursor plans share the fixture database and the recorded endpoint
+  contract, not code.
+- Deriving Cursor usage by counting local Cursor session files: rejected. That
+  records requests made, not the account quota, so any percentage would be
+  invented rather than measured.
