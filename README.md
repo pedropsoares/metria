@@ -30,8 +30,6 @@
 
 Metria shows current session and monthly usage percentages for supported AI providers.
 
-### Mac version
-
 - **Floating sidebar** — hover a provider logo to preview its usage card.
 - **Menu bar** — compact text labels for each provider.
 - **Dashboard popover** — ring gauges plus detailed per-provider cards.
@@ -42,13 +40,9 @@ The native app stores provider selection, display mode, sidebar position, and op
 
 Pick your platform, open the installer, and you're all set. Browse macOS installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
 
-### Mac version
-
 Download the native `.dmg` for Apple Silicon or Intel Macs.
 
 ## To do
-
-### Mac version
 
 - Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
 
@@ -60,8 +54,6 @@ Download the native `.dmg` for Apple Silicon or Intel Macs.
 
 Providers are enabled automatically only when their local credentials or usage files are detected. Providers that are not installed remain available in Settings with setup guidance.
 
-### Mac version
-
 - **Claude** — OAuth token read from the macOS Keychain, usage fetched from the Anthropic usage endpoint.
 - **Codex / OpenCode** — credentials read from `~/.local/share/opencode/auth.json` and local session files.
 - **OpenCode Go** — API key read from the same `auth.json`, usage fetched from the OpenCode Go endpoint.
@@ -71,8 +63,6 @@ The native app reads credentials at runtime from the Keychain and local configur
 Credentials are never committed. The native app reads them at runtime from its documented local sources.
 
 ## Mobile PWA
-
-### Mac version
 
 Metria's companion PWA works on compatible iPhone and Android browsers. Start the native Mac app, then scan the QR code in **Settings > Phone** while the phone and Mac are on the same Wi-Fi network. The local server port defaults to `8973` and can be changed in Settings; if it is in use, Metria tries subsequent ports automatically.
 
@@ -93,15 +83,11 @@ Install the Cloudflare-hosted PWA on your phone, open it, and select **Enable al
 
 ## Requirements
 
-### Mac version
-
 - macOS 13 or later
 - A Swift toolchain (Swift 5.9+) for building from source
 - Xcode 26.0+ and XcodeGen for opening and building the Xcode project
 
 ## Quick start
-
-### Mac version
 
 Download the latest native macOS `.dmg` from [GitHub Releases](https://github.com/yurirxmos/metria/releases), choosing the package for your Mac:
 
@@ -119,8 +105,6 @@ Open the disk image, drag `Metria.app` to `Applications`, and launch it from Fin
 > Then launch the app normally.
 
 ### Run in development
-
-#### Mac version
 
 ```sh
 swift build
@@ -160,8 +144,6 @@ git push origin macos-v0.2.0
 
 ## Project layout
 
-### Mac version
-
 - `apps/macos-native/Sources/Metria/MetriaApp.swift` — native macOS entrypoint, AppKit coordinator, pairing, and views.
 - `apps/macos-native/Sources/Metria/Providers/` — native macOS provider implementations and credential readers.
 - `apps/macos-native/Sources/MetriaCore/UsageStore.swift` — native usage state, provider seam, and refresh/retry logic.
@@ -188,8 +170,6 @@ Join the Metria contributors group on WhatsApp to ask questions, share feedback,
     <img src="https://img.shields.io/badge/WhatsApp%20Group-Contributors-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="Join the WhatsApp contributors group" />
   </a>
 </p>
-
-### Mac version
 
 - Run `swift build` from the repository root.
 - Runtime-test native macOS changes on macOS 13 or later.
