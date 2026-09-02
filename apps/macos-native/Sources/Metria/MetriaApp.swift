@@ -3,9 +3,9 @@ import Combine
 import CoreImage
 import CryptoKit
 import Foundation
+import MetriaCore
 import ServiceManagement
 import SwiftUI
-import MetriaCore
 
 private struct MetriaSnapshot: Encodable {
     struct Provider: Encodable {
@@ -32,10 +32,12 @@ enum PairingKeychain {
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseDataProtectionKeychain as String: true
+            kSecUseDataProtectionKeychain as String: true,
         ]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else {
+            return nil
+        }
         return result as? Data
     }
 
@@ -48,7 +50,7 @@ enum PairingKeychain {
             kSecAttrAccount as String: account,
             kSecValueData as String: secret,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-            kSecUseDataProtectionKeychain as String: true
+            kSecUseDataProtectionKeychain as String: true,
         ]
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
@@ -58,7 +60,7 @@ enum PairingKeychain {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true
+            kSecUseDataProtectionKeychain as String: true,
         ]
         SecItemDelete(query as CFDictionary)
     }
@@ -77,10 +79,10 @@ enum PairingKeychain {
     }
 }
 
-private extension Data {
+extension Data {
     /// URL-safe base64 without padding, so the secret can sit in a URL fragment without
     /// needing percent-encoding.
-    var base64URLEncodedString: String {
+    fileprivate var base64URLEncodedString: String {
         base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
@@ -110,24 +112,29 @@ private extension Data {
     }
 
     func pairingLink(pwaBaseURL: String, ntfyServer: String) -> String {
-        let encodedServer = ntfyServer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ntfyServer
+        let encodedServer =
+            ntfyServer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ntfyServer
         return "\(pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
     }
 
     func refreshQRCode(pwaBaseURL: String, ntfyServer: String) {
-        qrImage = Self.renderQRCode(for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer))
+        qrImage = Self.renderQRCode(
+            for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer))
     }
 
     private static func renderQRCode(for string: String) -> NSImage? {
         guard let data = string.data(using: .utf8),
-              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+            let filter = CIFilter(name: "CIQRCodeGenerator")
+        else { return nil }
         filter.setValue(data, forKey: "inputMessage")
         filter.setValue("M", forKey: "inputCorrectionLevel")
         guard let outputImage = filter.outputImage else { return nil }
         let scaled = outputImage.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
         let context = CIContext()
         guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
-        return NSImage(cgImage: cgImage, size: NSSize(width: scaled.extent.width, height: scaled.extent.height))
+        return NSImage(
+            cgImage: cgImage, size: NSSize(width: scaled.extent.width, height: scaled.extent.height)
+        )
     }
 }
 
@@ -139,13 +146,16 @@ private extension Data {
 
     func publish(_ providers: [ProviderUsage], secret: Data) {
         guard let server = URL(string: defaults.string(forKey: "ntfyServer") ?? "https://ntfy.sh"),
-              server.scheme == "https", server.host != nil else { return }
+            server.scheme == "https", server.host != nil
+        else { return }
 
         let snapshot = MetriaSnapshot(
             updatedAt: Date(),
             providers: providers.compactMap { usage in
                 guard let primary = usage.primary else { return nil }
-                return .init(name: usage.kind.rawValue, percent: primary.percent, resetDate: primary.resetDate)
+                return .init(
+                    name: usage.kind.rawValue, percent: primary.percent,
+                    resetDate: primary.resetDate)
             }
         )
         let encoder = JSONEncoder()
@@ -155,7 +165,8 @@ private extension Data {
 
         let topic = PairingSecret.topic(from: secret)
         let key = PairingSecret.encryptionKey(from: secret)
-        guard let sealed = try? AES.GCM.seal(payload, using: key), let combined = sealed.combined else { return }
+        guard let sealed = try? AES.GCM.seal(payload, using: key), let combined = sealed.combined
+        else { return }
         lastPayload = payload
         let encryptedSnapshot = combined.base64EncodedData()
 
@@ -179,7 +190,11 @@ private extension Data {
 
 struct GaugeColor {
     static func color(for percent: Double) -> Color { Color(nsColor: nsColor(for: percent)) }
-    static func nsColor(for percent: Double) -> NSColor { percent >= 85 ? .systemRed : percent >= 65 ? .systemOrange : percent >= 40 ? .systemYellow : .systemGreen }
+    static func nsColor(for percent: Double) -> NSColor {
+        percent >= 85
+            ? .systemRed
+            : percent >= 65 ? .systemOrange : percent >= 40 ? .systemYellow : .systemGreen
+    }
 }
 
 struct MenuBarAlertSettings {
@@ -241,7 +256,9 @@ struct UsageCard: View {
     @AppStorage("showAccountEmails") private var showAccountEmails = true
 
     private var isCompact: Bool { width < 390 }
-    private var visibleWindows: [UsageWindow] { usage.windows.filter { !hiddenWindowTitles.contains($0.title) } }
+    private var visibleWindows: [UsageWindow] {
+        usage.windows.filter { !hiddenWindowTitles.contains($0.title) }
+    }
     /// The progress bar's available width, mirroring this view's own horizontal padding
     /// so it no longer needs a `GeometryReader` (and the extra layout pass that comes
     /// with one) just to size itself.
@@ -250,7 +267,8 @@ struct UsageCard: View {
         VStack(alignment: .leading, spacing: (isCompact ? 10 : 18) * scale) {
             HStack(spacing: (isCompact ? 6 : 10) * scale) {
                 ProviderLogo(provider: usage.kind, size: (isCompact ? 17 : 24) * scale)
-                Text(usage.kind.rawValue).font(.system(size: (isCompact ? 15 : 22) * scale, weight: .medium))
+                Text(usage.kind.rawValue).font(
+                    .system(size: (isCompact ? 15 : 22) * scale, weight: .medium))
                 if showsAccount && showAccountEmails, let accountLabel = usage.accountLabel {
                     Text(accountLabel)
                         .font(.system(size: (isCompact ? 10 : 13) * scale))
@@ -267,30 +285,54 @@ struct UsageCard: View {
                         .padding(.vertical, (isCompact ? 2 : 3) * scale)
                         .background(Capsule().fill(Color.white.opacity(0.12)))
                 } else {
-                    Circle().fill(usage.error == nil ? .green : .orange).frame(width: (isCompact ? 5 : 7) * scale, height: (isCompact ? 5 : 7) * scale)
+                    Circle().fill(usage.error == nil ? .green : .orange).frame(
+                        width: (isCompact ? 5 : 7) * scale, height: (isCompact ? 5 : 7) * scale)
                 }
             }
             if usage.windows.isEmpty {
-                Label(usage.error ?? "Waiting for usage data...", systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill")
-                    .font(.system(size: (isCompact ? 10 : 13) * scale))
-                    .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
-                    .lineLimit(3)
+                Label(
+                    usage.error ?? "Waiting for usage data...",
+                    systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill"
+                )
+                .font(.system(size: (isCompact ? 10 : 13) * scale))
+                .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
+                .lineLimit(3)
             } else if visibleWindows.isEmpty {
-                Label("All usage windows for \(usage.kind.rawValue) are hidden. Enable one in Settings.", systemImage: "eye.slash")
-                    .font(.system(size: (isCompact ? 10 : 13) * scale))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                Label(
+                    "All usage windows for \(usage.kind.rawValue) are hidden. Enable one in Settings.",
+                    systemImage: "eye.slash"
+                )
+                .font(.system(size: (isCompact ? 10 : 13) * scale))
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
             } else {
                 ForEach(visibleWindows) { window in
                     VStack(alignment: .leading, spacing: (isCompact ? 5 : 8) * scale) {
-                        HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
-                        ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.17)); Capsule().fill(GaugeColor.color(for: window.percent)).frame(width: max(0, barWidth * window.percent / 100)) }.frame(height: (isCompact ? 5 : 7) * scale)
-                        Text("\(Int(window.percent.rounded()))% Used").font(.system(size: (isCompact ? 11 : 15) * scale))
+                        HStack {
+                            Text(window.title)
+                            Spacer()
+                            Text(window.resetText).foregroundStyle(.secondary)
+                        }.font(.system(size: (isCompact ? 10 : 15) * scale))
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color(white: 0.17))
+                            Capsule().fill(GaugeColor.color(for: window.percent)).frame(
+                                width: max(0, barWidth * window.percent / 100))
+                        }.frame(height: (isCompact ? 5 : 7) * scale)
+                        Text("\(Int(window.percent.rounded()))% Used").font(
+                            .system(size: (isCompact ? 11 : 15) * scale))
                     }
                 }
             }
-            if let error = usage.error { Text(error).font(.system(size: (isCompact ? 9 : 12) * scale)).foregroundStyle(.secondary).lineLimit(2) }
-        }.padding(.horizontal, (isCompact ? 14 : 24) * scale).padding(.vertical, (isCompact ? 16 : 28) * scale).frame(width: width).background(Color.black.opacity(backgroundOpacity)).clipShape(RoundedRectangle(cornerRadius: (isCompact ? 16 : 24) * scale)).foregroundStyle(.white)
+            if let error = usage.error {
+                Text(error).font(.system(size: (isCompact ? 9 : 12) * scale)).foregroundStyle(
+                    .secondary
+                ).lineLimit(2)
+            }
+        }.padding(.horizontal, (isCompact ? 14 : 24) * scale).padding(
+            .vertical, (isCompact ? 16 : 28) * scale
+        ).frame(width: width).background(Color.black.opacity(backgroundOpacity)).clipShape(
+            RoundedRectangle(cornerRadius: (isCompact ? 16 : 24) * scale)
+        ).foregroundStyle(.white)
     }
 }
 
@@ -305,13 +347,15 @@ extension UsageWindow {
             let minutes = totalMinutes % 60
 
             if hours > 0 {
-                return minutes > 0 ? "Resets in \(hours) hr \(minutes) min" : "Resets in \(hours) hr"
+                return minutes > 0
+                    ? "Resets in \(hours) hr \(minutes) min" : "Resets in \(hours) hr"
             }
 
             return "Resets in \(minutes) min"
         }
 
-        return "Resets \(resetDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))"
+        return
+            "Resets \(resetDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))"
     }
 }
 
@@ -329,15 +373,21 @@ struct DashboardUsageCard: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
                 if usage.windows.isEmpty {
-                    Label(usage.error ?? "Waiting for usage data...", systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill")
-                        .font(.subheadline)
-                        .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Label(
+                        usage.error ?? "Waiting for usage data...",
+                        systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
                 } else if visibleWindows.isEmpty {
-                    Label("All usage windows for \(usage.kind.rawValue) are hidden. Enable one in Settings.", systemImage: "eye.slash")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Label(
+                        "All usage windows for \(usage.kind.rawValue) are hidden. Enable one in Settings.",
+                        systemImage: "eye.slash"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(visibleWindows) { window in
                         let color = GaugeColor.color(for: window.percent)
@@ -367,14 +417,14 @@ struct DashboardUsageCard: View {
             }
         } label: {
             HStack(spacing: 8) {
-                 ProviderLogo(provider: usage.kind, size: 20)
-                 Text(usage.kind.rawValue)
-                     if showsAccount && showAccountEmails, let accountLabel = usage.accountLabel {
-                     Text(accountLabel)
-                         .font(.caption)
-                         .foregroundStyle(.secondary)
-                         .textSelection(.enabled)
-                 }
+                ProviderLogo(provider: usage.kind, size: 20)
+                Text(usage.kind.rawValue)
+                if showsAccount && showAccountEmails, let accountLabel = usage.accountLabel {
+                    Text(accountLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
                 Spacer()
                 if usage.error == nil, let planLabel = usage.planLabel {
                     Text(planLabel)
@@ -416,14 +466,20 @@ struct PopoverContent: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if store.visibleProviders.isEmpty {
-                        Label("No providers are available yet. Sign in to a supported provider and refresh.", systemImage: "externaldrive.badge.questionmark")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 24)
-                            .frame(maxWidth: .infinity)
+                        Label(
+                            "No providers are available yet. Sign in to a supported provider and refresh.",
+                            systemImage: "externaldrive.badge.questionmark"
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 24)
+                        .frame(maxWidth: .infinity)
                     } else {
                         ForEach(store.visibleProviders) {
-                            DashboardUsageCard(usage: $0, showsAccount: true, hiddenWindowTitles: store.hiddenWindowTitlesByProvider[$0.kind] ?? [])
+                            DashboardUsageCard(
+                                usage: $0, showsAccount: true,
+                                hiddenWindowTitles: store.hiddenWindowTitlesByProvider[$0.kind]
+                                    ?? [])
                         }
                     }
                 }
@@ -462,10 +518,18 @@ enum NotchPosition: String, CaseIterable, Identifiable {
     /// are rounded — mirroring the shape's flush side to whichever edge this position anchors to.
     func cornerRadii(_ radius: CGFloat) -> RectangleCornerRadii {
         switch self {
-        case .right: RectangleCornerRadii(topLeading: radius, bottomLeading: radius, bottomTrailing: 0, topTrailing: 0)
-        case .left: RectangleCornerRadii(topLeading: 0, bottomLeading: 0, bottomTrailing: radius, topTrailing: radius)
-        case .top: RectangleCornerRadii(topLeading: 0, bottomLeading: radius, bottomTrailing: radius, topTrailing: 0)
-        case .bottom: RectangleCornerRadii(topLeading: radius, bottomLeading: 0, bottomTrailing: 0, topTrailing: radius)
+        case .right:
+            RectangleCornerRadii(
+                topLeading: radius, bottomLeading: radius, bottomTrailing: 0, topTrailing: 0)
+        case .left:
+            RectangleCornerRadii(
+                topLeading: 0, bottomLeading: 0, bottomTrailing: radius, topTrailing: radius)
+        case .top:
+            RectangleCornerRadii(
+                topLeading: 0, bottomLeading: radius, bottomTrailing: radius, topTrailing: 0)
+        case .bottom:
+            RectangleCornerRadii(
+                topLeading: radius, bottomLeading: 0, bottomTrailing: 0, topTrailing: radius)
         }
     }
 
@@ -488,6 +552,94 @@ enum NotchPosition: String, CaseIterable, Identifiable {
     }
 }
 
+/// Gives the screen-edge side a small vertical overhang while keeping the exposed side
+/// at the original height.
+struct NotchShape: Shape {
+    let position: NotchPosition
+    let radius: CGFloat
+    let squareSideExtension: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let extensionAmount = position.axis == .vertical
+            ? min(squareSideExtension, rect.height / 3)
+            : min(squareSideExtension, rect.width / 3)
+        let cornerRadius = min(radius, rect.width / 2, rect.height / 2)
+        let roundedTop = extensionAmount + cornerRadius
+        let roundedBottom = rect.height - extensionAmount - cornerRadius
+        var path = Path()
+
+        switch position {
+        case .right:
+            path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addCurve(
+                to: CGPoint(x: rect.minX + cornerRadius, y: rect.minY + extensionAmount),
+                control1: CGPoint(x: rect.maxX, y: rect.minY + extensionAmount * 0.65),
+                control2: CGPoint(x: rect.minX + cornerRadius * 1.35, y: rect.minY + extensionAmount)
+            )
+            path.addCurve(
+                to: CGPoint(x: rect.minX, y: roundedTop),
+                control1: CGPoint(x: rect.minX + cornerRadius * 0.45, y: rect.minY + extensionAmount),
+                control2: CGPoint(x: rect.minX, y: rect.minY + extensionAmount + cornerRadius * 0.45)
+            )
+            path.addLine(to: CGPoint(x: rect.minX, y: roundedBottom))
+            path.addCurve(
+                to: CGPoint(x: rect.minX + cornerRadius, y: rect.maxY - extensionAmount),
+                control1: CGPoint(x: rect.minX, y: rect.maxY - extensionAmount - cornerRadius * 0.45),
+                control2: CGPoint(x: rect.minX + cornerRadius * 0.45, y: rect.maxY - extensionAmount)
+            )
+            path.addCurve(
+                to: CGPoint(x: rect.maxX, y: rect.maxY),
+                control1: CGPoint(x: rect.minX + cornerRadius * 1.35, y: rect.maxY - extensionAmount),
+                control2: CGPoint(x: rect.maxX, y: rect.maxY - extensionAmount * 0.65)
+            )
+        case .left:
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addCurve(
+                to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY + extensionAmount),
+                control1: CGPoint(x: rect.minX, y: rect.minY + extensionAmount * 0.65),
+                control2: CGPoint(x: rect.maxX - cornerRadius * 1.35, y: rect.minY + extensionAmount)
+            )
+            path.addCurve(
+                to: CGPoint(x: rect.maxX, y: roundedTop),
+                control1: CGPoint(x: rect.maxX - cornerRadius * 0.45, y: rect.minY + extensionAmount),
+                control2: CGPoint(x: rect.maxX, y: rect.minY + extensionAmount + cornerRadius * 0.45)
+            )
+            path.addLine(to: CGPoint(x: rect.maxX, y: roundedBottom))
+            path.addCurve(
+                to: CGPoint(x: rect.maxX - cornerRadius, y: rect.maxY - extensionAmount),
+                control1: CGPoint(x: rect.maxX, y: rect.maxY - extensionAmount - cornerRadius * 0.45),
+                control2: CGPoint(x: rect.maxX - cornerRadius * 0.45, y: rect.maxY - extensionAmount)
+            )
+            path.addCurve(
+                to: CGPoint(x: rect.minX, y: rect.maxY),
+                control1: CGPoint(x: rect.maxX - cornerRadius * 0.85, y: rect.maxY - extensionAmount),
+                control2: CGPoint(x: rect.minX, y: rect.maxY - extensionAmount * 0.65)
+            )
+        case .top:
+            let verticalPath = NotchShape(
+                position: .right,
+                radius: radius,
+                squareSideExtension: squareSideExtension
+            ).path(in: CGRect(x: 0, y: 0, width: rect.height, height: rect.width))
+            return verticalPath.applying(
+                CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: rect.height)
+            )
+        case .bottom:
+            let verticalPath = NotchShape(
+                position: .right,
+                radius: radius,
+                squareSideExtension: squareSideExtension
+            ).path(in: CGRect(x: 0, y: 0, width: rect.height, height: rect.width))
+            return verticalPath.applying(
+                CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: rect.width, ty: 0)
+            )
+        }
+
+        path.closeSubpath()
+        return path
+    }
+}
+
 /// Resolves where the notch sits for a given `NotchPosition`: flush against the chosen
 /// screen edge, using `visibleFrame` rather than the physical notch's `safeAreaInsets`
 /// (a screen edge isn't hardware) so it stays clear of the menu bar's icons and, on
@@ -500,9 +652,13 @@ struct NotchGeometry {
     private let bottomEdgeY: CGFloat
     private let centerX: CGFloat
 
-    static func current(for screen: NSScreen? = nil, position: NotchPosition = .right) -> NotchGeometry {
+    static func current(for screen: NSScreen? = nil, position: NotchPosition = .right)
+        -> NotchGeometry
+    {
         guard let screen = screen ?? NSScreen.main ?? NSScreen.screens.first else {
-            return NotchGeometry(position: position, leftEdgeX: 0, rightEdgeX: 0, topEdgeY: 0, bottomEdgeY: 0, centerX: 0)
+            return NotchGeometry(
+                position: position, leftEdgeX: 0, rightEdgeX: 0, topEdgeY: 0, bottomEdgeY: 0,
+                centerX: 0)
         }
         // The left/right pill keeps a small gap so it doesn't crowd the menu bar's icons;
         // the top/bottom bar has no such icons to clear, so it sits flush against the edge.
@@ -525,13 +681,21 @@ struct NotchGeometry {
     func frame(thickness: CGFloat, extent: CGFloat, alongEdgeOffset: CGFloat = 0) -> CGRect {
         switch position {
         case .right:
-            CGRect(x: rightEdgeX - thickness, y: topEdgeY - extent + alongEdgeOffset, width: thickness, height: extent)
+            CGRect(
+                x: rightEdgeX - thickness, y: topEdgeY - extent + alongEdgeOffset, width: thickness,
+                height: extent)
         case .left:
-            CGRect(x: leftEdgeX, y: topEdgeY - extent + alongEdgeOffset, width: thickness, height: extent)
+            CGRect(
+                x: leftEdgeX, y: topEdgeY - extent + alongEdgeOffset, width: thickness,
+                height: extent)
         case .top:
-            CGRect(x: centerX - extent / 2 + alongEdgeOffset, y: topEdgeY - thickness, width: extent, height: thickness)
+            CGRect(
+                x: centerX - extent / 2 + alongEdgeOffset, y: topEdgeY - thickness, width: extent,
+                height: thickness)
         case .bottom:
-            CGRect(x: centerX - extent / 2 + alongEdgeOffset, y: bottomEdgeY, width: extent, height: thickness)
+            CGRect(
+                x: centerX - extent / 2 + alongEdgeOffset, y: bottomEdgeY, width: extent,
+                height: thickness)
         }
     }
 }
@@ -554,36 +718,42 @@ enum NotchSize: String, CaseIterable, Identifiable {
 
 struct NotchMetrics {
     let scale: CGFloat
+    let providerCount: Int
 
-    init(size: NotchSize) { scale = size.scale }
+    init(size: NotchSize, providerCount: Int = ProviderKind.allCases.count) {
+        scale = size.scale
+        self.providerCount = max(providerCount, 1)
+    }
 
     var idleWidth: CGFloat { 80 * scale }
-    /// Sized to fit every known provider stacked in `compactProviders`, so the rail never
-    /// overflows its own fixed-height container — derived from the same row metrics that
-    /// view uses, rather than a magic constant that has to be hand-updated per provider.
+    /// Sized to fit the visible providers stacked in `compactProviders`, so the rail never
+    /// overflows its own fixed-height container.
     var compactHeight: CGFloat {
-        let count = CGFloat(ProviderKind.allCases.count)
+        let count = CGFloat(providerCount)
         return count * providerItemHeight + max(count - 1, 0) * providerSpacing + 24 * scale
     }
-    var hoverHeight: CGFloat { compactHeight + (controlsHeight + controlsGap + controlsBottomSpace) * 2 }
+    var railExtent: CGFloat { compactHeight + squareSideExtension * 2 }
+    var hoverHeight: CGFloat { railExtent + (controlsHeight + controlsGap + controlsBottomSpace) * 2 }
     var hiddenWidth: CGFloat { 18 * scale }
     var hiddenHeight: CGFloat { 80 * scale }
-    var cornerRadius: CGFloat { 20 * scale }
+    var cornerRadius: CGFloat { 40 * scale }
+    var squareSideExtension: CGFloat { 40 * scale }
     var providerItemHeight: CGFloat { 64 * scale }
     var providerSpacing: CGFloat { 10 * scale }
     var cardSpacing: CGFloat { 12 * scale }
     var cardWidth: CGFloat { 316 * scale }
     var cardContentWidth: CGFloat { 300 * scale }
     var controlsSpacing: CGFloat { 14 * scale }
-    var controlsHeight: CGFloat { 16 * scale }
-    var controlsGap: CGFloat { 8 * scale }
-    var controlsBottomSpace: CGFloat { 20 * scale }
+    var controlsHeight: CGFloat { 26 * scale }
+    var controlsGap: CGFloat { 1 * scale }
+    var controlsBottomSpace: CGFloat { 2 * scale }
 
     /// Maps a (thickness, extent) pair — thickness being the fixed cross-axis size, extent
     /// the size along the growth axis — onto an actual (width, height), swapped for a
     /// horizontal bar so the same numeric constants produce either orientation.
     func size(thickness: CGFloat, extent: CGFloat, axis: NotchAxis) -> CGSize {
-        axis == .vertical ? CGSize(width: thickness, height: extent) : CGSize(width: extent, height: thickness)
+        axis == .vertical
+            ? CGSize(width: thickness, height: extent) : CGSize(width: extent, height: thickness)
     }
 }
 
@@ -592,8 +762,11 @@ struct NotchMetrics {
 /// borderless panel.
 @MainActor final class NotchMode: ObservableObject {
     @Published var isHiddenMode = UserDefaults.standard.bool(forKey: "hiddenNotch")
-    @Published var size = NotchSize(rawValue: UserDefaults.standard.string(forKey: "notchSize") ?? "") ?? .medium
-    @Published var position = NotchPosition(rawValue: UserDefaults.standard.string(forKey: "notchPosition") ?? "") ?? .right
+    @Published var size =
+        NotchSize(rawValue: UserDefaults.standard.string(forKey: "notchSize") ?? "") ?? .medium
+    @Published var position =
+        NotchPosition(rawValue: UserDefaults.standard.string(forKey: "notchPosition") ?? "")
+        ?? .right
 }
 
 /// The floating surface itself: a compact provider rail — a vertical pill flush against
@@ -613,20 +786,31 @@ struct NotchContent: View {
     @State private var hasAppeared = false
 
     private var isHiddenMode: Bool { mode.isHiddenMode }
-    private var metrics: NotchMetrics { NotchMetrics(size: mode.size) }
+    private var metrics: NotchMetrics {
+        NotchMetrics(size: mode.size, providerCount: store.visibleProviders.count)
+    }
     private var position: NotchPosition { mode.position }
     private var axis: NotchAxis { position.axis }
 
     private var currentSize: CGSize {
-        metrics.size(
+        let size = metrics.size(
             thickness: isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth,
-            extent: isHiddenMode && !isHovered ? metrics.hiddenHeight : isHovered ? metrics.hoverHeight : metrics.compactHeight,
+            extent: isHiddenMode && !isHovered
+                ? metrics.hiddenHeight : isHovered ? metrics.hoverHeight : metrics.railExtent,
             axis: axis
         )
+        return size
     }
-    private var maxSize: CGSize { metrics.size(thickness: metrics.idleWidth, extent: metrics.hoverHeight, axis: axis) }
-    private var hiddenPeekSize: CGSize { metrics.size(thickness: metrics.hiddenWidth, extent: metrics.hiddenHeight, axis: axis) }
-    private var endControlSize: CGSize { metrics.size(thickness: metrics.idleWidth, extent: metrics.controlsHeight, axis: axis) }
+    private var maxSize: CGSize {
+        let size = metrics.size(thickness: metrics.idleWidth, extent: metrics.hoverHeight, axis: axis)
+        return size
+    }
+    private var hiddenPeekSize: CGSize {
+        metrics.size(thickness: metrics.hiddenWidth, extent: metrics.hiddenHeight, axis: axis)
+    }
+    private var endControlSize: CGSize {
+        metrics.size(thickness: metrics.idleWidth, extent: metrics.controlsHeight, axis: axis)
+    }
 
     private var appearOffset: CGSize {
         guard !hasAppeared else { return .zero }
@@ -641,48 +825,81 @@ struct NotchContent: View {
 
     var body: some View {
         ZStack(alignment: position.zStackAlignment) {
-             NotchVisualEffect()
-                 .opacity(backgroundOpacity)
-                 .frame(width: currentSize.width, height: currentSize.height, alignment: position.zStackAlignment)
-                 .clipShape(UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous))
-             .overlay {
-                UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
-                     .fill(.black.opacity(0.72 * backgroundOpacity))
-                 }
+            NotchVisualEffect()
+                .opacity(backgroundOpacity)
+                .frame(
+                    width: currentSize.width, height: currentSize.height,
+                    alignment: position.zStackAlignment
+                )
+                .clipShape(
+                    NotchShape(
+                        position: position,
+                        radius: metrics.cornerRadius,
+                        squareSideExtension: metrics.squareSideExtension
+                    )
+                )
+                .overlay {
+                    NotchShape(
+                        position: position,
+                        radius: metrics.cornerRadius,
+                        squareSideExtension: metrics.squareSideExtension
+                    )
+                    .fill(.black.opacity(0.72 * backgroundOpacity))
+                }
             /*
              The native visual effect view is required here because the notch is
              hosted in an AppKit panel outside the normal SwiftUI window hierarchy.
              */
-            UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
+            NotchShape(
+                position: position,
+                radius: metrics.cornerRadius,
+                squareSideExtension: metrics.squareSideExtension
+            )
             .fill(.black.opacity(backgroundOpacity))
-             .frame(width: currentSize.width, height: currentSize.height, alignment: position.zStackAlignment)
+            .frame(
+                width: currentSize.width, height: currentSize.height,
+                alignment: position.zStackAlignment
+            )
             .overlay {
-                UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous)
-                 .stroke(.white.opacity(0.14), lineWidth: 1)
-              }
-              if !isHiddenMode || isHovered {
-                  compactProviders
-                      .frame(
+                NotchShape(
+                    position: position,
+                    radius: metrics.cornerRadius,
+                    squareSideExtension: metrics.squareSideExtension
+                )
+                .stroke(.white.opacity(0.14), lineWidth: 1)
+            }
+            if !isHiddenMode || isHovered {
+                compactProviders
+                    .frame(
                         width: axis == .vertical ? metrics.idleWidth : nil,
                         height: axis == .horizontal ? metrics.idleWidth : nil,
                         alignment: position.zStackAlignment
-                      )
-              }
-              if isHiddenMode && !isHovered {
-                  Image(systemName: position.hiddenHintSymbolName)
-                      .font(.system(size: 11 * metrics.scale, weight: .semibold))
-                      .foregroundStyle(Color(white: 0.58))
-                      .frame(width: hiddenPeekSize.width, height: hiddenPeekSize.height)
-                      .accessibilityLabel("Hover to open notch")
-                      .help("Hover to open notch")
-              }
+                    )
+            }
+            if isHiddenMode && !isHovered {
+                Image(systemName: position.hiddenHintSymbolName)
+                    .font(.system(size: 11 * metrics.scale, weight: .semibold))
+                    .foregroundStyle(Color(white: 0.58))
+                    .frame(width: hiddenPeekSize.width, height: hiddenPeekSize.height)
+                    .accessibilityLabel("Hover to open notch")
+                    .help("Hover to open notch")
+            }
 
-              if isHovered {
-                 endControls
-             }
+            if isHovered {
+                endControls
+            }
         }
-        .frame(width: currentSize.width, height: currentSize.height, alignment: position.zStackAlignment)
-        .contentShape(UnevenRoundedRectangle(cornerRadii: position.cornerRadii(metrics.cornerRadius), style: .continuous))
+        .frame(
+            width: currentSize.width, height: currentSize.height,
+            alignment: position.zStackAlignment
+        )
+        .contentShape(
+            NotchShape(
+                position: position,
+                radius: metrics.cornerRadius,
+                squareSideExtension: metrics.squareSideExtension
+            )
+        )
         // `.onHover` tracks the exact frame it's attached to (it doesn't respect an
         // outer `.contentShape`), so it must sit on the `currentSize`-framed view here —
         // before the frame below pads it out to `maxSize` for the growth-room trick —
@@ -724,20 +941,25 @@ struct NotchContent: View {
 
     private var providerRows: some View {
         ForEach(Array(store.visibleProviders.enumerated()), id: \.element.id) { index, usage in
-            let rowExtent = metrics.providerItemHeight + (index < store.visibleProviders.count - 1 ? metrics.providerSpacing : 0)
-            let itemSize = metrics.size(thickness: metrics.idleWidth, extent: metrics.providerItemHeight, axis: axis)
+            let rowExtent =
+                metrics.providerItemHeight
+                + (index < store.visibleProviders.count - 1 ? metrics.providerSpacing : 0)
+            let itemSize = metrics.size(
+                thickness: metrics.idleWidth, extent: metrics.providerItemHeight, axis: axis)
             let rowSize = metrics.size(thickness: metrics.idleWidth, extent: rowExtent, axis: axis)
-             SidebarProviderItem(usage: usage, scale: metrics.scale, alertSettings: menuBarAlertSettings)
-                .frame(width: itemSize.width, height: itemSize.height)
-                .frame(width: rowSize.width, height: rowSize.height)
-                .contentShape(Rectangle())
-                .help(usage.kind.rawValue)
-                .onHover { isHovering in
-                    onProviderHover(usage.kind, index, isHovering)
-                }
-                .onTapGesture {
-                    onProviderTap(usage.kind)
-                }
+            SidebarProviderItem(
+                usage: usage, scale: metrics.scale, alertSettings: menuBarAlertSettings
+            )
+            .frame(width: itemSize.width, height: itemSize.height)
+            .frame(width: rowSize.width, height: rowSize.height)
+            .contentShape(Rectangle())
+            .help(usage.kind.rawValue)
+            .onHover { isHovering in
+                onProviderHover(usage.kind, index, isHovering)
+            }
+            .onTapGesture {
+                onProviderTap(usage.kind)
+            }
         }
     }
 
@@ -748,11 +970,17 @@ struct NotchContent: View {
         if axis == .vertical {
             topControls
                 .frame(width: endControlSize.width, height: endControlSize.height)
-                .offset(y: -(metrics.compactHeight / 2 + metrics.controlsGap + metrics.controlsHeight / 2))
+                .offset(
+                    y:
+                        -(metrics.railExtent / 2 + metrics.controlsGap + metrics.controlsHeight
+                        / 2)
+                )
                 .transition(.opacity)
             bottomControls
                 .frame(width: endControlSize.width, height: endControlSize.height)
-                .offset(y: metrics.compactHeight / 2 + metrics.controlsGap + metrics.controlsHeight / 2)
+                .offset(
+                    y: metrics.railExtent / 2 + metrics.controlsGap + metrics.controlsHeight / 2
+                )
                 .transition(.opacity)
         } else {
             topControls
@@ -772,13 +1000,15 @@ struct NotchContent: View {
         Image(systemName: isHiddenMode ? "pin.fill" : "eye.slash")
             .font(.system(size: 13 * metrics.scale))
             .foregroundStyle(Color(white: 0.58))
+            .frame(width: 28 * metrics.scale, height: 26 * metrics.scale)
+            .background(Capsule().fill(Color.black))
             .accessibilityLabel(isHiddenMode ? "Pin notch" : "Hide notch")
-             .help(isHiddenMode ? "Pin notch" : "Hide notch")
-             .frame(maxWidth: .infinity)
-             .frame(height: metrics.controlsHeight)
-             .onHover { isInside in
-                 (isInside ? NSCursor.pointingHand : NSCursor.arrow).set()
-             }
+            .help(isHiddenMode ? "Pin notch" : "Hide notch")
+            .frame(maxWidth: .infinity)
+            .frame(height: metrics.controlsHeight)
+            .onHover { isInside in
+                (isInside ? NSCursor.pointingHand : NSCursor.arrow).set()
+            }
     }
 
     private var bottomControls: some View {
@@ -786,16 +1016,18 @@ struct NotchContent: View {
             Spacer()
             Image(systemName: "gearshape")
                 .font(.system(size: 13 * metrics.scale))
-             .foregroundStyle(Color(white: 0.58))
-                 .help("Settings")
-             Spacer()
-         }
-         .frame(maxWidth: .infinity)
-         .frame(height: metrics.controlsHeight)
-         .onHover { isInside in
-             (isInside ? NSCursor.pointingHand : NSCursor.arrow).set()
-         }
-     }
+                .foregroundStyle(Color(white: 0.58))
+                .frame(width: 28 * metrics.scale, height: 26 * metrics.scale)
+                .background(Capsule().fill(Color.black))
+                .help("Settings")
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: metrics.controlsHeight)
+        .onHover { isInside in
+            (isInside ? NSCursor.pointingHand : NSCursor.arrow).set()
+        }
+    }
 }
 
 struct NotchCardContent: View {
@@ -838,16 +1070,34 @@ struct NotchCardContent: View {
             .fill(.black.opacity(backgroundOpacity))
             .frame(width: 16 * metrics.scale, height: 34 * metrics.scale)
             .rotationEffect(pointerRotation)
-            .frame(width: rotated ? 34 * metrics.scale : 16 * metrics.scale, height: rotated ? 16 * metrics.scale : 34 * metrics.scale)
+            .frame(
+                width: rotated ? 34 * metrics.scale : 16 * metrics.scale,
+                height: rotated ? 16 * metrics.scale : 34 * metrics.scale)
     }
 
     var body: some View {
         Group {
             switch position {
-            case .right: HStack(spacing: 0) { card; pointer }
-            case .left: HStack(spacing: 0) { pointer; card }
-            case .top: VStack(spacing: 0) { pointer; card }
-            case .bottom: VStack(spacing: 0) { card; pointer }
+            case .right:
+                HStack(spacing: 0) {
+                    card
+                    pointer
+                }
+            case .left:
+                HStack(spacing: 0) {
+                    pointer
+                    card
+                }
+            case .top:
+                VStack(spacing: 0) {
+                    pointer
+                    card
+                }
+            case .bottom:
+                VStack(spacing: 0) {
+                    card
+                    pointer
+                }
             }
         }
         .onHover(perform: onHover)
@@ -894,7 +1144,8 @@ final class DraggableNotchPanel: NSPanel {
             didDrag = true
             if let lastMouseScreenPoint {
                 let currentMouseScreenPoint = convertPoint(toScreen: event.locationInWindow)
-                let delta = position.axis == .vertical
+                let delta =
+                    position.axis == .vertical
                     ? currentMouseScreenPoint.y - lastMouseScreenPoint.y
                     : currentMouseScreenPoint.x - lastMouseScreenPoint.x
                 onDragMove?(delta)
@@ -926,14 +1177,14 @@ final class DraggableNotchPanel: NSPanel {
         switch position.axis {
         case .vertical:
             let half = maxExtent / 2
-            let leadingBandBottom = half + metrics.compactHeight / 2 + metrics.controlsGap
+            let leadingBandBottom = half + metrics.railExtent / 2 + metrics.controlsGap
             let leadingBandTop = leadingBandBottom + endExtent
             if point.y >= leadingBandBottom && point.y <= leadingBandTop {
                 onEyeTap?()
                 return true
             }
 
-            let trailingBandTop = half - metrics.compactHeight / 2 - metrics.controlsGap
+            let trailingBandTop = half - metrics.railExtent / 2 - metrics.controlsGap
             let trailingBandBottom = trailingBandTop - endExtent
             if point.y >= trailingBandBottom && point.y <= trailingBandTop {
                 onGearTap?(point)
@@ -980,7 +1231,10 @@ final class NotchHostingView: NSHostingView<NotchContent> {
         case .right: CGRect(x: bounds.width - width, y: 0, width: width, height: height)
         case .left: CGRect(x: 0, y: 0, width: width, height: height)
         case .top: CGRect(x: (bounds.width - width) / 2, y: 0, width: width, height: height)
-        case .bottom: CGRect(x: (bounds.width - width) / 2, y: bounds.height - height, width: width, height: height)
+        case .bottom:
+            CGRect(
+                x: (bounds.width - width) / 2, y: bounds.height - height, width: width,
+                height: height)
         }
     }
 
@@ -998,7 +1252,8 @@ final class NotchHostingView: NSHostingView<NotchContent> {
     private func containsVisibleSurface(_ point: NSPoint) -> Bool {
         let topBasedY = isFlipped ? point.y : bounds.height - point.y
         let thickness = isHiddenMode && !isHovered ? metrics.hiddenWidth : metrics.idleWidth
-        let extent = isHiddenMode && !isHovered
+        let extent =
+            isHiddenMode && !isHovered
             ? metrics.hiddenHeight
             : isHovered ? metrics.hoverHeight : metrics.compactHeight
         let size = metrics.size(thickness: thickness, extent: extent, axis: position.axis)
@@ -1008,7 +1263,8 @@ final class NotchHostingView: NSHostingView<NotchContent> {
         guard rect.contains(testPoint) else { return false }
 
         let radius = min(metrics.cornerRadius, rect.width / 2, rect.height / 2)
-        let inSafeBand = (testPoint.x >= rect.minX + radius && testPoint.x <= rect.maxX - radius)
+        let inSafeBand =
+            (testPoint.x >= rect.minX + radius && testPoint.x <= rect.maxX - radius)
             || (testPoint.y >= rect.minY + radius && testPoint.y <= rect.maxY - radius)
         guard !inSafeBand else { return true }
 
@@ -1016,7 +1272,9 @@ final class NotchHostingView: NSHostingView<NotchContent> {
         let isTop = testPoint.y < rect.midY
         guard isCornerRounded(left: isLeft, top: isTop) else { return true }
 
-        let cornerCenter = CGPoint(x: isLeft ? rect.minX + radius : rect.maxX - radius, y: isTop ? rect.minY + radius : rect.maxY - radius)
+        let cornerCenter = CGPoint(
+            x: isLeft ? rect.minX + radius : rect.maxX - radius,
+            y: isTop ? rect.minY + radius : rect.maxY - radius)
         let distanceX = testPoint.x - cornerCenter.x
         let distanceY = testPoint.y - cornerCenter.y
         return distanceX * distanceX + distanceY * distanceY <= radius * radius
@@ -1069,8 +1327,10 @@ struct SidebarProviderItem: View {
             ZStack {
                 Circle().stroke(Color(white: 0.18), lineWidth: 5 * scale)
                 Circle().trim(from: 0, to: displayedPercent / 100)
-                     .stroke(progressColor, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round))
-                     .rotationEffect(.degrees(-90))
+                    .stroke(
+                        progressColor, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
                 ProviderLogo(provider: usage.kind, size: 14 * scale).foregroundStyle(.white)
             }
             .frame(width: 38 * scale, height: 38 * scale)
@@ -1128,11 +1388,13 @@ enum LaunchAtLoginManager {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            return "Metria could not update its launch-at-login setting: \(error.localizedDescription)"
+            return
+                "Metria could not update its launch-at-login setting: \(error.localizedDescription)"
         }
 
         if enabled, SMAppService.mainApp.status == .requiresApproval {
-            return "Metria was added, but macOS requires approval. Open System Settings > General > Login Items and allow Metria."
+            return
+                "Metria was added, but macOS requires approval. Open System Settings > General > Login Items and allow Metria."
         }
         return nil
     }
@@ -1336,13 +1598,15 @@ struct SettingsView: View {
     }
 
     private static let mascotImage: NSImage? = {
-        guard let url = MetriaResources.bundle.url(forResource: "metria-mascot", withExtension: "png") else { return nil }
+        guard
+            let url = MetriaResources.bundle.url(forResource: "metria-mascot", withExtension: "png")
+        else { return nil }
         return NSImage(contentsOf: url)
     }()
 
     var body: some View {
         navigationContent
-        .frame(minWidth: 680, idealWidth: 720, minHeight: 500, idealHeight: 580)
+            .frame(minWidth: 680, idealWidth: 720, minHeight: 500, idealHeight: 580)
     }
 
     private var navigationContent: some View {
@@ -1387,7 +1651,7 @@ struct SettingsView: View {
                 detailView
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
@@ -1402,21 +1666,27 @@ struct SettingsView: View {
     private var generalView: some View {
         Form {
             Section("Display") {
-                Toggle("Show notch", isOn: Binding(
-                    get: { showsNotch },
-                    set: { newValue in
-                        showsNotch = newValue
-                        onToggleNotch(newValue)
-                    }
-                ))
+                Toggle(
+                    "Show notch",
+                    isOn: Binding(
+                        get: { showsNotch },
+                        set: { newValue in
+                            showsNotch = newValue
+                            onToggleNotch(newValue)
+                        }
+                    )
+                )
                 .disabled(showsNotch && !showsMenuBar)
-                Toggle("Show in menu bar", isOn: Binding(
-                    get: { showsMenuBar },
-                    set: { newValue in
-                        showsMenuBar = newValue
-                        onToggleMenuBar(newValue)
-                    }
-                ))
+                Toggle(
+                    "Show in menu bar",
+                    isOn: Binding(
+                        get: { showsMenuBar },
+                        set: { newValue in
+                            showsMenuBar = newValue
+                            onToggleMenuBar(newValue)
+                        }
+                    )
+                )
                 .disabled(showsMenuBar && !showsNotch)
                 Toggle("Show provider account email", isOn: $showAccountEmails)
                 Text("Show the account email when available, or a masked API key for OpenCode Go.")
@@ -1440,8 +1710,10 @@ struct SettingsView: View {
                     )
                     .frame(maxWidth: .infinity, minHeight: 24)
                 }
-                Text("Keep the provider rail visible or collapse it until you hover over the notch.")
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Keep the provider rail visible or collapse it until you hover over the notch."
+                )
+                .foregroundStyle(.secondary)
             }
 
             Section("Menu bar") {
@@ -1454,7 +1726,9 @@ struct SettingsView: View {
             }
 
             Section("Monitor") {
-                Picker("Monitor", selection: Binding(get: { notchScreenID }, set: onSelectNotchScreen)) {
+                Picker(
+                    "Monitor", selection: Binding(get: { notchScreenID }, set: onSelectNotchScreen)
+                ) {
                     ForEach(notchScreens) { screen in
                         Text(screen.name).tag(screen.id)
                     }
@@ -1510,8 +1784,10 @@ struct SettingsView: View {
                             .frame(width: 42, alignment: .trailing)
                     }
                 }
-                Text("Applies to the usage card; the provider rail always stays fully opaque so it reads as part of the display.")
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Applies to the usage card; the provider rail always stays fully opaque so it reads as part of the display."
+                )
+                .foregroundStyle(.secondary)
             }
 
             Section("Refresh") {
@@ -1530,16 +1806,18 @@ struct SettingsView: View {
             }
 
             Section("Startup") {
-                Toggle("Launch at login", isOn: Binding(
-                    get: { launchAtLoginEnabled },
-                    set: { enabled in
-                        if let message = onChangeLaunchAtLogin(enabled) {
-                            launchAtLoginMessage = message
-                        } else {
-                            launchAtLoginEnabled = enabled
+                Toggle(
+                    "Launch at login",
+                    isOn: Binding(
+                        get: { launchAtLoginEnabled },
+                        set: { enabled in
+                            if let message = onChangeLaunchAtLogin(enabled) {
+                                launchAtLoginMessage = message
+                            } else {
+                                launchAtLoginEnabled = enabled
+                            }
                         }
-                    }
-                ))
+                    ))
                 Text("Metria will start automatically and remain available in the menu bar.")
                     .foregroundStyle(.secondary)
             }
@@ -1547,10 +1825,13 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .alert("Launch at login", isPresented: Binding(
-            get: { launchAtLoginMessage != nil },
-            set: { if !$0 { launchAtLoginMessage = nil } }
-        )) {
+        .alert(
+            "Launch at login",
+            isPresented: Binding(
+                get: { launchAtLoginMessage != nil },
+                set: { if !$0 { launchAtLoginMessage = nil } }
+            )
+        ) {
             Button("OK", role: .cancel) { launchAtLoginMessage = nil }
         } message: {
             Text(launchAtLoginMessage ?? "")
@@ -1559,13 +1840,21 @@ struct SettingsView: View {
 
     private var menuBarAlertControls: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-            alertControl(label: "Caution", color: $cautionColor, threshold: $cautionThreshold, range: 1...(warningThreshold - 1))
-            alertControl(label: "Warning", color: $warningColor, threshold: $warningThreshold, range: (cautionThreshold + 1)...(criticalThreshold - 1))
-            alertControl(label: "Critical", color: $criticalColor, threshold: $criticalThreshold, range: (warningThreshold + 1)...100)
+            alertControl(
+                label: "Caution", color: $cautionColor, threshold: $cautionThreshold,
+                range: 1...(warningThreshold - 1))
+            alertControl(
+                label: "Warning", color: $warningColor, threshold: $warningThreshold,
+                range: (cautionThreshold + 1)...(criticalThreshold - 1))
+            alertControl(
+                label: "Critical", color: $criticalColor, threshold: $criticalThreshold,
+                range: (warningThreshold + 1)...100)
         }
     }
 
-    private func alertControl(label: String, color: Binding<Color>, threshold: Binding<Int>, range: ClosedRange<Int>) -> some View {
+    private func alertControl(
+        label: String, color: Binding<Color>, threshold: Binding<Int>, range: ClosedRange<Int>
+    ) -> some View {
         GridRow {
             Text(label)
             ColorPicker("\(label) color", selection: color)
@@ -1578,31 +1867,40 @@ struct SettingsView: View {
     }
 
     private func saveMenuBarAlertSettings() {
-        onChangeMenuBarAlertSettings(.init(
-            cautionThreshold: cautionThreshold,
-            warningThreshold: warningThreshold,
-            criticalThreshold: criticalThreshold,
-            cautionColor: NSColor(cautionColor),
-            warningColor: NSColor(warningColor),
-            criticalColor: NSColor(criticalColor)
-        ))
+        onChangeMenuBarAlertSettings(
+            .init(
+                cautionThreshold: cautionThreshold,
+                warningThreshold: warningThreshold,
+                criticalThreshold: criticalThreshold,
+                cautionColor: NSColor(cautionColor),
+                warningColor: NSColor(warningColor),
+                criticalColor: NSColor(criticalColor)
+            ))
     }
 
     private var providersView: some View {
         Form {
             ForEach(ProviderKind.allCases) { kind in
                 Section {
-                    Toggle("Use this provider", isOn: Binding(
-                        get: { store.enabledProviderKinds.contains(kind) },
-                        set: { store.setProviderEnabled(kind, isEnabled: $0) }
-                    ))
+                    Toggle(
+                        "Use this provider",
+                        isOn: Binding(
+                            get: { store.enabledProviderKinds.contains(kind) },
+                            set: { store.setProviderEnabled(kind, isEnabled: $0) }
+                        )
+                    )
                     .disabled(!store.isProviderAvailable(kind))
 
                     ForEach(store.usageWindowTitles(for: kind), id: \.self) { title in
-                        Toggle("Show \"\(title)\"", isOn: Binding(
-                            get: { !(store.hiddenWindowTitlesByProvider[kind]?.contains(title) ?? false) },
-                            set: { store.setWindowVisible(title, for: kind, isVisible: $0) }
-                        ))
+                        Toggle(
+                            "Show \"\(title)\"",
+                            isOn: Binding(
+                                get: {
+                                    !(store.hiddenWindowTitlesByProvider[kind]?.contains(title)
+                                        ?? false)
+                                },
+                                set: { store.setWindowVisible(title, for: kind, isVisible: $0) }
+                            ))
                     }
 
                     HStack {
@@ -1612,7 +1910,8 @@ struct SettingsView: View {
                         }
                         Button("Reconnect") {
                             onReconnect(kind)
-                            reconnectMessage = "The login command for \(kind.rawValue) was sent to Terminal. If it did not start automatically, paste this command:\n\n\(kind.reconnectCommand)"
+                            reconnectMessage =
+                                "The login command for \(kind.rawValue) was sent to Terminal. If it did not start automatically, paste this command:\n\n\(kind.reconnectCommand)"
                             isReconnectShown = true
                         }
                         Spacer()
@@ -1645,8 +1944,10 @@ struct SettingsView: View {
                 }
             }
 
-            Text("At least one provider must remain enabled, and at least one usage window per provider.")
-                .foregroundStyle(.secondary)
+            Text(
+                "At least one provider must remain enabled, and at least one usage window per provider."
+            )
+            .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
         .padding(12)
@@ -1677,10 +1978,14 @@ struct SettingsView: View {
                 }
 
                 HStack {
-                    Text(isPhraseRevealed ? pairing.words.joined(separator: " ") : String(repeating: "•", count: 44))
-                        .font(.system(size: 11, design: .monospaced))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        isPhraseRevealed
+                            ? pairing.words.joined(separator: " ")
+                            : String(repeating: "•", count: 44)
+                    )
+                    .font(.system(size: 11, design: .monospaced))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button(isPhraseRevealed ? "Hide" : "Show") { isPhraseRevealed.toggle() }
                 }
@@ -1688,15 +1993,20 @@ struct SettingsView: View {
                 HStack(spacing: 10) {
                     Button("Copy phrase") {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(pairing.words.joined(separator: " "), forType: .string)
+                        NSPasteboard.general.setString(
+                            pairing.words.joined(separator: " "), forType: .string)
                     }
                     Button("Copy link") {
                         guard let pwaBaseURL = localPWAURL() else { return }
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(pairing.pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer), forType: .string)
+                        NSPasteboard.general.setString(
+                            pairing.pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer),
+                            forType: .string)
                     }
                     Spacer()
-                    Button("Regenerate", role: .destructive) { isRegenerateConfirmationShown = true }
+                    Button("Regenerate", role: .destructive) {
+                        isRegenerateConfirmationShown = true
+                    }
                 }
                 .controlSize(.small)
             }
@@ -1734,12 +2044,16 @@ struct SettingsView: View {
                     TextField("https://...", text: $customPWAURL)
                         .onSubmit { onChangeCustomPWAURL(customPWAURL) }
                 }
-                Text("Leave Custom PWA URL empty to pair through this Mac on the same Wi-Fi network. Use an HTTPS URL to keep remote access and PWA installation.")
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Leave Custom PWA URL empty to pair through this Mac on the same Wi-Fi network. Use an HTTPS URL to keep remote access and PWA installation."
+                )
+                .foregroundStyle(.secondary)
             }
 
-            Text("Scan the QR code with your phone's camera, or open the PWA and enter the phrase. The local address must be reachable from your phone.")
-                .foregroundStyle(.secondary)
+            Text(
+                "Scan the QR code with your phone's camera, or open the PWA and enter the phrase. The local address must be reachable from your phone."
+            )
+            .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
         .padding(20)
@@ -1755,9 +2069,11 @@ struct SettingsView: View {
     }
 }
 
-private extension NSMenu {
+extension NSMenu {
     @discardableResult
-    func addItem(withTitle title: String, action: Selector?, keyEquivalent: String, symbolName: String) -> NSMenuItem {
+    fileprivate func addItem(
+        withTitle title: String, action: Selector?, keyEquivalent: String, symbolName: String
+    ) -> NSMenuItem {
         let item = addItem(withTitle: title, action: action, keyEquivalent: keyEquivalent)
         item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
         return item
@@ -1765,7 +2081,16 @@ private extension NSMenu {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager(); private let updater = AppUpdater(); private let localPWAServer = LocalPWAServer()
+    let store = UsageStore(providers: ProviderRegistry.makeProviders())
+    var statusItem: NSStatusItem!
+    var popover: NSPopover!
+    var sidebarWindow: NSPanel!
+    var settingsWindow: NSWindow?
+    var observation: AnyCancellable?
+    private let ntfyPublisher = NtfyPublisher()
+    let pairing = PairingManager()
+    private let updater = AppUpdater()
+    private let localPWAServer = LocalPWAServer()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         migrateDisplayModeIfNeeded()
@@ -1807,7 +2132,10 @@ private extension NSMenu {
     }
 
     private var customPWAURL: String {
-        get { UserDefaults.standard.object(forKey: "customPWAURL") as? String ?? PairingManager.defaultRemotePWAURL }
+        get {
+            UserDefaults.standard.object(forKey: "customPWAURL") as? String
+                ?? PairingManager.defaultRemotePWAURL
+        }
         set { UserDefaults.standard.set(newValue, forKey: "customPWAURL") }
     }
 
@@ -1818,12 +2146,19 @@ private extension NSMenu {
 
     private var menuBarAlertSettings: MenuBarAlertSettings {
         .init(
-            cautionThreshold: UserDefaults.standard.object(forKey: "menuBarCautionThreshold") as? Int ?? MenuBarAlertSettings.default.cautionThreshold,
-            warningThreshold: UserDefaults.standard.object(forKey: "menuBarWarningThreshold") as? Int ?? MenuBarAlertSettings.default.warningThreshold,
-            criticalThreshold: UserDefaults.standard.object(forKey: "menuBarCriticalThreshold") as? Int ?? MenuBarAlertSettings.default.criticalThreshold,
-            cautionColor: menuBarAlertColor(forKey: "menuBarCautionColor", fallback: MenuBarAlertSettings.default.cautionColor),
-            warningColor: menuBarAlertColor(forKey: "menuBarWarningColor", fallback: MenuBarAlertSettings.default.warningColor),
-            criticalColor: menuBarAlertColor(forKey: "menuBarCriticalColor", fallback: MenuBarAlertSettings.default.criticalColor)
+            cautionThreshold: UserDefaults.standard.object(forKey: "menuBarCautionThreshold")
+                as? Int ?? MenuBarAlertSettings.default.cautionThreshold,
+            warningThreshold: UserDefaults.standard.object(forKey: "menuBarWarningThreshold")
+                as? Int ?? MenuBarAlertSettings.default.warningThreshold,
+            criticalThreshold: UserDefaults.standard.object(forKey: "menuBarCriticalThreshold")
+                as? Int ?? MenuBarAlertSettings.default.criticalThreshold,
+            cautionColor: menuBarAlertColor(
+                forKey: "menuBarCautionColor", fallback: MenuBarAlertSettings.default.cautionColor),
+            warningColor: menuBarAlertColor(
+                forKey: "menuBarWarningColor", fallback: MenuBarAlertSettings.default.warningColor),
+            criticalColor: menuBarAlertColor(
+                forKey: "menuBarCriticalColor", fallback: MenuBarAlertSettings.default.criticalColor
+            )
         )
     }
 
@@ -1845,11 +2180,15 @@ private extension NSMenu {
 
     private func menuBarAlertColor(forKey key: String, fallback: NSColor) -> NSColor {
         guard let data = UserDefaults.standard.data(forKey: key) else { return fallback }
-        return (try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)) ?? fallback
+        return (try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data))
+            ?? fallback
     }
 
     private func saveMenuBarAlertColor(_ color: NSColor, forKey key: String) {
-        guard let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: true) else { return }
+        guard
+            let data = try? NSKeyedArchiver.archivedData(
+                withRootObject: color, requiringSecureCoding: true)
+        else { return }
         UserDefaults.standard.set(data, forKey: key)
     }
 
@@ -1884,11 +2223,16 @@ private extension NSMenu {
 
     private func updateStatusItem(_ providers: [ProviderUsage]) {
         let title = NSMutableAttributedString()
-        let usages = providers.sorted { $0.kind.rawValue < $1.kind.rawValue }.filter { $0.primary != nil }
+        let usages = providers.sorted { $0.kind.rawValue < $1.kind.rawValue }.filter {
+            $0.primary != nil
+        }
 
         for (index, usage) in usages.enumerated() {
             if index > 0 {
-                title.append(NSAttributedString(string: "  ·  ", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+                title.append(
+                    NSAttributedString(
+                        string: "  ·  ",
+                        attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
             }
             if let logo = usage.kind.logo {
                 let attachment = NSTextAttachment()
@@ -1899,15 +2243,23 @@ private extension NSMenu {
             }
             let name = usage.kind == .openCodeGo ? "Go" : usage.kind.rawValue
             let percent = usage.primary!.percent
-            title.append(NSAttributedString(string: "\(name) ", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
-            var percentageAttributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]
+            title.append(
+                NSAttributedString(
+                    string: "\(name) ",
+                    attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+            var percentageAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
+            ]
             if let color = menuBarAlertColor(for: percent) {
                 percentageAttributes[.foregroundColor] = color
             }
-            title.append(NSAttributedString(string: "\(Int(percent.rounded()))%", attributes: percentageAttributes))
+            title.append(
+                NSAttributedString(
+                    string: "\(Int(percent.rounded()))%", attributes: percentageAttributes))
         }
         statusItem.button?.image = nil
-        statusItem.button?.attributedTitle = usages.isEmpty ? NSAttributedString(string: "--") : title
+        statusItem.button?.attributedTitle =
+            usages.isEmpty ? NSAttributedString(string: "--") : title
     }
 
     private func configureStatusItem() {
@@ -1920,29 +2272,42 @@ private extension NSMenu {
 
     private func buildAppMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "", symbolName: "rectangle.dock")
-        let notchItem = menu.addItem(withTitle: "Show notch", action: #selector(toggleNotchVisibility), keyEquivalent: "", symbolName: "capsule")
+        menu.addItem(
+            withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "",
+            symbolName: "rectangle.dock")
+        let notchItem = menu.addItem(
+            withTitle: "Show notch", action: #selector(toggleNotchVisibility), keyEquivalent: "",
+            symbolName: "capsule")
         notchItem.state = showsNotch ? .on : .off
         notchItem.isEnabled = !(showsNotch && !showsMenuBar)
-        let menuBarItem = menu.addItem(withTitle: "Show in menu bar", action: #selector(toggleMenuBarVisibility), keyEquivalent: "", symbolName: "menubar.rectangle")
+        let menuBarItem = menu.addItem(
+            withTitle: "Show in menu bar", action: #selector(toggleMenuBarVisibility),
+            keyEquivalent: "", symbolName: "menubar.rectangle")
         menuBarItem.state = showsMenuBar ? .on : .off
         menuBarItem.isEnabled = !(showsMenuBar && !showsNotch)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",", symbolName: "gearshape")
+        menu.addItem(
+            withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",",
+            symbolName: "gearshape")
         if updater.isConfigured {
-            menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: "", symbolName: "arrow.trianglehead.2.clockwise")
+            menu.addItem(
+                withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)),
+                keyEquivalent: "", symbolName: "arrow.trianglehead.2.clockwise")
         }
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q", symbolName: "power")
+        menu.addItem(
+            withTitle: "Quit", action: #selector(quit), keyEquivalent: "q", symbolName: "power")
         menu.items.forEach { $0.target = self }
         if updater.isConfigured {
-            menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target = updater
+            menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target =
+                updater
         }
         return menu
     }
 
     private func showNotchMenu(at windowPoint: NSPoint) {
-        let panel = sidebarWindows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? sidebarWindow
+        let panel =
+            sidebarWindows.first { $0.frame.contains(NSEvent.mouseLocation) } ?? sidebarWindow
         guard let panel, let contentView = panel.contentView else { return }
         let anchor = contentView.convert(windowPoint, from: nil)
         buildNotchMenu().popUp(positioning: nil, at: anchor, in: contentView)
@@ -1953,19 +2318,28 @@ private extension NSMenu {
     /// without a trip through Settings.
     private func buildNotchMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "", symbolName: "rectangle.dock")
-        let notchItem = menu.addItem(withTitle: "Show notch", action: #selector(toggleNotchVisibility), keyEquivalent: "", symbolName: "capsule")
+        menu.addItem(
+            withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "",
+            symbolName: "rectangle.dock")
+        let notchItem = menu.addItem(
+            withTitle: "Show notch", action: #selector(toggleNotchVisibility), keyEquivalent: "",
+            symbolName: "capsule")
         notchItem.state = showsNotch ? .on : .off
         notchItem.isEnabled = !(showsNotch && !showsMenuBar)
-        let menuBarItem = menu.addItem(withTitle: "Show in menu bar", action: #selector(toggleMenuBarVisibility), keyEquivalent: "", symbolName: "menubar.rectangle")
+        let menuBarItem = menu.addItem(
+            withTitle: "Show in menu bar", action: #selector(toggleMenuBarVisibility),
+            keyEquivalent: "", symbolName: "menubar.rectangle")
         menuBarItem.state = showsMenuBar ? .on : .off
         menuBarItem.isEnabled = !(showsMenuBar && !showsNotch)
 
         let positionItem = menu.addItem(withTitle: "Position", action: nil, keyEquivalent: "")
-        positionItem.image = NSImage(systemSymbolName: "square.dashed.inset.filled", accessibilityDescription: nil)
+        positionItem.image = NSImage(
+            systemSymbolName: "square.dashed.inset.filled", accessibilityDescription: nil)
         let positionMenu = NSMenu()
         for position in NotchPosition.allCases {
-            let item = positionMenu.addItem(withTitle: position.title, action: #selector(selectNotchPositionFromMenu(_:)), keyEquivalent: "")
+            let item = positionMenu.addItem(
+                withTitle: position.title, action: #selector(selectNotchPositionFromMenu(_:)),
+                keyEquivalent: "")
             item.target = self
             item.representedObject = position.rawValue
             item.state = notchMode.position == position ? .on : .off
@@ -1973,46 +2347,70 @@ private extension NSMenu {
         positionItem.submenu = positionMenu
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",", symbolName: "gearshape")
+        menu.addItem(
+            withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",",
+            symbolName: "gearshape")
         if updater.isConfigured {
-            menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: "", symbolName: "arrow.trianglehead.2.clockwise")
+            menu.addItem(
+                withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)),
+                keyEquivalent: "", symbolName: "arrow.trianglehead.2.clockwise")
         }
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q", symbolName: "power")
+        menu.addItem(
+            withTitle: "Quit", action: #selector(quit), keyEquivalent: "q", symbolName: "power")
         menu.items.forEach { $0.target = self }
         if updater.isConfigured {
-            menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target = updater
+            menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target =
+                updater
         }
         return menu
     }
 
     @objc private func selectNotchPositionFromMenu(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let position = NotchPosition(rawValue: raw) else { return }
+        guard let raw = sender.representedObject as? String,
+            let position = NotchPosition(rawValue: raw)
+        else { return }
         setNotchPosition(position)
     }
 
-    private func configurePopover() { popover = NSPopover(); popover.behavior = .transient; popover.contentSize = NSSize(width: 440, height: 700); popover.contentViewController = NSHostingController(rootView: PopoverContent(store: store)) }
+    private func configurePopover() {
+        popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentSize = NSSize(width: 440, height: 700)
+        popover.contentViewController = NSHostingController(rootView: PopoverContent(store: store))
+    }
 
     private var notchGeometry = NotchGeometry.current()
     private let notchMode = NotchMode()
-    private var notchMetrics: NotchMetrics { NotchMetrics(size: notchMode.size) }
-    private var notchExpansion: CGFloat { notchMetrics.controlsHeight + notchMetrics.controlsGap + notchMetrics.controlsBottomSpace }
+    private var notchMetrics: NotchMetrics {
+        NotchMetrics(size: notchMode.size, providerCount: store.visibleProviders.count)
+    }
+    private var notchExpansion: CGFloat {
+        notchMetrics.controlsHeight + notchMetrics.controlsGap + notchMetrics.controlsBottomSpace
+    }
     private var notchScreens: [NotchScreen] {
         NSScreen.screens.compactMap { screen in
-            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+            guard
+                let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+                    as? NSNumber
+            else { return nil }
             return NotchScreen(id: id.uint32Value, name: screen.localizedName)
         }
     }
     private var selectedNotchScreen: NSScreen? {
         let selectedID = UserDefaults.standard.object(forKey: "notchScreenID") as? NSNumber
         return NSScreen.screens.first { screen in
-            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+            guard
+                let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+                    as? NSNumber
+            else { return false }
             return id.uint32Value == selectedID?.uint32Value
         } ?? NSScreen.main ?? NSScreen.screens.first
     }
     private var selectedNotchScreenID: UInt32 {
         guard let screen = selectedNotchScreen,
-              let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return 0 }
+            let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        else { return 0 }
         return id.uint32Value
     }
     private var sidebarWindows: [NSPanel] = []
@@ -2031,7 +2429,9 @@ private extension NSMenu {
     /// and below the compact rail's fixed center — `NotchContent` centers its content on
     /// that same axis, so the rail neither moves nor needs its own compensating offset. A
     /// horizontal bar needs none: it already grows centered on its width axis for free.
-    private var notchExpansionOffset: CGFloat { notchMode.position.axis == .vertical ? notchExpansion : 0 }
+    private var notchExpansionOffset: CGFloat {
+        notchMode.position.axis == .vertical ? notchExpansion : 0
+    }
 
     private func configureSidebar() {
         let screen = selectedNotchScreen ?? NSScreen.main ?? NSScreen.screens.first
@@ -2039,13 +2439,19 @@ private extension NSMenu {
         sidebarWindow = sidebarWindows.first
         notchGeometry = NotchGeometry.current(for: screen, position: notchMode.position)
 
-        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersDidChange), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screenParametersDidChange),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
     private func makeSidebarWindow(for screen: NSScreen) -> NSPanel {
         let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
-        let frame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
-        let panel = DraggableNotchPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let frame = geometry.frame(
+            thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
+            alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
+        let panel = DraggableNotchPanel(
+            contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+            defer: false)
         panel.metrics = notchMetrics
         panel.position = notchMode.position
         panel.onDragMove = { [weak self] delta in self?.moveNotch(by: delta) }
@@ -2071,12 +2477,20 @@ private extension NSMenu {
         guard showsNotch, let sidebarWindow, let screen = selectedNotchScreen else { return }
         let axis = notchMode.position.axis
         let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
-        let defaultFrame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchExpansionOffset)
-        var frame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
+        let defaultFrame = geometry.frame(
+            thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
+            alongEdgeOffset: notchExpansionOffset)
+        var frame = geometry.frame(
+            thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
+            alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
         if axis == .vertical {
-            frame.origin.y = min(max(frame.origin.y, screen.visibleFrame.minY), screen.visibleFrame.maxY - frame.height)
+            frame.origin.y = min(
+                max(frame.origin.y, screen.visibleFrame.minY),
+                screen.visibleFrame.maxY - frame.height)
         } else {
-            frame.origin.x = min(max(frame.origin.x, screen.visibleFrame.minX), screen.visibleFrame.maxX - frame.width)
+            frame.origin.x = min(
+                max(frame.origin.x, screen.visibleFrame.minX),
+                screen.visibleFrame.maxX - frame.width)
         }
         guard !frame.equalTo(sidebarWindow.frame) else {
             notchGeometry = geometry
@@ -2084,7 +2498,9 @@ private extension NSMenu {
         }
         sidebarWindow.setFrame(frame, display: true)
         notchGeometry = geometry
-        notchAlongEdgeOffset = axis == .vertical ? frame.origin.y - defaultFrame.origin.y : frame.origin.x - defaultFrame.origin.x
+        notchAlongEdgeOffset =
+            axis == .vertical
+            ? frame.origin.y - defaultFrame.origin.y : frame.origin.x - defaultFrame.origin.x
     }
 
     // Building a fresh hosting view resets the SwiftUI hover state so that, on hiding,
@@ -2127,20 +2543,29 @@ private extension NSMenu {
     // delta itself is already measured along the right axis by `DraggableNotchPanel`.
     private func moveNotch(by delta: CGFloat) {
         guard let sidebarWindow else { return }
-        let screen = sidebarWindow.screen ?? NSScreen.screens.first { $0.frame.intersects(sidebarWindow.frame) } ?? NSScreen.main
+        let screen =
+            sidebarWindow.screen ?? NSScreen.screens.first {
+                $0.frame.intersects(sidebarWindow.frame)
+            } ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? sidebarWindow.frame
         var frame = sidebarWindow.frame
         let axis = notchMode.position.axis
         if axis == .vertical {
-            frame.origin.y = min(max(frame.origin.y + delta, visibleFrame.minY), visibleFrame.maxY - frame.height)
+            frame.origin.y = min(
+                max(frame.origin.y + delta, visibleFrame.minY), visibleFrame.maxY - frame.height)
         } else {
-            frame.origin.x = min(max(frame.origin.x + delta, visibleFrame.minX), visibleFrame.maxX - frame.width)
+            frame.origin.x = min(
+                max(frame.origin.x + delta, visibleFrame.minX), visibleFrame.maxX - frame.width)
         }
         sidebarWindow.setFrameOrigin(frame.origin)
 
         notchGeometry = NotchGeometry.current(for: screen, position: notchMode.position)
-        let defaultFrame = notchGeometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchExpansionOffset)
-        notchAlongEdgeOffset = axis == .vertical ? frame.origin.y - defaultFrame.origin.y : frame.origin.x - defaultFrame.origin.x
+        let defaultFrame = notchGeometry.frame(
+            thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
+            alongEdgeOffset: notchExpansionOffset)
+        notchAlongEdgeOffset =
+            axis == .vertical
+            ? frame.origin.y - defaultFrame.origin.y : frame.origin.x - defaultFrame.origin.x
         if activeCardProvider != nil { positionCard(index: activeCardIndex) }
     }
 
@@ -2184,7 +2609,10 @@ private extension NSMenu {
             }
             let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) }
             let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
-            window.setFrame(geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset), display: true)
+            window.setFrame(
+                geometry.frame(
+                    thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
+                    alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset), display: true)
         }
         if let activeCardProvider {
             showCard(for: activeCardProvider, index: activeCardIndex)
@@ -2218,9 +2646,13 @@ private extension NSMenu {
                 hostingView.position = position
                 hostingView.needsLayout = true
             }
-            let screen = NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? selectedNotchScreen
+            let screen =
+                NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? selectedNotchScreen
             let geometry = NotchGeometry.current(for: screen, position: position)
-            window.setFrame(geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchExpansionOffset), display: true)
+            window.setFrame(
+                geometry.frame(
+                    thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
+                    alongEdgeOffset: notchExpansionOffset), display: true)
             notchGeometry = geometry
         }
         if let activeCardProvider {
@@ -2277,12 +2709,15 @@ private extension NSMenu {
     }
 
     private func showCard(for provider: ProviderKind, index: Int) {
-        let usage = store.providers.first(where: { $0.kind == provider })
+        let usage =
+            store.providers.first(where: { $0.kind == provider })
             ?? ProviderUsage(kind: provider, windows: [], updatedAt: nil, error: nil)
         let isAlreadyVisible = cardWindow?.isVisible == true
 
         if cardWindow == nil {
-            let window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            let window = NSPanel(
+                contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered, defer: false)
             window.level = .statusBar
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             window.isOpaque = false
@@ -2332,29 +2767,52 @@ private extension NSMenu {
     /// above a bottom-anchored one — the bar itself already sits flush against that edge).
     private func positionCard(index: Int, height: CGFloat? = nil) {
         guard let cardWindow else { return }
-        let cardHeight = height ?? max(cardWindow.contentViewController?.view.fittingSize.height ?? 0, 1)
+        let cardHeight =
+            height ?? max(cardWindow.contentViewController?.view.fittingSize.height ?? 0, 1)
         let position = notchMode.position
         let leadInset = 12 * notchMetrics.scale
         let itemStride = notchMetrics.providerItemHeight + notchMetrics.providerSpacing
-        let visibleFrame = activeCardScreen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? notchGeometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.compactHeight, alongEdgeOffset: notchAlongEdgeOffset)
+        let visibleFrame =
+            activeCardScreen?.visibleFrame ?? NSScreen.main?.visibleFrame
+            ?? notchGeometry.frame(
+                thickness: notchMetrics.idleWidth, extent: notchMetrics.railExtent,
+                alongEdgeOffset: notchAlongEdgeOffset)
 
         switch position.axis {
         case .vertical:
-            let railFrame = notchGeometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.compactHeight, alongEdgeOffset: notchAlongEdgeOffset)
-            let providerCenterY = railFrame.maxY - leadInset - notchMetrics.providerItemHeight / 2 - CGFloat(index) * itemStride
-            let originY = min(max(providerCenterY - cardHeight / 2, visibleFrame.minY + 8), visibleFrame.maxY - cardHeight - 8)
-            let originX = position == .right
+            let railFrame = notchGeometry.frame(
+                thickness: notchMetrics.idleWidth, extent: notchMetrics.railExtent,
+                alongEdgeOffset: notchAlongEdgeOffset)
+            let providerCenterY =
+                railFrame.maxY - leadInset - notchMetrics.providerItemHeight / 2 - CGFloat(index)
+                * itemStride
+            let originY = min(
+                max(providerCenterY - cardHeight / 2, visibleFrame.minY + 8),
+                visibleFrame.maxY - cardHeight - 8)
+            let originX =
+                position == .right
                 ? railFrame.minX - notchMetrics.cardWidth - notchMetrics.cardSpacing
                 : railFrame.maxX + notchMetrics.cardSpacing
-            cardWindow.setFrame(NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight), display: true)
+            cardWindow.setFrame(
+                NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight),
+                display: true)
         case .horizontal:
-            let railFrame = notchGeometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.compactHeight, alongEdgeOffset: notchAlongEdgeOffset)
-            let providerCenterX = railFrame.minX + leadInset + notchMetrics.providerItemHeight / 2 + CGFloat(index) * itemStride
-            let originX = min(max(providerCenterX - notchMetrics.cardWidth / 2, visibleFrame.minX + 8), visibleFrame.maxX - notchMetrics.cardWidth - 8)
-            let originY = position == .bottom
+            let railFrame = notchGeometry.frame(
+                thickness: notchMetrics.idleWidth, extent: notchMetrics.railExtent,
+                alongEdgeOffset: notchAlongEdgeOffset)
+            let providerCenterX =
+                railFrame.minX + leadInset + notchMetrics.providerItemHeight / 2 + CGFloat(index)
+                * itemStride
+            let originX = min(
+                max(providerCenterX - notchMetrics.cardWidth / 2, visibleFrame.minX + 8),
+                visibleFrame.maxX - notchMetrics.cardWidth - 8)
+            let originY =
+                position == .bottom
                 ? railFrame.maxY + notchMetrics.cardSpacing
                 : railFrame.minY - cardHeight - notchMetrics.cardSpacing
-            cardWindow.setFrame(NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight), display: true)
+            cardWindow.setFrame(
+                NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight),
+                display: true)
         }
     }
 
@@ -2389,7 +2847,8 @@ private extension NSMenu {
     /// before anything reads `showsNotch`/`showsMenuBar` for the first time.
     private func migrateDisplayModeIfNeeded() {
         guard UserDefaults.standard.object(forKey: "showsNotch") == nil,
-              UserDefaults.standard.object(forKey: "showsMenuBar") == nil else { return }
+            UserDefaults.standard.object(forKey: "showsMenuBar") == nil
+        else { return }
         let legacyMode = UserDefaults.standard.string(forKey: "displayMode")
         showsNotch = legacyMode != "menuBar"
         showsMenuBar = legacyMode == "menuBar"
@@ -2442,7 +2901,9 @@ private extension NSMenu {
         resetNotchInteractionState()
         sidebarWindows.forEach { window in
             let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
-            let frame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
+            let frame = geometry.frame(
+                thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight,
+                alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
             window.setFrame(frame, display: true)
             window.alphaValue = 0
             window.orderFrontRegardless()
@@ -2463,75 +2924,87 @@ private extension NSMenu {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command, forType: .string)
 
-        let escapedCommand = command.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedCommand = command.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
         let scriptSource = "tell application \"Terminal\" to do script \"\(escapedCommand)\""
         var scriptError: NSDictionary?
-        let didOpenTerminal = NSAppleScript(source: scriptSource)?.executeAndReturnError(&scriptError) != nil
+        let didOpenTerminal =
+            NSAppleScript(source: scriptSource)?.executeAndReturnError(&scriptError) != nil
         if !didOpenTerminal {
-            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+            NSWorkspace.shared.open(
+                URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
         }
     }
 
     @objc private func openSettings() {
-        let window = settingsWindow ?? {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 580), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = "Settings"
-            window.isReleasedWhenClosed = false
-            window.minSize = NSSize(width: 680, height: 500)
-            window.center()
-            settingsWindow = window
-            return window
-        }()
-        window.contentViewController = NSHostingController(rootView: SettingsView(
-            store: store,
-            pairing: pairing,
-             showsNotch: showsNotch,
-             onToggleNotch: { [weak self] enabled in self?.setShowsNotch(enabled) },
-             showsMenuBar: showsMenuBar,
-             onToggleMenuBar: { [weak self] enabled in self?.setShowsMenuBar(enabled) },
-              notchScreens: notchScreens,
-              notchScreenID: selectedNotchScreenID,
-              onSelectNotchScreen: { [weak self] id in self?.setNotchScreen(id) },
-              notchBehavior: notchBehavior,
-              onSelectNotchBehavior: { [weak self] behavior in self?.setNotchBehavior(behavior) },
-              notchSize: notchMode.size,
-             onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
-             notchPosition: notchMode.position,
-             onSelectNotchPosition: { [weak self] position in self?.setNotchPosition(position) },
-             menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
-             onChangeMenuBarAlertColors: { [weak self] enabled in self?.setMenuBarAlertColorsEnabled(enabled) },
-             menuBarAlertSettings: menuBarAlertSettings,
-             onChangeMenuBarAlertSettings: { [weak self] settings in self?.setMenuBarAlertSettings(settings) },
-             sidebarOpacity: sidebarOpacity,
-            onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
-            launchAtLoginEnabled: LaunchAtLoginManager.isEnabled,
-            onChangeLaunchAtLogin: { enabled in LaunchAtLoginManager.setEnabled(enabled) },
-            onQuit: { [weak self] in self?.quit() },
-            onReconnect: { [weak self] kind in self?.reconnectProvider(kind) },
-            ntfyServer: ntfyServer,
-            onChangeServer: { [weak self] server in
-                guard let self else { return }
-                self.ntfyServer = server.trimmingCharacters(in: .whitespacesAndNewlines)
-                self.refreshPairingQRCode()
-                self.store.refresh()
-            },
-            localPWAURL: { [weak self] in self?.pwaBaseURL },
-            localServerPort: localServerPort,
-            onChangeLocalServerPort: { [weak self] port in
-                guard let self else { return }
-                self.localServerPort = port
-                self.localPWAServer.start(preferredPort: port)
-            },
-            customPWAURL: customPWAURL,
-            onChangeCustomPWAURL: { [weak self] url in
-                guard let self else { return }
-                self.customPWAURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-                self.refreshPairingQRCode()
-            },
-            onRegeneratePairing: { [weak self] in self?.regeneratePairing() },
-            canCheckForUpdates: updater.isConfigured,
-            onCheckForUpdates: { [weak self] in self?.updater.checkForUpdates(nil) }
-        ))
+        let window =
+            settingsWindow
+            ?? {
+                let window = NSWindow(
+                    contentRect: NSRect(x: 0, y: 0, width: 720, height: 580),
+                    styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                window.title = "Settings"
+                window.isReleasedWhenClosed = false
+                window.minSize = NSSize(width: 680, height: 500)
+                window.center()
+                settingsWindow = window
+                return window
+            }()
+        window.contentViewController = NSHostingController(
+            rootView: SettingsView(
+                store: store,
+                pairing: pairing,
+                showsNotch: showsNotch,
+                onToggleNotch: { [weak self] enabled in self?.setShowsNotch(enabled) },
+                showsMenuBar: showsMenuBar,
+                onToggleMenuBar: { [weak self] enabled in self?.setShowsMenuBar(enabled) },
+                notchScreens: notchScreens,
+                notchScreenID: selectedNotchScreenID,
+                onSelectNotchScreen: { [weak self] id in self?.setNotchScreen(id) },
+                notchBehavior: notchBehavior,
+                onSelectNotchBehavior: { [weak self] behavior in self?.setNotchBehavior(behavior) },
+                notchSize: notchMode.size,
+                onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
+                notchPosition: notchMode.position,
+                onSelectNotchPosition: { [weak self] position in self?.setNotchPosition(position) },
+                menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
+                onChangeMenuBarAlertColors: { [weak self] enabled in
+                    self?.setMenuBarAlertColorsEnabled(enabled)
+                },
+                menuBarAlertSettings: menuBarAlertSettings,
+                onChangeMenuBarAlertSettings: { [weak self] settings in
+                    self?.setMenuBarAlertSettings(settings)
+                },
+                sidebarOpacity: sidebarOpacity,
+                onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
+                launchAtLoginEnabled: LaunchAtLoginManager.isEnabled,
+                onChangeLaunchAtLogin: { enabled in LaunchAtLoginManager.setEnabled(enabled) },
+                onQuit: { [weak self] in self?.quit() },
+                onReconnect: { [weak self] kind in self?.reconnectProvider(kind) },
+                ntfyServer: ntfyServer,
+                onChangeServer: { [weak self] server in
+                    guard let self else { return }
+                    self.ntfyServer = server.trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.refreshPairingQRCode()
+                    self.store.refresh()
+                },
+                localPWAURL: { [weak self] in self?.pwaBaseURL },
+                localServerPort: localServerPort,
+                onChangeLocalServerPort: { [weak self] port in
+                    guard let self else { return }
+                    self.localServerPort = port
+                    self.localPWAServer.start(preferredPort: port)
+                },
+                customPWAURL: customPWAURL,
+                onChangeCustomPWAURL: { [weak self] url in
+                    guard let self else { return }
+                    self.customPWAURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.refreshPairingQRCode()
+                },
+                onRegeneratePairing: { [weak self] in self?.regeneratePairing() },
+                canCheckForUpdates: updater.isConfigured,
+                onCheckForUpdates: { [weak self] in self?.updater.checkForUpdates(nil) }
+            ))
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
@@ -2544,7 +3017,10 @@ private extension NSMenu {
     private func showPopoverFromNotch() { togglePopoverPreferringNotchAnchor(true) }
 
     private func togglePopoverPreferringNotchAnchor(_ preferNotchAnchor: Bool) {
-        if popover.isShown { popover.performClose(nil); return }
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
         if preferNotchAnchor, showsNotch, let contentView = sidebarWindow.contentView {
             popover.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minX)
         } else if statusItem.isVisible, let button = statusItem.button {
@@ -2555,4 +3031,7 @@ private extension NSMenu {
     }
 }
 
-@main struct MetriaApp: App { @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate; var body: some Scene { Settings { EmptyView() } } }
+@main struct MetriaApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    var body: some Scene { Settings { EmptyView() } }
+}

@@ -3,7 +3,7 @@
 *A native macOS app that tracks your AI coding assistant usage in real time.*
 
 <p align="center">
-  <img src="https://i.imgur.com/shpAcSm.gif" alt="Metria demo" width="720" />
+  <img src="https://i.imgur.com/LuYjNBr.gif" alt="Metria demo" width="720" />
 </p>
 
 <p align="center">
