@@ -3,13 +3,13 @@ name: macOS app deploy
 on:
   push:
     tags:
-      - "v*"
+      - "macos-v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag, for example v0.1.5"
+        description: "Release tag, for example macos-v0.1.5"
         required: true
-        default: "v0.1.5"
+        default: "macos-v0.1.5"
 
 permissions:
   contents: write
@@ -72,11 +72,12 @@ jobs:
       - name: Package app
         env:
           VERSION: ${{ inputs.version || github.ref_name }}
-          SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast-${{ matrix.arch }}.xml
+          SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/download/macos-latest/appcast-${{ matrix.arch }}.xml
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
           CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
         run: |
           test -n "$SPARKLE_PUBLIC_ED_KEY"
+          [[ "${VERSION#macos-v}" != "$VERSION" ]]
           bash apps/macos-native/scripts/package-macos.sh
 
       - name: Validate app bundle
@@ -155,9 +156,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ inputs.version || github.ref_name }}"
+          [[ "$tag" == macos-v* ]]
           assets="dist/*.zip dist/*.dmg dist/appcast-intel.xml dist/appcast-apple-silicon.xml dist/appcast.xml"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" $assets --clobber --repo "${{ github.repository }}"
           else
             gh release create "$tag" $assets --generate-notes --repo "${{ github.repository }}"
+          fi
+
+          channel_assets="dist/appcast-intel.xml dist/appcast-apple-silicon.xml"
+          if gh release view macos-latest >/dev/null 2>&1; then
+            gh release upload macos-latest $channel_assets --clobber --repo "${{ github.repository }}"
+          else
+            gh release create macos-latest $channel_assets --title "macOS latest" --notes "Native macOS update channel." --repo "${{ github.repository }}"
           fi

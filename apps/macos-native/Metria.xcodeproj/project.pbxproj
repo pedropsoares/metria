@@ -7,18 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0A4C0E5A9D184E7CA2B12601 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0A4C0E5A9D184E7CA2B12602 /* AppIcon.icon */; };
 		1F928336732F72EF903CE215 /* LocalPWAServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 942FF095F80398F2F48468E8 /* LocalPWAServer.swift */; };
 		31F56B15827398A3510322E7 /* CodexProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */; };
 		46A2C87091DB2E55D1B82616 /* MetriaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC404DE64C320E52402D468 /* MetriaApp.swift */; };
 		4721758378AC7CB6DCE97443 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = EF981CF3ECD2D27A2B2730B3 /* Sparkle */; };
 		52564D3CB2D6251DD5733657 /* PairingSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B8670774860D40198385E3 /* PairingSecret.swift */; };
 		577F4D95C96F959AA5487127 /* ProviderError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4030AD71B8AFE1AB81BA2549 /* ProviderError.swift */; };
+		5C570FEB062A2BFD5F60500B /* ProviderActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */; };
 		617E9F66F43072EBF15E76C5 /* LocalNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */; };
 		636C3963D32BD250319A58EF /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36216E6ACB911FA08CA36234 /* Updater.swift */; };
 		6EF9BB36424EF416AAE77439 /* KeychainReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F37E9B9BF1481EC13F0AB9B /* KeychainReader.swift */; };
 		9309C7F6C13A860ADBCF4BFA /* MetriaCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8EB81A191BD1F3F9D21426FB /* MetriaCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		9401FE6A4D61FC25C4CADA12 /* ProviderRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B98B0A12299F11B2D7262C2 /* ProviderRegistry.swift */; };
+		989E9729C42611755710CD7C /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 9BD185ECDE501CAD12DA5438 /* AppIcon.icon */; };
 		9CC880BFC528518A30EFE40A /* ProviderKind+Presentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 820924689FDBC3107D06765C /* ProviderKind+Presentation.swift */; };
 		A0B6AF481AEFD26114F18CD7 /* MetriaCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EB81A191BD1F3F9D21426FB /* MetriaCore.framework */; };
 		A58CC89CB7D116D25908E8DB /* UsageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4C6F8FCF0C2AE2E932ED6F /* UsageStore.swift */; };
@@ -53,7 +54,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		0A4C0E5A9D184E7CA2B12602 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexProvider.swift; sourceTree = "<group>"; };
 		17B8670774860D40198385E3 /* PairingSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSecret.swift; sourceTree = "<group>"; };
 		18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNetwork.swift; sourceTree = "<group>"; };
@@ -68,8 +68,10 @@
 		8F37E9B9BF1481EC13F0AB9B /* KeychainReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainReader.swift; sourceTree = "<group>"; };
 		942FF095F80398F2F48468E8 /* LocalPWAServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPWAServer.swift; sourceTree = "<group>"; };
 		97692A6C8502A27D4FA476F0 /* MetriaResources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetriaResources.swift; sourceTree = "<group>"; };
+		9BD185ECDE501CAD12DA5438 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		ABC404DE64C320E52402D468 /* MetriaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetriaApp.swift; sourceTree = "<group>"; };
 		B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BIP39Wordlist.swift; sourceTree = "<group>"; };
+		EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderActivityMonitor.swift; sourceTree = "<group>"; };
 		FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -93,6 +95,7 @@
 				942FF095F80398F2F48468E8 /* LocalPWAServer.swift */,
 				ABC404DE64C320E52402D468 /* MetriaApp.swift */,
 				97692A6C8502A27D4FA476F0 /* MetriaResources.swift */,
+				EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */,
 				36216E6ACB911FA08CA36234 /* Updater.swift */,
 				5B52A35A5B1800D8DF53A0E9 /* Providers */,
 			);
@@ -132,6 +135,14 @@
 			path = Providers;
 			sourceTree = "<group>";
 		};
+		743020293964905E3450A926 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				9BD185ECDE501CAD12DA5438 /* AppIcon.icon */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		C0EAFE8D810C80E0C9591AB7 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -144,18 +155,10 @@
 		DEE7314F484D35A0B765790F = {
 			isa = PBXGroup;
 			children = (
-				0A4C0E5A9D184E7CA2B12603 /* Resources */,
+				743020293964905E3450A926 /* Resources */,
 				345983A9F3EF634D3030AFAB /* Sources */,
 				C0EAFE8D810C80E0C9591AB7 /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		0A4C0E5A9D184E7CA2B12603 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				0A4C0E5A9D184E7CA2B12602 /* AppIcon.icon */,
-			);
-			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -166,9 +169,9 @@
 			buildConfigurationList = 0080899C20487336489E8EA0 /* Build configuration list for PBXNativeTarget "Metria" */;
 			buildPhases = (
 				280AF565B3B1FACCD3D5541A /* Sources */,
+				D28EFEF8E4CF2D9D298FFBB5 /* Resources */,
 				D9D2A412C18D8DF946C8C770 /* Frameworks */,
 				FCD8448EC65257656112105B /* Embed Frameworks */,
-				0A4C0E5A9D184E7CA2B12604 /* Resources */,
 				A54BE8E112C3500CF036C0AE /* Copy bundled resources */,
 			);
 			buildRules = (
@@ -236,11 +239,11 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		0A4C0E5A9D184E7CA2B12604 /* Resources */ = {
+		D28EFEF8E4CF2D9D298FFBB5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0A4C0E5A9D184E7CA2B12601 /* AppIcon.icon in Resources */,
+				989E9729C42611755710CD7C /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,6 +284,7 @@
 				46A2C87091DB2E55D1B82616 /* MetriaApp.swift in Sources */,
 				FFC29DC11D67E94AB5CAFF31 /* MetriaResources.swift in Sources */,
 				B0D16525171231FFE5C69C84 /* OpenCodeGoProvider.swift in Sources */,
+				5C570FEB062A2BFD5F60500B /* ProviderActivityMonitor.swift in Sources */,
 				577F4D95C96F959AA5487127 /* ProviderError.swift in Sources */,
 				9CC880BFC528518A30EFE40A /* ProviderKind+Presentation.swift in Sources */,
 				9401FE6A4D61FC25C4CADA12 /* ProviderRegistry.swift in Sources */,

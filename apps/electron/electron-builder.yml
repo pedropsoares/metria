@@ -21,6 +21,5 @@ linux:
   syncDesktopName: true
   artifactName: Metria-Electron-${version}-${arch}.${ext}
 publish:
-  provider: github
-  owner: yurirxmos
-  repo: metria
+  provider: generic
+  url: https://github.com/yurirxmos/metria/releases/download/electron-latest/

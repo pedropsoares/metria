@@ -6,7 +6,8 @@ BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/dist}"
 XCODE_BUILD_DIR="${XCODE_BUILD_DIR:-$ROOT_DIR/.build/xcode-package}"
 VERSION="${VERSION:-$(git -C "$ROOT_DIR" describe --tags --always 2>/dev/null || true)}"
 VERSION="${VERSION:-dev}"
-RELEASE_VERSION="${VERSION#v}"
+RELEASE_VERSION="${VERSION#macos-}"
+RELEASE_VERSION="${RELEASE_VERSION#v}"
 if [[ "$RELEASE_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
     MARKETING_VERSION="$RELEASE_VERSION"
 else
@@ -51,6 +52,7 @@ if [[ -n "${SPARKLE_FEED_URL:-}" && -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $SPARKLE_FEED_URL" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :SUScheduledCheckInterval integer 3600" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :SUAutomaticallyUpdate bool true" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :SUVerifyUpdateBeforeExtraction bool true" "$PLIST"
     /usr/libexec/PlistBuddy -c "Add :SURequireSignedFeed bool true" "$PLIST"

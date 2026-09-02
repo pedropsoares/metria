@@ -1,20 +1,20 @@
 import Foundation
 import MetriaCore
 
-/// Fetches Codex usage, preferring the OpenCode-managed OpenAI credentials and falling
-/// back to parsing local Codex CLI session files when those credentials are missing.
+/// Fetches Codex usage from the native Codex CLI credentials, falling back to local
+/// Codex CLI session files when those credentials are missing.
 struct CodexProvider: UsageProvider {
     let kind = ProviderKind.codex
     var isAvailable: Bool {
-        FileManager.default.fileExists(atPath: authURL.path) || FileManager.default.fileExists(atPath: sessionsURL.path)
+        FileManager.default.fileExists(atPath: codexAuthURL.path) || FileManager.default.fileExists(atPath: sessionsURL.path)
     }
-    let setupHint = "Sign in to Codex or OpenCode to create local usage data."
+    let setupHint = "Sign in to Codex to create local usage data."
 
-    private var authURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/auth.json") }
+    private var codexAuthURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/auth.json") }
     private var sessionsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions") }
 
     func fetch() async -> ProviderFetchResult {
-        if let remoteResult = await fetchOpenCodeUsage() {
+        if let remoteResult = await fetchCodexUsage() {
             switch remoteResult {
             case .loaded(_), .empty(_):
                 return remoteResult
@@ -28,13 +28,13 @@ struct CodexProvider: UsageProvider {
         }
         return fetchLocalUsage()
     }
-    private func fetchOpenCodeUsage() async -> ProviderFetchResult? {
-        guard let data = try? Data(contentsOf: authURL) else { return nil }
-        guard let auth = try? JSONDecoder().decode(OpenCodeAuth.self, from: data) else { return nil }
-        guard let credentials = auth.openai else { return nil }
+    private func fetchCodexUsage() async -> ProviderFetchResult? {
+        guard let data = try? Data(contentsOf: codexAuthURL) else { return nil }
+        guard let credentials = try? JSONDecoder().decode(CodexAuth.self, from: data).tokens else { return nil }
+        guard let accountId = credentials.accountId else { return nil }
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
-        request.setValue("Bearer \(credentials.access)", forHTTPHeaderField: "Authorization")
-        request.setValue(credentials.accountId, forHTTPHeaderField: "ChatGPT-Account-Id")
+        request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(accountId, forHTTPHeaderField: "ChatGPT-Account-Id")
         request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -44,7 +44,7 @@ struct CodexProvider: UsageProvider {
                 return .failed(kind, error.localizedDescription, retryAfter: error.retryAfter)
             }
             let value = try JSONDecoder().decode(OpenAIUsageResponse.self, from: data)
-            return .loaded(ProviderUsage(kind: kind, windows: [
+            return .loaded(ProviderUsage(kind: kind, accountLabel: credentials.idToken.flatMap(KeychainReader.tokenEmail) ?? KeychainReader.tokenEmail(credentials.accessToken), windows: [
                 UsageWindow(title: "Current session", percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
                 UsageWindow(title: "All models", percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
             ], updatedAt: Date(), error: nil))
@@ -69,7 +69,21 @@ struct CodexProvider: UsageProvider {
         }
         return .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: "No recent local usage data was found. Sign in and use Codex once to create a usage snapshot."))
     }
-    private struct OpenCodeAuth: Decodable { let openai: Credentials?; struct Credentials: Decodable { let access: String; let accountId: String } }
+    private struct CodexAuth: Decodable {
+        let tokens: Tokens?
+
+        struct Tokens: Decodable {
+            let accessToken: String
+            let accountId: String?
+            let idToken: String?
+
+            enum CodingKeys: String, CodingKey {
+                case accessToken = "access_token"
+                case accountId = "account_id"
+                case idToken = "id_token"
+            }
+        }
+    }
     private struct OpenAIUsageResponse: Decodable {
         let rateLimit: RateLimit
         enum CodingKeys: String, CodingKey { case rateLimit = "rate_limit" }
