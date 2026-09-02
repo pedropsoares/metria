@@ -5,15 +5,13 @@ import Sparkle
 /// a release feed configured in the application bundle.
 @MainActor
 final class AppUpdater: NSObject {
-    private let controller: SPUStandardUpdaterController?
+    private var controller: SPUStandardUpdaterController?
 
     override init() {
-        if let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String, !feedURL.isEmpty {
-            controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
-        } else {
-            controller = nil
-        }
         super.init()
+        if let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String, !feedURL.isEmpty {
+            controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
+        }
     }
 
     var canCheckForUpdates: Bool {
@@ -32,5 +30,18 @@ final class AppUpdater: NSObject {
     /// to Sparkle's own hourly `SUScheduledCheckInterval` background checks.
     func checkForUpdatesInBackground() {
         controller?.updater.checkForUpdatesInBackground()
+    }
+}
+
+extension AppUpdater: SPUUpdaterDelegate {
+    /// Runs right before Sparkle shows its "update available" alert. Metria is a menu-bar
+    /// accessory app with no Dock icon, so an update found by the silent background check
+    /// (on launch or hourly) could otherwise pop up behind other windows and go unnoticed,
+    /// leaving "Check for Updates" as the only reliable way to learn about a new release.
+    /// Activating the app here brings that alert to the front instead.
+    nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        Task { @MainActor in
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 }
