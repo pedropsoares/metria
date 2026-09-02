@@ -53,6 +53,7 @@ public protocol UsageProvider {
     var kind: ProviderKind { get }
     var isAvailable: Bool { get }
     var setupHint: String { get }
+    var usageWindowTitles: [String] { get }
     func fetch() async -> ProviderFetchResult
 }
 
@@ -66,6 +67,7 @@ public final class UsageStore: ObservableObject {
         }
     }
     @Published public private(set) var enabledProviderKinds: Set<ProviderKind>
+    @Published public private(set) var hiddenWindowTitlesByProvider: [ProviderKind: Set<String>] = [:]
     /// The providers to display, in `ProviderKind` order, backfilled with an empty
     /// placeholder for any enabled provider that hasn't reported usage yet. Computed once
     /// per underlying change instead of by every view that needs it on every render.
@@ -79,6 +81,7 @@ public final class UsageStore: ObservableObject {
     private var retryTasks: [ProviderKind: Task<Void, Never>] = [:]
     private var isRefreshing = false
     private let enabledProvidersKey = "enabledProviderKinds"
+    private let hiddenWindowTitlesKey = "hiddenUsageWindowTitles"
     private let cachedUsageKey = "cachedProviderUsage"
     private let knownProvidersKey = "knownProviderKinds"
 
@@ -117,6 +120,11 @@ public final class UsageStore: ObservableObject {
         }
         self.providers = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
             .filter { availableKinds.contains($0.kind) && enabledProviderKinds.contains($0.kind) }
+        let savedHidden = (defaults.dictionary(forKey: hiddenWindowTitlesKey) as? [String: [String]]) ?? [:]
+        hiddenWindowTitlesByProvider = savedHidden.reduce(into: [ProviderKind: Set<String>]()) { result, entry in
+            guard let kind = ProviderKind(rawValue: entry.key) else { return }
+            result[kind] = Set(entry.value)
+        }
         updateVisibleProviders()
     }
 
@@ -135,6 +143,10 @@ public final class UsageStore: ObservableObject {
 
     public func setupHint(for kind: ProviderKind) -> String? {
         sources.first(where: { $0.kind == kind })?.setupHint
+    }
+
+    public func usageWindowTitles(for kind: ProviderKind) -> [String] {
+        sources.first(where: { $0.kind == kind })?.usageWindowTitles ?? []
     }
 
     public func diagnosis(for kind: ProviderKind) -> String {
@@ -172,6 +184,27 @@ public final class UsageStore: ObservableObject {
         defaults.set(updatedKinds.map(\.rawValue), forKey: enabledProvidersKey)
         updateVisibleProviders()
         refresh()
+    }
+
+    /// Controls whether a specific usage window (e.g. "Current session") shows up in the
+    /// card, independent of `enabledProviderKinds` (which toggles a whole provider). Never
+    /// lets the last visible window of a provider be hidden, so the card always has
+    /// something to show.
+    public func setWindowVisible(_ title: String, for kind: ProviderKind, isVisible: Bool) {
+        var hiddenForKind = hiddenWindowTitlesByProvider[kind] ?? []
+        if isVisible {
+            hiddenForKind.remove(title)
+        } else {
+            let knownTitles = usageWindowTitles(for: kind)
+            let visibleCount = knownTitles.filter { !hiddenForKind.contains($0) }.count
+            guard visibleCount > 1 else { return }
+            hiddenForKind.insert(title)
+        }
+        hiddenWindowTitlesByProvider[kind] = hiddenForKind
+        let serializable = hiddenWindowTitlesByProvider.reduce(into: [String: [String]]()) { result, entry in
+            result[entry.key.rawValue] = Array(entry.value)
+        }
+        defaults.set(serializable, forKey: hiddenWindowTitlesKey)
     }
 
     public func start() {

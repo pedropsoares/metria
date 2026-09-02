@@ -6,6 +6,7 @@ struct ClaudeProvider: UsageProvider {
     let kind = ProviderKind.claude
     var isAvailable: Bool { KeychainReader.hasClaudeCredentials }
     let setupHint = "Install Claude Code and sign in to make usage available."
+    let usageWindowTitles = ["Current session", "All models"]
     private static let accountEmailCache = ClaudeAccountEmailCache()
     func fetch() async -> ProviderFetchResult {
         do {

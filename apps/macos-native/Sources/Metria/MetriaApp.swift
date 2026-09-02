@@ -286,20 +286,30 @@ extension UsageWindow {
 struct DashboardUsageCard: View {
     let usage: ProviderUsage
     let showsAccount: Bool
+    var hiddenWindowTitles: Set<String> = []
     @AppStorage("showAccountEmails") private var showAccountEmails = true
+
+    private var visibleWindows: [UsageWindow] {
+        usage.windows.filter { !hiddenWindowTitles.contains($0.title) }
+    }
 
     var body: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 if usage.windows.isEmpty {
                     Label(usage.error ?? "Waiting for usage data...", systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill")
                         .font(.subheadline)
                         .foregroundStyle(usage.error == nil ? Color.secondary : Color.orange)
                         .fixedSize(horizontal: false, vertical: true)
+                } else if visibleWindows.isEmpty {
+                    Label("All usage windows for \(usage.kind.rawValue) are hidden. Enable one in Settings.", systemImage: "eye.slash")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ForEach(usage.windows) { window in
+                    ForEach(visibleWindows) { window in
                         let color = GaugeColor.color(for: window.percent)
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(window.title)
                                 Spacer()
@@ -335,9 +345,11 @@ struct DashboardUsageCard: View {
                  }
                 Spacer()
                 if usage.error == nil {
-                    Label("Connected", systemImage: "checkmark.circle.fill")
+                    Image(systemName: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.green)
+                        .accessibilityLabel("Connected")
+                        .help("Connected")
                 }
             }
         }
@@ -370,7 +382,9 @@ struct PopoverContent: View {
                             .padding(.vertical, 24)
                             .frame(maxWidth: .infinity)
                     } else {
-                        ForEach(store.visibleProviders) { DashboardUsageCard(usage: $0, showsAccount: true) }
+                        ForEach(store.visibleProviders) {
+                            DashboardUsageCard(usage: $0, showsAccount: true, hiddenWindowTitles: store.hiddenWindowTitlesByProvider[$0.kind] ?? [])
+                        }
                     }
                 }
             }
@@ -450,12 +464,15 @@ struct NotchGeometry {
         guard let screen = screen ?? NSScreen.main ?? NSScreen.screens.first else {
             return NotchGeometry(position: position, leftEdgeX: 0, rightEdgeX: 0, topEdgeY: 0, bottomEdgeY: 0, centerX: 0)
         }
+        // The left/right pill keeps a small gap so it doesn't crowd the menu bar's icons;
+        // the top/bottom bar has no such icons to clear, so it sits flush against the edge.
+        let edgeInset: CGFloat = position.axis == .horizontal ? 0 : 12
         return NotchGeometry(
             position: position,
             leftEdgeX: screen.frame.minX,
             rightEdgeX: screen.frame.maxX,
-            topEdgeY: screen.visibleFrame.maxY - 12,
-            bottomEdgeY: screen.visibleFrame.minY + 12,
+            topEdgeY: screen.visibleFrame.maxY - edgeInset,
+            bottomEdgeY: screen.visibleFrame.minY + edgeInset,
             centerX: screen.frame.midX
         )
     }
@@ -545,9 +562,9 @@ struct NotchContent: View {
     let menuBarAlertSettings: MenuBarAlertSettings
     let onNotchHover: (Bool) -> Void
     let onProviderHover: (ProviderKind, Int, Bool) -> Void
+    let onProviderTap: (ProviderKind) -> Void
     @State private var isHovered = false
     @State private var hasAppeared = false
-    @State private var pendingHoverCollapse: DispatchWorkItem?
 
     private var isHiddenMode: Bool { mode.isHiddenMode }
     private var metrics: NotchMetrics { NotchMetrics(size: mode.size) }
@@ -646,7 +663,6 @@ struct NotchContent: View {
          the rail would expand with the pointer still far from a hidden rail.
          */
         .onHover { isInside in
-            pendingHoverCollapse?.cancel()
             if isInside {
                 withAnimation(.spring(response: 0.36, dampingFraction: 0.84)) {
                     isHovered = true
@@ -694,6 +710,9 @@ struct NotchContent: View {
                 .onHover { isHovering in
                     onProviderHover(usage.kind, index, isHovering)
                 }
+                .onTapGesture {
+                    onProviderTap(usage.kind)
+                }
         }
     }
 
@@ -725,7 +744,7 @@ struct NotchContent: View {
     }
 
     private var topControls: some View {
-        Image(systemName: isHiddenMode ? "pin.fill" : "arrow.right")
+        Image(systemName: isHiddenMode ? "pin.fill" : "eye.slash")
             .font(.system(size: 13 * metrics.scale))
             .foregroundStyle(Color(white: 0.58))
             .accessibilityLabel(isHiddenMode ? "Pin notch" : "Hide notch")
@@ -756,6 +775,7 @@ struct NotchContent: View {
 
 struct NotchCardContent: View {
     let usage: ProviderUsage
+    let hiddenWindowTitles: Set<String>
     let metrics: NotchMetrics
     let position: NotchPosition
     let backgroundOpacity: Double
@@ -773,7 +793,7 @@ struct NotchCardContent: View {
     }
 
     private var card: some View {
-        DashboardUsageCard(usage: usage, showsAccount: true)
+        DashboardUsageCard(usage: usage, showsAccount: true, hiddenWindowTitles: hiddenWindowTitles)
             .padding(8 * metrics.scale)
             .frame(width: metrics.cardContentWidth)
             .background {
@@ -1040,13 +1060,6 @@ struct SidebarProviderItem: View {
     }
 }
 
-/// The two display modes are mutually exclusive: usage either appears in the
-/// floating notch, or as text in the macOS menu bar.
-enum DisplayMode: String {
-    case sidebar
-    case menuBar
-}
-
 struct NotchScreen: Identifiable, Hashable {
     let id: UInt32
     let name: String
@@ -1119,20 +1132,67 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     }
 }
 
+/// A segmented-style picker where every option genuinely fills an equal share of the row.
+/// `Picker(...).pickerStyle(.segmented)` on macOS keeps its native control at its intrinsic
+/// (fit) size and centers it even inside a `.frame(maxWidth: .infinity)`, leaving dead space
+/// on both sides instead of stretching each segment.
+/// A real `NSSegmentedControl` wrapper with `segmentDistribution = .fillEqually`, so the
+/// segments genuinely stretch to fill the row while keeping native press/hover states,
+/// keyboard navigation and accessibility — a pure-SwiftUI reimplementation can't match that.
+private struct FlexSegmentedControl<Option: Hashable>: NSViewRepresentable {
+    let options: [Option]
+    let title: (Option) -> String
+    @Binding var selection: Option
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl(
+            labels: options.map(title),
+            trackingMode: .selectOne,
+            target: context.coordinator,
+            action: #selector(Coordinator.selectionChanged(_:))
+        )
+        control.segmentDistribution = .fillEqually
+        control.selectedSegment = options.firstIndex(of: selection) ?? 0
+        return control
+    }
+
+    func updateNSView(_ nsView: NSSegmentedControl, context: Context) {
+        context.coordinator.parent = self
+        let index = options.firstIndex(of: selection) ?? 0
+        if nsView.selectedSegment != index {
+            nsView.selectedSegment = index
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject {
+        var parent: FlexSegmentedControl
+        init(parent: FlexSegmentedControl) { self.parent = parent }
+
+        @objc func selectionChanged(_ sender: NSSegmentedControl) {
+            guard parent.options.indices.contains(sender.selectedSegment) else { return }
+            parent.selection = parent.options[sender.selectedSegment]
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var pairing: PairingManager
     @AppStorage("showAccountEmails") private var showAccountEmails = true
-    let displayMode: DisplayMode
-    let onSelectDisplayMode: (DisplayMode) -> Void
+    @State private var showsNotch: Bool
+    let onToggleNotch: (Bool) -> Void
+    @State private var showsMenuBar: Bool
+    let onToggleMenuBar: (Bool) -> Void
     let notchScreens: [NotchScreen]
     let notchScreenID: UInt32
     let onSelectNotchScreen: (UInt32) -> Void
-    let notchBehavior: NotchBehavior
+    @State private var notchBehavior: NotchBehavior
     let onSelectNotchBehavior: (NotchBehavior) -> Void
-    let notchSize: NotchSize
+    @State private var notchSize: NotchSize
     let onSelectNotchSize: (NotchSize) -> Void
-    let notchPosition: NotchPosition
+    @State private var notchPosition: NotchPosition
     let onSelectNotchPosition: (NotchPosition) -> Void
     @State private var menuBarAlertColorsEnabled: Bool
     let onChangeMenuBarAlertColors: (Bool) -> Void
@@ -1158,6 +1218,8 @@ struct SettingsView: View {
     @State private var customPWAURL: String
     let onChangeCustomPWAURL: (String) -> Void
     let onRegeneratePairing: () -> Void
+    let canCheckForUpdates: Bool
+    let onCheckForUpdates: () -> Void
     @State private var isPhraseRevealed = false
     @State private var isRegenerateConfirmationShown = false
     @State private var isDiagnosticShown = false
@@ -1170,8 +1232,10 @@ struct SettingsView: View {
     init(
         store: UsageStore,
         pairing: PairingManager,
-        displayMode: DisplayMode,
-        onSelectDisplayMode: @escaping (DisplayMode) -> Void,
+        showsNotch: Bool,
+        onToggleNotch: @escaping (Bool) -> Void,
+        showsMenuBar: Bool,
+        onToggleMenuBar: @escaping (Bool) -> Void,
         notchScreens: [NotchScreen],
         notchScreenID: UInt32,
         onSelectNotchScreen: @escaping (UInt32) -> Void,
@@ -1199,20 +1263,24 @@ struct SettingsView: View {
         onChangeLocalServerPort: @escaping (UInt16) -> Void,
         customPWAURL: String,
         onChangeCustomPWAURL: @escaping (String) -> Void,
-        onRegeneratePairing: @escaping () -> Void
+        onRegeneratePairing: @escaping () -> Void,
+        canCheckForUpdates: Bool,
+        onCheckForUpdates: @escaping () -> Void
     ) {
         self.store = store
         self.pairing = pairing
-        self.displayMode = displayMode
-        self.onSelectDisplayMode = onSelectDisplayMode
+        _showsNotch = State(initialValue: showsNotch)
+        self.onToggleNotch = onToggleNotch
+        _showsMenuBar = State(initialValue: showsMenuBar)
+        self.onToggleMenuBar = onToggleMenuBar
         self.notchScreens = notchScreens
         self.notchScreenID = notchScreenID
         self.onSelectNotchScreen = onSelectNotchScreen
-        self.notchBehavior = notchBehavior
+        _notchBehavior = State(initialValue: notchBehavior)
         self.onSelectNotchBehavior = onSelectNotchBehavior
-        self.notchSize = notchSize
+        _notchSize = State(initialValue: notchSize)
         self.onSelectNotchSize = onSelectNotchSize
-        self.notchPosition = notchPosition
+        _notchPosition = State(initialValue: notchPosition)
         self.onSelectNotchPosition = onSelectNotchPosition
         _menuBarAlertColorsEnabled = State(initialValue: menuBarAlertColorsEnabled)
         self.onChangeMenuBarAlertColors = onChangeMenuBarAlertColors
@@ -1238,7 +1306,14 @@ struct SettingsView: View {
         _customPWAURL = State(initialValue: customPWAURL)
         self.onChangeCustomPWAURL = onChangeCustomPWAURL
         self.onRegeneratePairing = onRegeneratePairing
+        self.canCheckForUpdates = canCheckForUpdates
+        self.onCheckForUpdates = onCheckForUpdates
     }
+
+    private static let mascotImage: NSImage? = {
+        guard let url = MetriaResources.bundle.url(forResource: "metria-mascot", withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
+    }()
 
     var body: some View {
         navigationContent
@@ -1248,18 +1323,35 @@ struct SettingsView: View {
     private var navigationContent: some View {
         HSplitView {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Metria")
-                    .font(.headline)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                HStack(spacing: 8) {
+                    if let mascot = SettingsView.mascotImage {
+                        Image(nsImage: mascot)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                    }
+                    Text("Metria")
+                        .font(.headline)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
 
                 List(SettingsSection.allCases, selection: $selectedSection) { section in
                     Label(section.title, systemImage: section.symbol)
                         .tag(section)
                 }
                 .listStyle(.sidebar)
+
+                Divider()
+                Button(role: .destructive, action: onQuit) {
+                    Label("Quit", systemImage: "power")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.red)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             }
-            .frame(minWidth: 160, idealWidth: 180, maxWidth: 220)
+            .frame(minWidth: 140, idealWidth: 150, maxWidth: 170)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(selectedSection.title)
@@ -1285,18 +1377,22 @@ struct SettingsView: View {
     private var generalView: some View {
         Form {
             Section("Display") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Show usage in")
-                        .font(.headline)
-                    Picker("Show usage in", selection: Binding(get: { displayMode }, set: onSelectDisplayMode)) {
-                        Text("Notch").tag(DisplayMode.sidebar)
-                        Text("Menu bar").tag(DisplayMode.menuBar)
+                Toggle("Show notch", isOn: Binding(
+                    get: { showsNotch },
+                    set: { newValue in
+                        showsNotch = newValue
+                        onToggleNotch(newValue)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                }
-                Text("Only one option is visible at a time.")
-                    .foregroundStyle(.secondary)
+                ))
+                .disabled(showsNotch && !showsMenuBar)
+                Toggle("Show in menu bar", isOn: Binding(
+                    get: { showsMenuBar },
+                    set: { newValue in
+                        showsMenuBar = newValue
+                        onToggleMenuBar(newValue)
+                    }
+                ))
+                .disabled(showsMenuBar && !showsNotch)
                 Toggle("Show provider account email", isOn: $showAccountEmails)
                 Text("Show the account email when available, or a masked API key for OpenCode Go.")
                     .foregroundStyle(.secondary)
@@ -1306,13 +1402,18 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Behavior")
                         .font(.headline)
-                    Picker("Notch behavior", selection: Binding(get: { notchBehavior }, set: onSelectNotchBehavior)) {
-                        ForEach(NotchBehavior.allCases) { behavior in
-                            Text(behavior.title).tag(behavior)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
+                    FlexSegmentedControl(
+                        options: NotchBehavior.allCases,
+                        title: { $0.title },
+                        selection: Binding(
+                            get: { notchBehavior },
+                            set: { newValue in
+                                notchBehavior = newValue
+                                onSelectNotchBehavior(newValue)
+                            }
+                        )
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 24)
                 }
                 Text("Keep the provider rail visible or collapse it until you hover over the notch.")
                     .foregroundStyle(.secondary)
@@ -1341,26 +1442,36 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Position")
                         .font(.headline)
-                    Picker("Position", selection: Binding(get: { notchPosition }, set: onSelectNotchPosition)) {
-                        ForEach(NotchPosition.allCases) { position in
-                            Text(position.title).tag(position)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
+                    FlexSegmentedControl(
+                        options: NotchPosition.allCases,
+                        title: { $0.title },
+                        selection: Binding(
+                            get: { notchPosition },
+                            set: { newValue in
+                                notchPosition = newValue
+                                onSelectNotchPosition(newValue)
+                            }
+                        )
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 24)
                 }
                 Text("Top and bottom become a horizontal bar; left and right stay a vertical rail.")
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Size")
                         .font(.headline)
-                    Picker("Size", selection: Binding(get: { notchSize }, set: onSelectNotchSize)) {
-                        ForEach(NotchSize.allCases) { size in
-                            Text(size.title).tag(size)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
+                    FlexSegmentedControl(
+                        options: NotchSize.allCases,
+                        title: { $0.title },
+                        selection: Binding(
+                            get: { notchSize },
+                            set: { newValue in
+                                notchSize = newValue
+                                onSelectNotchSize(newValue)
+                            }
+                        )
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 24)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Opacity")
@@ -1378,9 +1489,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Updates") {
+            Section("Refresh") {
                 Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
                     Text("Refresh every \(Int(store.refreshInterval / 60)) min")
+                }
+            }
+
+            Section("Software Update") {
+                Button("Check for Updates…", action: onCheckForUpdates)
+                    .disabled(!canCheckForUpdates)
+                if !canCheckForUpdates {
+                    Text("Automatic updates aren't configured for this build.")
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -1397,10 +1517,6 @@ struct SettingsView: View {
                 ))
                 Text("Metria will start automatically and remain available in the menu bar.")
                     .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Button("Exit", role: .destructive, action: onQuit)
             }
         }
         .formStyle(.grouped)
@@ -1457,6 +1573,13 @@ struct SettingsView: View {
                     ))
                     .disabled(!store.isProviderAvailable(kind))
 
+                    ForEach(store.usageWindowTitles(for: kind), id: \.self) { title in
+                        Toggle("Show \"\(title)\"", isOn: Binding(
+                            get: { !(store.hiddenWindowTitlesByProvider[kind]?.contains(title) ?? false) },
+                            set: { store.setWindowVisible(title, for: kind, isVisible: $0) }
+                        ))
+                    }
+
                     HStack {
                         Button("Diagnose") {
                             diagnosticMessage = store.diagnosis(for: kind)
@@ -1497,7 +1620,7 @@ struct SettingsView: View {
                 }
             }
 
-            Text("At least one provider must remain enabled.")
+            Text("At least one provider must remain enabled, and at least one usage window per provider.")
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
@@ -1607,10 +1730,20 @@ struct SettingsView: View {
     }
 }
 
+private extension NSMenu {
+    @discardableResult
+    func addItem(withTitle title: String, action: Selector?, keyEquivalent: String, symbolName: String) -> NSMenuItem {
+        let item = addItem(withTitle: title, action: action, keyEquivalent: keyEquivalent)
+        item.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+        return item
+    }
+}
+
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = UsageStore(providers: ProviderRegistry.makeProviders()); var statusItem: NSStatusItem!; var popover: NSPopover!; var sidebarWindow: NSPanel!; var settingsWindow: NSWindow?; var observation: AnyCancellable?; private let ntfyPublisher = NtfyPublisher(); let pairing = PairingManager(); private let updater = AppUpdater(); private let localPWAServer = LocalPWAServer()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        migrateDisplayModeIfNeeded()
         NSApp.setActivationPolicy(.accessory)
         store.start()
         configureStatusItem()
@@ -1630,7 +1763,9 @@ struct SettingsView: View {
             guard let self else { return }
             self.ntfyPublisher.publish(providers, secret: self.pairing.currentSecret)
         }
-        applyDisplayMode()
+        applyNotchVisibility()
+        applyMenuBarVisibility()
+        statusItem.menu = buildAppMenu()
     }
 
     private var ntfyServer: String {
@@ -1764,15 +1899,20 @@ struct SettingsView: View {
 
     private func buildAppMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "")
-        menu.addItem(withTitle: displayMode == .menuBar ? "Notch mode" : "Menu mode", action: displayMode == .menuBar ? #selector(switchToSidebar) : #selector(switchToMenuBar), keyEquivalent: "")
+        menu.addItem(withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "", symbolName: "rectangle.dock")
+        let notchItem = menu.addItem(withTitle: "Show notch", action: #selector(toggleNotchVisibility), keyEquivalent: "", symbolName: "capsule")
+        notchItem.state = showsNotch ? .on : .off
+        notchItem.isEnabled = !(showsNotch && !showsMenuBar)
+        let menuBarItem = menu.addItem(withTitle: "Show in menu bar", action: #selector(toggleMenuBarVisibility), keyEquivalent: "", symbolName: "menubar.rectangle")
+        menuBarItem.state = showsMenuBar ? .on : .off
+        menuBarItem.isEnabled = !(showsMenuBar && !showsNotch)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",", symbolName: "gearshape")
         if updater.isConfigured {
-            menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: "")
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)), keyEquivalent: "", symbolName: "arrow.trianglehead.2.clockwise")
         }
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q", symbolName: "power")
         menu.items.forEach { $0.target = self }
         if updater.isConfigured {
             menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target = updater
@@ -1820,6 +1960,7 @@ struct SettingsView: View {
     private var isRailHovered = false
     private var isCardHovered = false
     private var pendingCardDismiss: DispatchWorkItem?
+    private var pendingCardShow: DispatchWorkItem?
 
     /// A vertical pill's offset compensates for its single-corner-anchored hover growth
     /// (see `NotchContent.railHoverOffset`); a horizontal bar needs none, since it grows
@@ -1861,7 +2002,7 @@ struct SettingsView: View {
     }
 
     private func moveNotchToSelectedScreen() {
-        guard displayMode == .sidebar, let sidebarWindow, let screen = selectedNotchScreen else { return }
+        guard showsNotch, let sidebarWindow, let screen = selectedNotchScreen else { return }
         let axis = notchMode.position.axis
         let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
         let defaultFrame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchExpansionOffset)
@@ -1891,7 +2032,8 @@ struct SettingsView: View {
             onNotchHover: { [weak self] isHovered in self?.setRailHovered(isHovered) },
             onProviderHover: { [weak self] provider, index, isHovered in
                 self?.setProviderHovered(provider, index: index, isHovered: isHovered)
-            }
+            },
+            onProviderTap: { [weak self] _ in self?.showPopoverFromNotch() }
         )
         let hostingView = NotchHostingView(rootView: content)
         hostingView.isHiddenMode = notchMode.isHiddenMode
@@ -2025,9 +2167,19 @@ struct SettingsView: View {
             hoveredProvider = provider
             isRailHovered = true
             pendingCardDismiss?.cancel()
-            showCard(for: provider, index: index)
-        } else if hoveredProvider == provider {
-            hoveredProvider = nil
+            pendingCardShow?.cancel()
+            // Wait for the shell's own hover spring to settle before revealing the card,
+            // so it doesn't pop in ahead of the notch finishing its expand animation.
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.showCard(for: provider, index: index)
+            }
+            pendingCardShow = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: workItem)
+        } else {
+            pendingCardShow?.cancel()
+            if hoveredProvider == provider {
+                hoveredProvider = nil
+            }
         }
     }
 
@@ -2070,15 +2222,26 @@ struct SettingsView: View {
         activeCardIndex = index
         activeCardScreen = selectedNotchScreen
         notchGeometry = NotchGeometry.current(for: activeCardScreen, position: notchMode.position)
-        let cardContent = NotchCardContent(usage: usage, metrics: notchMetrics, position: notchMode.position, backgroundOpacity: sidebarOpacity) { [weak self] isHovered in
+        let cardContent = NotchCardContent(
+            usage: usage,
+            hiddenWindowTitles: store.hiddenWindowTitlesByProvider[provider] ?? [],
+            metrics: notchMetrics,
+            position: notchMode.position,
+            backgroundOpacity: sidebarOpacity
+        ) { [weak self] isHovered in
             self?.setCardHovered(isHovered)
         }
         cardWindow?.contentViewController = NSHostingController(rootView: cardContent)
         cardWindow?.layoutIfNeeded()
         let cardHeight = max(cardWindow?.contentViewController?.view.fittingSize.height ?? 0, 1)
         positionCard(index: index, height: cardHeight)
-        cardWindow?.alphaValue = 1
+        cardWindow?.alphaValue = 0
         cardWindow?.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            cardWindow?.animator().alphaValue = 1
+        }
     }
 
     /// Attaches the detail card to whichever side of the rail has room to grow into the
@@ -2129,33 +2292,72 @@ struct SettingsView: View {
         }
     }
 
-    // The two modes are mutually exclusive: only one is visible at a time.
-    private var displayMode: DisplayMode {
-        get { DisplayMode(rawValue: UserDefaults.standard.string(forKey: "displayMode") ?? "") ?? .sidebar }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: "displayMode") }
+    // The notch and the menu bar are independent — either, both, or (via the UI guard
+    // below) never neither can be visible at once.
+    private var showsNotch: Bool {
+        get { UserDefaults.standard.object(forKey: "showsNotch") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "showsNotch") }
+    }
+    private var showsMenuBar: Bool {
+        get { UserDefaults.standard.object(forKey: "showsMenuBar") as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: "showsMenuBar") }
     }
 
-    private func applyDisplayMode() {
+    /// One-time migration from the old mutually-exclusive `displayMode` key. Must run
+    /// before anything reads `showsNotch`/`showsMenuBar` for the first time.
+    private func migrateDisplayModeIfNeeded() {
+        guard UserDefaults.standard.object(forKey: "showsNotch") == nil,
+              UserDefaults.standard.object(forKey: "showsMenuBar") == nil else { return }
+        let legacyMode = UserDefaults.standard.string(forKey: "displayMode")
+        showsNotch = legacyMode != "menuBar"
+        showsMenuBar = legacyMode == "menuBar"
+        UserDefaults.standard.removeObject(forKey: "displayMode")
+    }
+
+    private func setShowsNotch(_ newValue: Bool) {
+        guard newValue || showsMenuBar else { return }
+        showsNotch = newValue
+        applyNotchVisibility()
         statusItem.menu = buildAppMenu()
-        switch displayMode {
-        case .sidebar:
+    }
+
+    private func setShowsMenuBar(_ newValue: Bool) {
+        guard newValue || showsNotch else { return }
+        showsMenuBar = newValue
+        applyMenuBarVisibility()
+        statusItem.menu = buildAppMenu()
+    }
+
+    private func applyNotchVisibility() {
+        if showsNotch {
             animateSidebarIn()
-            statusItem.isVisible = false
-        case .menuBar:
+        } else {
+            resetNotchInteractionState()
             sidebarWindows.forEach { $0.orderOut(nil) }
-            cardWindow?.orderOut(nil)
-            statusItem.isVisible = true
         }
+    }
+
+    private func applyMenuBarVisibility() {
+        statusItem.isVisible = showsMenuBar
+    }
+
+    /// Shared by the show and hide paths so hover/card state never survives a
+    /// visibility flip in either direction.
+    private func resetNotchInteractionState() {
+        isRailHovered = false
+        isCardHovered = false
+        hoveredProvider = nil
+        activeCardProvider = nil
+        pendingCardDismiss?.cancel()
+        pendingCardShow?.cancel()
+        cardWindow?.orderOut(nil)
     }
 
     private func animateSidebarIn() {
         guard !sidebarWindows.isEmpty else { return }
         let screen = selectedNotchScreen
         notchGeometry = NotchGeometry.current(for: screen, position: notchMode.position)
-        isRailHovered = false
-        isCardHovered = false
-        activeCardProvider = nil
-        cardWindow?.orderOut(nil)
+        resetNotchInteractionState()
         sidebarWindows.forEach { window in
             let geometry = NotchGeometry.current(for: screen, position: notchMode.position)
             let frame = geometry.frame(thickness: notchMetrics.idleWidth, extent: notchMetrics.hoverHeight, alongEdgeOffset: notchAlongEdgeOffset + notchExpansionOffset)
@@ -2170,8 +2372,8 @@ struct SettingsView: View {
         }
     }
 
-    @objc private func switchToMenuBar() { displayMode = .menuBar; applyDisplayMode() }
-    @objc private func switchToSidebar() { displayMode = .sidebar; applyDisplayMode() }
+    @objc private func toggleNotchVisibility() { setShowsNotch(!showsNotch) }
+    @objc private func toggleMenuBarVisibility() { setShowsMenuBar(!showsMenuBar) }
     @objc func quit() { NSApp.terminate(nil) }
 
     private func reconnectProvider(_ kind: ProviderKind) {
@@ -2201,12 +2403,10 @@ struct SettingsView: View {
         window.contentViewController = NSHostingController(rootView: SettingsView(
             store: store,
             pairing: pairing,
-             displayMode: displayMode,
-             onSelectDisplayMode: { [weak self] mode in
-                guard let self else { return }
-                self.displayMode = mode
-                 self.applyDisplayMode()
-             },
+             showsNotch: showsNotch,
+             onToggleNotch: { [weak self] enabled in self?.setShowsNotch(enabled) },
+             showsMenuBar: showsMenuBar,
+             onToggleMenuBar: { [weak self] enabled in self?.setShowsMenuBar(enabled) },
               notchScreens: notchScreens,
               notchScreenID: selectedNotchScreenID,
               onSelectNotchScreen: { [weak self] id in self?.setNotchScreen(id) },
@@ -2247,17 +2447,26 @@ struct SettingsView: View {
                 self.customPWAURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
                 self.refreshPairingQRCode()
             },
-            onRegeneratePairing: { [weak self] in self?.regeneratePairing() }
+            onRegeneratePairing: { [weak self] in self?.regeneratePairing() },
+            canCheckForUpdates: updater.isConfigured,
+            onCheckForUpdates: { [weak self] in self?.updater.checkForUpdates(nil) }
         ))
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
 
-    // In sidebar mode the status item is invisible, so there's no valid button to anchor
-    // the popover to; in that case it's anchored to the floating sidebar's own content view.
-    @objc func togglePopover() {
+    // Notch and menu bar can both be visible at once, so the anchor can't be inferred
+    // solely from which surfaces are visible: a tap inside the notch should always
+    // anchor there even if the menu bar item also happens to be showing.
+    @objc func togglePopover() { togglePopoverPreferringNotchAnchor(false) }
+
+    private func showPopoverFromNotch() { togglePopoverPreferringNotchAnchor(true) }
+
+    private func togglePopoverPreferringNotchAnchor(_ preferNotchAnchor: Bool) {
         if popover.isShown { popover.performClose(nil); return }
-        if statusItem.isVisible, let button = statusItem.button {
+        if preferNotchAnchor, showsNotch, let contentView = sidebarWindow.contentView {
+            popover.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minX)
+        } else if statusItem.isVisible, let button = statusItem.button {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         } else if let contentView = sidebarWindow.contentView {
             popover.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minX)

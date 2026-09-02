@@ -8,6 +8,7 @@ import MetriaCore
 struct CursorProvider: UsageProvider {
     let kind = ProviderKind.cursor
     let setupHint = "Sign in to Cursor to make usage available."
+    let usageWindowTitles = ["This cycle"]
 
     private var stateStore: CursorStateStore {
         CursorStateStore(databaseURL: FileManager.default.homeDirectoryForCurrentUser
