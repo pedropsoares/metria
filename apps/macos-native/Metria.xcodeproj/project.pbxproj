@@ -25,6 +25,7 @@
 		A0B6AF481AEFD26114F18CD7 /* MetriaCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EB81A191BD1F3F9D21426FB /* MetriaCore.framework */; };
 		A58CC89CB7D116D25908E8DB /* UsageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4C6F8FCF0C2AE2E932ED6F /* UsageStore.swift */; };
 		B0D16525171231FFE5C69C84 /* OpenCodeGoProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488A30C52B2A951130A87634 /* OpenCodeGoProvider.swift */; };
+		BCAAA4FF3E584906BD4F3006 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F76937A0473449017F3EB57 /* OnboardingView.swift */; };
 		EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */; };
 		EFCA4810DF283BE11713152C /* BIP39Wordlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */; };
 		FFC29DC11D67E94AB5CAFF31 /* MetriaResources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97692A6C8502A27D4FA476F0 /* MetriaResources.swift */; };
@@ -65,6 +66,7 @@
 		3E4C6F8FCF0C2AE2E932ED6F /* UsageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageStore.swift; sourceTree = "<group>"; };
 		4030AD71B8AFE1AB81BA2549 /* ProviderError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderError.swift; sourceTree = "<group>"; };
 		488A30C52B2A951130A87634 /* OpenCodeGoProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeGoProvider.swift; sourceTree = "<group>"; };
+		5F76937A0473449017F3EB57 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		820924689FDBC3107D06765C /* ProviderKind+Presentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProviderKind+Presentation.swift"; sourceTree = "<group>"; };
 		8EB81A191BD1F3F9D21426FB /* MetriaCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MetriaCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8F37E9B9BF1481EC13F0AB9B /* KeychainReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainReader.swift; sourceTree = "<group>"; };
@@ -97,6 +99,7 @@
 				942FF095F80398F2F48468E8 /* LocalPWAServer.swift */,
 				ABC404DE64C320E52402D468 /* MetriaApp.swift */,
 				97692A6C8502A27D4FA476F0 /* MetriaResources.swift */,
+				5F76937A0473449017F3EB57 /* OnboardingView.swift */,
 				EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */,
 				36216E6ACB911FA08CA36234 /* Updater.swift */,
 				5B52A35A5B1800D8DF53A0E9 /* Providers */,
@@ -287,6 +290,7 @@
 				1F928336732F72EF903CE215 /* LocalPWAServer.swift in Sources */,
 				46A2C87091DB2E55D1B82616 /* MetriaApp.swift in Sources */,
 				FFC29DC11D67E94AB5CAFF31 /* MetriaResources.swift in Sources */,
+				BCAAA4FF3E584906BD4F3006 /* OnboardingView.swift in Sources */,
 				B0D16525171231FFE5C69C84 /* OpenCodeGoProvider.swift in Sources */,
 				5C570FEB062A2BFD5F60500B /* ProviderActivityMonitor.swift in Sources */,
 				577F4D95C96F959AA5487127 /* ProviderError.swift in Sources */,

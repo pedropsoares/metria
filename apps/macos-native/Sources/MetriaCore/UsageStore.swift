@@ -103,11 +103,16 @@ public final class UsageStore: ObservableObject {
     public init(providers: [any UsageProvider], defaults: UserDefaults = .standard) {
         self.sources = providers
         self.defaults = defaults
+        // `nil` (key never written) means "never configured — default to every detected
+        // provider enabled". An empty array is a real, intentional choice (the user
+        // disabled every provider) and must not be re-interpreted as "unconfigured" on the
+        // next launch, or a fully-disabled setup would silently re-enable itself.
+        let hasSavedKinds = defaults.object(forKey: enabledProvidersKey) != nil
         let savedKinds = (defaults.array(forKey: enabledProvidersKey) as? [String] ?? [])
             .compactMap(ProviderKind.init(rawValue:))
         let availableKinds = Set(providers.filter(\.isAvailable).map(\.kind))
         availableProviderKinds = availableKinds
-        enabledProviderKinds = savedKinds.isEmpty ? availableKinds : Set(savedKinds)
+        enabledProviderKinds = hasSavedKinds ? Set(savedKinds) : availableKinds
         self.providers = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
             .filter { availableKinds.contains($0.kind) && enabledProviderKinds.contains($0.kind) }
         let savedHidden = (defaults.dictionary(forKey: hiddenWindowTitlesKey) as? [String: [String]]) ?? [:]
@@ -120,10 +125,19 @@ public final class UsageStore: ObservableObject {
 
     private func updateVisibleProviders() {
         visibleProviders = ProviderKind.allCases
-            .filter { enabledProviderKinds.contains($0) && availableProviderKinds.contains($0) }
-            .map { kind in
-                providers.first(where: { $0.kind == kind })
-                    ?? ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil)
+            .compactMap { kind in
+                guard enabledProviderKinds.contains(kind),
+                    availableProviderKinds.contains(kind),
+                    let usage = providers.first(where: { $0.kind == kind }),
+                    // Gate on having ever produced real usage data, not on being
+                    // error-free: a provider that's rate-limited or hit a transient
+                    // failure still has legitimate data to show (with its error surfaced
+                    // alongside it). Only a provider that has never returned anything —
+                    // e.g. one that merely looks configured (a leftover local file) but
+                    // has no valid session — should be excluded entirely.
+                    !usage.windows.isEmpty
+                else { return nil }
+                return usage
             }
     }
 
@@ -167,7 +181,7 @@ public final class UsageStore: ObservableObject {
         var updatedKinds = enabledProviderKinds
         if isEnabled {
             updatedKinds.insert(kind)
-        } else if updatedKinds.count > 1 {
+        } else {
             updatedKinds.remove(kind)
         }
         enabledProviderKinds = updatedKinds
@@ -230,18 +244,22 @@ public final class UsageStore: ObservableObject {
         guard !providers.isEmpty, !isRefreshing else { return }
         isRefreshing = true
         refreshOperation = Task { [weak self] in
-            let results = await withTaskGroup(of: ProviderFetchResult.self, returning: [ProviderFetchResult].self) { group in
+            // Apply each provider's result as soon as it lands instead of waiting for the
+            // whole batch to finish. A provider that resolves instantly (e.g. a local-only
+            // check with no session) would otherwise sit unreported — still showing its
+            // last cached/optimistic state — for as long as the slowest network provider
+            // in the same batch takes, which reads as a visible flicker on launch.
+            await withTaskGroup(of: ProviderFetchResult.self) { group in
                 for provider in providers {
                     group.addTask { await provider.fetch() }
                 }
-                return await group.reduce(into: []) { $0.append($1) }
+                for await result in group {
+                    guard let self else { continue }
+                    self.apply(result)
+                    self.updateVisibleProviders()
+                }
             }
-
             guard let self else { return }
-            for result in results {
-                self.apply(result)
-            }
-            self.updateVisibleProviders()
             self.isRefreshing = false
             self.refreshOperation = nil
         }

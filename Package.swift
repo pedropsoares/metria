@@ -29,8 +29,9 @@ let package = Package(
                 "apps/macos-native/Sources/Metria/Providers/OpenCodeGoProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/ProviderError.swift",
                  "apps/macos-native/Sources/Metria/Providers/ProviderKind+Presentation.swift",
-                 "apps/macos-native/Sources/Metria/Providers/ProviderRegistry.swift",
-                 "apps/macos-native/Sources/Metria/Updater.swift"
+                  "apps/macos-native/Sources/Metria/Providers/ProviderRegistry.swift",
+                 "apps/macos-native/Sources/Metria/Updater.swift",
+                 "apps/macos-native/Sources/Metria/OnboardingView.swift"
              ],
              resources: [
                  .copy("Assets/claude-logo.png"),

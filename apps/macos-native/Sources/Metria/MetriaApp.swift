@@ -1146,6 +1146,11 @@ struct NotchCardContent: View {
             backgroundOpacity: backgroundOpacity,
             alertSettings: alertSettings
         )
+        // Keyed by provider so swapping the hovered provider while the card is already on
+        // screen crossfades/scales between the two cards instead of hard-cutting the content,
+        // matching the `withAnimation` the host applies when it reassigns `rootView`.
+        .id(usage.kind)
+        .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .center)))
     }
 
     private var pointer: some View {
@@ -1593,6 +1598,8 @@ struct SettingsView: View {
     let onSelectNotchPosition: (NotchPosition) -> Void
     @State private var menuBarAlertColorsEnabled: Bool
     let onChangeMenuBarAlertColors: (Bool) -> Void
+    @AppStorage("showMenuBarProviderNames") private var showMenuBarProviderNames = true
+    let onChangeMenuBarProviderNames: (Bool) -> Void
     @State private var cautionThreshold: Int
     @State private var warningThreshold: Int
     @State private var criticalThreshold: Int
@@ -1643,6 +1650,7 @@ struct SettingsView: View {
         onSelectNotchPosition: @escaping (NotchPosition) -> Void,
         menuBarAlertColorsEnabled: Bool,
         onChangeMenuBarAlertColors: @escaping (Bool) -> Void,
+        onChangeMenuBarProviderNames: @escaping (Bool) -> Void,
         menuBarAlertSettings: MenuBarAlertSettings,
         onChangeMenuBarAlertSettings: @escaping (MenuBarAlertSettings) -> Void,
         sidebarOpacity: Double,
@@ -1679,6 +1687,7 @@ struct SettingsView: View {
         self.onSelectNotchPosition = onSelectNotchPosition
         _menuBarAlertColorsEnabled = State(initialValue: menuBarAlertColorsEnabled)
         self.onChangeMenuBarAlertColors = onChangeMenuBarAlertColors
+        self.onChangeMenuBarProviderNames = onChangeMenuBarProviderNames
         _cautionThreshold = State(initialValue: menuBarAlertSettings.cautionThreshold)
         _warningThreshold = State(initialValue: menuBarAlertSettings.warningThreshold)
         _criticalThreshold = State(initialValue: menuBarAlertSettings.criticalThreshold)
@@ -1823,6 +1832,8 @@ struct SettingsView: View {
             }
 
             Section("Menu bar") {
+                Toggle("Show provider names", isOn: $showMenuBarProviderNames)
+                    .onChange(of: showMenuBarProviderNames) { onChangeMenuBarProviderNames($0) }
                 Toggle("Color usage alerts", isOn: $menuBarAlertColorsEnabled)
                     .onChange(of: menuBarAlertColorsEnabled) { onChangeMenuBarAlertColors($0) }
                 menuBarAlertControls
@@ -2186,13 +2197,15 @@ extension NSMenu {
     }
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let store = UsageStore(providers: ProviderRegistry.makeProviders())
     var statusItem: NSStatusItem!
     var popover: NSPopover!
     var sidebarWindow: NSPanel!
     var settingsWindow: NSWindow?
+    var onboardingWindow: NSWindow?
     var observation: AnyCancellable?
+    var visibleProvidersObservation: AnyCancellable?
     private let ntfyPublisher = NtfyPublisher()
     let pairing = PairingManager()
     private let updater = AppUpdater()
@@ -2219,9 +2232,18 @@ extension NSMenu {
             guard let self else { return }
             self.ntfyPublisher.publish(providers, secret: self.pairing.currentSecret)
         }
+        // A provider can be added to or dropped from `visibleProviders` after launch (e.g.
+        // its very first refresh confirms or rules it out just after `configureSidebar()`
+        // sized the rail for whatever was known at that instant) — keep the panel's own
+        // frame in sync so it doesn't linger at a stale size.
+        visibleProvidersObservation = store.$visibleProviders
+            .map(\.count)
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.resizeSidebarPanels() }
         applyNotchVisibility()
         applyMenuBarVisibility()
         statusItem.menu = buildAppMenu()
+        presentOnboardingIfNeeded()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -2252,6 +2274,18 @@ extension NSMenu {
     private var menuBarAlertColorsEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "menuBarAlertColorsEnabled") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "menuBarAlertColorsEnabled") }
+    }
+
+    private var showMenuBarProviderNames: Bool {
+        get {
+            UserDefaults.standard.object(forKey: "showMenuBarProviderNames") as? Bool ?? true
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "showMenuBarProviderNames") }
+    }
+
+    private func setShowMenuBarProviderNames(_ enabled: Bool) {
+        showMenuBarProviderNames = enabled
+        updateStatusItem(store.providers)
     }
 
     private var menuBarAlertSettings: MenuBarAlertSettings {
@@ -2354,12 +2388,14 @@ extension NSMenu {
                 title.append(NSAttributedString(attachment: attachment))
                 title.append(NSAttributedString(string: " "))
             }
-            let name = usage.kind == .openCodeGo ? "Go" : usage.kind.rawValue
             let percent = usage.primary!.percent
-            title.append(
-                NSAttributedString(
-                    string: "\(name) ",
-                    attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+            if showMenuBarProviderNames {
+                let name = usage.kind == .openCodeGo ? "Go" : usage.kind.rawValue
+                title.append(
+                    NSAttributedString(
+                        string: "\(name) ",
+                        attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+            }
             var percentageAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
             ]
@@ -2744,6 +2780,14 @@ extension NSMenu {
         guard notchMode.size != size else { return }
         notchMode.size = size
         UserDefaults.standard.set(size.rawValue, forKey: "notchSize")
+        resizeSidebarPanels()
+    }
+
+    /// Re-applies `notchMetrics` (which itself derives from `store.visibleProviders.count`)
+    /// to every sidebar panel's frame and hosting view. Shared by explicit size changes and
+    /// by the `visibleProviders` observer, since both need the panel to track whatever row
+    /// count is currently true rather than whatever it was sized for at creation time.
+    private func resizeSidebarPanels() {
         for window in sidebarWindows {
             (window as? DraggableNotchPanel)?.metrics = notchMetrics
             if let hostingView = window.contentView as? NotchHostingView {
@@ -2844,8 +2888,24 @@ extension NSMenu {
         pendingCardDismiss?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self, !self.isRailHovered, !self.isCardHovered else { return }
-            self.cardWindow?.orderOut(nil)
             self.activeCardProvider = nil
+            guard let cardWindow = self.cardWindow else { return }
+            let exitFrame = self.railwardFrame(cardWindow.frame, offset: 8)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.14
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                // A plain, gentle dissolve — no shrink, just alpha easing smoothly to nothing
+                // while it drifts back toward the rail it came from.
+                cardWindow.animator().alphaValue = 0
+                cardWindow.animator().setFrame(exitFrame, display: true)
+            } completionHandler: { [weak self] in
+                // Only hide the panel if nothing re-showed it for another provider while
+                // the fade-out was still running.
+                Task { @MainActor in
+                    guard let self, self.activeCardProvider == nil else { return }
+                    cardWindow.orderOut(nil)
+                }
+            }
         }
         pendingCardDismiss = workItem
         DispatchQueue.main.async(execute: workItem)
@@ -2869,6 +2929,7 @@ extension NSMenu {
             window.isMovable = false
             cardWindow = window
         }
+        guard let cardWindow else { return }
 
         activeCardProvider = provider
         activeCardIndex = index
@@ -2884,25 +2945,100 @@ extension NSMenu {
         ) { [weak self] isHovered in
             self?.setCardHovered(isHovered)
         }
-        cardWindow?.contentViewController = NSHostingController(rootView: cardContent)
-        cardWindow?.layoutIfNeeded()
-        let cardHeight = max(cardWindow?.contentViewController?.view.fittingSize.height ?? 0, 1)
-        positionCard(index: index, height: cardHeight)
-        if isAlreadyVisible {
-            // Already on screen for a previous provider — swap content in place instead
-            // of fading out to nothing and back in, which reads as a stutter when
-            // switching between providers quickly.
-            cardWindow?.alphaValue = 1
-            cardWindow?.orderFrontRegardless()
+
+        if isAlreadyVisible,
+            let hostingController = cardWindow.contentViewController
+                as? NSHostingController<NotchCardContent>
+        {
+            // Already on screen for a previous provider — spring the SwiftUI content over to
+            // the new provider's data in place (see `NotchCardContent.card`'s `.id`/
+            // `.transition`) instead of hard-cutting, since that read as dead/inert.
+            withAnimation(.spring(response: 0.14, dampingFraction: 0.82)) {
+                hostingController.rootView = cardContent
+            }
         } else {
-            cardWindow?.alphaValue = 0
-            cardWindow?.orderFrontRegardless()
+            cardWindow.contentViewController = NSHostingController(rootView: cardContent)
+        }
+        cardWindow.layoutIfNeeded()
+        let cardHeight = max(cardWindow.contentViewController?.view.fittingSize.height ?? 0, 1)
+        let finalFrame = cardFrame(index: index, height: cardHeight)
+
+        if isAlreadyVisible {
+            // Spring the window itself over to the newly hovered row so it travels with the
+            // content crossfade above instead of teleporting there instantly.
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.16
+                context.duration = 0.12
+                context.timingFunction = CAMediaTimingFunction(
+                    controlPoints: 0.3, 1.1, 0.4, 1)
+                cardWindow.animator().setFrame(finalFrame, display: true)
+            }
+            cardWindow.alphaValue = 1
+            cardWindow.orderFrontRegardless()
+        } else {
+            // First reveal: pop the card out from behind the rail with a slide, a springy
+            // overshoot scale, and a fade, so it reads as emerging from the notch instead of
+            // just appearing.
+            let startFrame = railwardFrame(finalFrame, offset: 14)
+            cardWindow.setFrame(startFrame, display: true)
+            setCardScale(0.87, on: cardWindow, anchor: cardScaleAnchor(for: notchMode.position))
+            cardWindow.alphaValue = 0
+            cardWindow.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.07
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                cardWindow?.animator().alphaValue = 1
+                cardWindow.animator().alphaValue = 1
+            }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                context.timingFunction = CAMediaTimingFunction(
+                    controlPoints: 0.32, 1.4, 0.5, 1)
+                cardWindow.animator().setFrame(finalFrame, display: true)
+                cardWindow.contentView?.layer?.transform = CATransform3DIdentity
             }
         }
+    }
+
+    /// Shifts `frame`'s origin toward the rail's anchor edge by `offset` — used to start the
+    /// entrance slide from behind the rail, and to slide the card back into it on dismiss.
+    private func railwardFrame(_ frame: NSRect, offset: CGFloat) -> NSRect {
+        var frame = frame
+        switch notchMode.position {
+        case .right: frame.origin.x += offset
+        case .left: frame.origin.x -= offset
+        case .top: frame.origin.y += offset
+        case .bottom: frame.origin.y -= offset
+        }
+        return frame
+    }
+
+    /// Which edge of the card sits flush against the rail, so the entrance scale grows out of
+    /// that edge instead of from the card's own center, matching the slide direction.
+    private func cardScaleAnchor(for position: NotchPosition) -> CGPoint {
+        switch position {
+        case .right: CGPoint(x: 1, y: 0.5)
+        case .left: CGPoint(x: 0, y: 0.5)
+        case .bottom: CGPoint(x: 0.5, y: 0)
+        case .top: CGPoint(x: 0.5, y: 1)
+        }
+    }
+
+    /// Re-anchors the card window's content layer to `anchor` (compensating `position` so the
+    /// frame doesn't visually jump) and jumps its model transform straight to `scale` with no
+    /// implicit animation, so a later animated assignment of `.transform = .identity` reads as
+    /// growing out from that anchor.
+    private func setCardScale(_ scale: CGFloat, on window: NSPanel, anchor: CGPoint) {
+        guard let contentView = window.contentView else { return }
+        contentView.wantsLayer = true
+        guard let layer = contentView.layer else { return }
+        let bounds = layer.bounds
+        let oldAnchor = layer.anchorPoint
+        layer.anchorPoint = anchor
+        layer.position.x += (anchor.x - oldAnchor.x) * bounds.width
+        layer.position.y += (anchor.y - oldAnchor.y) * bounds.height
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = CATransform3DMakeScale(scale, scale, 1)
+        CATransaction.commit()
     }
 
     /// Attaches the detail card to whichever side of the rail has room to grow into the
@@ -2913,6 +3049,14 @@ extension NSMenu {
         guard let cardWindow else { return }
         let cardHeight =
             height ?? max(cardWindow.contentViewController?.view.fittingSize.height ?? 0, 1)
+        cardWindow.setFrame(cardFrame(index: index, height: cardHeight), display: true)
+    }
+
+    /// Computes the card's resting frame beside (vertical rail) or above/below (horizontal
+    /// bar) the given provider row, clamped to the visible screen area. Pulled out of
+    /// `positionCard` so `showCard` can also derive an off-position starting frame for the
+    /// reveal animation.
+    private func cardFrame(index: Int, height cardHeight: CGFloat) -> NSRect {
         let position = notchMode.position
         let leadInset = 12 * notchMetrics.scale
         let itemStride = notchMetrics.providerItemHeight + notchMetrics.providerSpacing
@@ -2938,9 +3082,7 @@ extension NSMenu {
                 position == .right
                 ? railFrame.minX - notchMetrics.cardWidth - notchMetrics.cardSpacing
                 : railFrame.maxX + notchMetrics.cardSpacing
-            cardWindow.setFrame(
-                NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight),
-                display: true)
+            return NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight)
         case .horizontal:
             let railFrame = notchGeometry.frame(
                 thickness: notchMetrics.idleWidth, extent: notchMetrics.railExtent,
@@ -2956,9 +3098,7 @@ extension NSMenu {
                 position == .bottom
                 ? railFrame.maxY + notchMetrics.cardSpacing
                 : railFrame.minY - cardHeight - notchMetrics.cardSpacing
-            cardWindow.setFrame(
-                NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight),
-                display: true)
+            return NSRect(x: originX, y: originY, width: notchMetrics.cardWidth, height: cardHeight)
         }
     }
 
@@ -3066,6 +3206,12 @@ extension NSMenu {
     @objc func quit() { NSApp.terminate(nil) }
 
     private func reconnectProvider(_ kind: ProviderKind) {
+        if kind == .cursor {
+            guard let downloadURL = URL(string: "https://www.cursor.com/downloads") else { return }
+            NSWorkspace.shared.open(downloadURL)
+            return
+        }
+
         let command = kind.reconnectCommand
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command, forType: .string)
@@ -3073,12 +3219,15 @@ extension NSMenu {
         let escapedCommand = command.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         let scriptSource = "tell application \"Terminal\" to do script \"\(escapedCommand)\""
-        var scriptError: NSDictionary?
-        let didOpenTerminal =
-            NSAppleScript(source: scriptSource)?.executeAndReturnError(&scriptError) != nil
-        if !didOpenTerminal {
-            NSWorkspace.shared.open(
-                URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+        Task.detached {
+            var scriptError: NSDictionary?
+            let didOpenTerminal =
+                NSAppleScript(source: scriptSource)?.executeAndReturnError(&scriptError) != nil
+            guard !didOpenTerminal else { return }
+            await MainActor.run {
+                _ = NSWorkspace.shared.open(
+                    URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+            }
         }
     }
 
@@ -3100,6 +3249,43 @@ extension NSMenu {
     private func presentSettingsWindow(_ window: NSWindow) {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    private func presentOnboardingIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") else { return }
+
+        NSApp.setActivationPolicy(.regular)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Welcome to Metria"
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.contentViewController = NSHostingController(
+            rootView: OnboardingView(
+                store: store,
+                showsNotch: showsNotch,
+                showsMenuBar: showsMenuBar,
+                onToggleNotch: { [weak self] enabled in self?.setShowsNotch(enabled) },
+                onToggleMenuBar: { [weak self] enabled in self?.setShowsMenuBar(enabled) },
+                onReconnect: { [weak self] kind in self?.reconnectProvider(kind) },
+                onFinish: { [weak self] in self?.finishOnboarding() }
+            )
+        )
+        onboardingWindow = window
+        window.delegate = self
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func finishOnboarding() {
+        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        onboardingWindow?.orderOut(nil)
+        onboardingWindow = nil
+        NSApp.setActivationPolicy(.accessory)
     }
 
     private func openSettingsFromNotch() {
@@ -3136,10 +3322,13 @@ extension NSMenu {
                 onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
                 notchPosition: notchMode.position,
                 onSelectNotchPosition: { [weak self] position in self?.setNotchPosition(position) },
-                menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
-                onChangeMenuBarAlertColors: { [weak self] enabled in
-                    self?.setMenuBarAlertColorsEnabled(enabled)
-                },
+                 menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
+                 onChangeMenuBarAlertColors: { [weak self] enabled in
+                     self?.setMenuBarAlertColorsEnabled(enabled)
+                 },
+                 onChangeMenuBarProviderNames: { [weak self] enabled in
+                     self?.setShowMenuBarProviderNames(enabled)
+                 },
                 menuBarAlertSettings: menuBarAlertSettings,
                 onChangeMenuBarAlertSettings: { [weak self] settings in
                     self?.setMenuBarAlertSettings(settings)
@@ -3196,6 +3385,12 @@ extension NSMenu {
         } else if let contentView = sidebarWindow.contentView {
             popover.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minX)
         }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === onboardingWindow else { return true }
+        finishOnboarding()
+        return true
     }
 }
 
