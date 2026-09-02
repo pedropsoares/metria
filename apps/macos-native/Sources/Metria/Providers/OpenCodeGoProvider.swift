@@ -6,6 +6,7 @@ struct OpenCodeGoProvider: UsageProvider {
     let kind = ProviderKind.openCodeGo
     var isAvailable: Bool { FileManager.default.fileExists(atPath: authURL.path) }
     let setupHint = "Sign in to OpenCode Go to create a local API credential."
+    let usageWindowTitles = ["Current session", "This week", "This month"]
 
     private var authURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(

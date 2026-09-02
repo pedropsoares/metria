@@ -9,6 +9,7 @@ struct CodexProvider: UsageProvider {
         FileManager.default.fileExists(atPath: codexAuthURL.path) || FileManager.default.fileExists(atPath: sessionsURL.path)
     }
     let setupHint = "Sign in to Codex to create local usage data."
+    let usageWindowTitles = ["Current session", "All models"]
 
     private var codexAuthURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/auth.json") }
     private var sessionsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions") }
