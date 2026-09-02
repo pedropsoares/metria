@@ -1,15 +1,13 @@
 # Implementation Plans
 
-Generated on 2026-08-31 at commit `f5bbbe2`. This is a planning-only migration
-assessment. Execute the plan in order; it deliberately begins with a proof of
-concept rather than committing the project to a framework before its difficult
-desktop integrations are demonstrated.
+Generated on 2026-08-31 at commit `f5bbbe2`. This assessment has been
+superseded by the completed repository split described below.
 
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |---|---|---|---|---|---|
-| 001 | Add a maintainable Electron companion without replacing native macOS | P1 | L | — | TODO |
+| 001 | Add a maintainable Electron companion without replacing native macOS | P1 | L | — | Superseded |
 
 ## Dependency notes
 
@@ -19,9 +17,9 @@ desktop integrations are demonstrated.
 
 ## Findings considered and rejected
 
-- Separate repositories per desktop OS: rejected. The existing native macOS
-  app, Electron companion, PWA, assets, provider contracts, and releases should
-  evolve together but be built and released in isolated lanes.
+- Separate repositories per desktop OS: the Electron implementation was moved
+  to the public `yurirxmos/metria-win-linux` repository, while native macOS and
+  the companion PWA remain here.
 - Replacing or rewriting the native Swift macOS app: rejected. It remains the
   production macOS application. Electron is a separately identified companion
   app that may be offered on macOS only after it coexists safely.

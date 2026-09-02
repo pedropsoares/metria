@@ -1,5 +1,10 @@
 # Plan 001: Add a maintainable Electron companion without replacing native macOS
 
+> **Superseded**: the Electron implementation was subsequently extracted to
+> `yurirxmos/metria-win-linux` with its relevant history, assets, and release
+> workflow. This file records the earlier one-repository assessment and is not
+> an execution guide for the current layout.
+
 > **Executor instructions**: Follow this plan in order. This is a migration
 > plan, not authorization to rewrite the current app wholesale. Each phase has
 > an explicit gate. If a gate fails, stop and record the evidence in the
