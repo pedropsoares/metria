@@ -45,6 +45,31 @@ enum KeychainReader {
         return tokenEmail(credentials.accessToken)
     }
 
+    /// Reads the plan name Claude Code caches locally next to the OAuth tokens: prefers
+    /// `subscriptionType` (e.g. "max", "claude_pro_2025"), falling back to `rateLimitTier`
+    /// (e.g. "default_claude_max_5x") when that's missing. Best-effort — both fields are
+    /// undocumented and have been observed absent in some Claude Code versions.
+    static func planLabel(from credentials: ClaudeCredentials) -> String? {
+        guard let oauth = credentials.document["claudeAiOauth"] as? [String: Any] else { return nil }
+        if let subscriptionType = oauth["subscriptionType"] as? String, !subscriptionType.isEmpty {
+            return planDisplayName(subscriptionType)
+        }
+        if let rateLimitTier = oauth["rateLimitTier"] as? String, !rateLimitTier.isEmpty {
+            return planDisplayName(rateLimitTier)
+        }
+        return nil
+    }
+
+    private static func planDisplayName(_ raw: String) -> String {
+        let normalized = raw.lowercased()
+        let multiplier = normalized.range(of: #"\d+x"#, options: .regularExpression).map { String(normalized[$0]) }
+        if normalized.contains("max") { return ["Max", multiplier].compactMap { $0 }.joined(separator: " ") }
+        if normalized.contains("enterprise") { return "Enterprise" }
+        if normalized.contains("team") { return "Team" }
+        if normalized.contains("pro") { return "Pro" }
+        return raw.capitalized
+    }
+
     static func tokenEmail(_ token: String) -> String? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2,

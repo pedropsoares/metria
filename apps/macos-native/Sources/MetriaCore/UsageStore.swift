@@ -93,6 +93,9 @@ public enum ProviderKind: String, CaseIterable, Identifiable, Hashable {
 public struct ProviderUsage: Identifiable, Equatable {
     public let kind: ProviderKind
     public let accountLabel: String?
+    /// The account's subscription tier (e.g. "Max", "Pro", "Plus"), shown in place of the
+    /// generic "Connected" badge when a provider can resolve it.
+    public let planLabel: String?
     public var windows: [UsageWindow]
     public var updatedAt: Date?
     public var error: String?
@@ -100,9 +103,10 @@ public struct ProviderUsage: Identifiable, Equatable {
     public var id: ProviderKind { kind }
     public var primary: UsageWindow? { windows.first }
 
-    public init(kind: ProviderKind, accountLabel: String? = nil, windows: [UsageWindow], updatedAt: Date?, error: String?) {
+    public init(kind: ProviderKind, accountLabel: String? = nil, planLabel: String? = nil, windows: [UsageWindow], updatedAt: Date?, error: String?) {
         self.kind = kind
         self.accountLabel = accountLabel
+        self.planLabel = planLabel
         self.windows = windows
         self.updatedAt = updatedAt
         self.error = error
