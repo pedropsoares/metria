@@ -1,8 +1,14 @@
 import { useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from "@tanstack/react-query";
-import { clampPercent, DEFAULT_REFRESH_INTERVAL_SECONDS, DEFAULT_SPEND_DISPLAY, gaugeColor, PROVIDER_LOGOS, statusDotColor, usageParts } from "../shared/types";
-import type { PairingInfo, ProviderKind, ProviderSourceChoice, ProviderUsage, SpendDisplay, UsageWindow } from "../shared/types";
+import {
+  clampPercent, DEFAULT_REFRESH_INTERVAL_SECONDS, DEFAULT_SPEND_DISPLAY, DEFAULT_WIDGET_BEHAVIOR, DEFAULT_WIDGET_EDGE,
+  DEFAULT_WIDGET_SIZE, gaugeColor, PROVIDER_LOGOS, statusDotColor, usageParts, visibleWindows
+} from "../shared/types";
+import type {
+  AppSettings, PairingInfo, ProviderKind, ProviderSourceChoice, ProviderUsage, SpendDisplay, UsageWindow,
+  WidgetBehavior, WidgetEdge, WidgetSize
+} from "../shared/types";
 import "./app.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
@@ -63,13 +69,21 @@ function ProviderCard({ provider, enabled, onStatus }: { provider: ProviderUsage
     else if (provider.available) setEnabled.mutate(false);
     else setup.mutate();
   };
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => window.metria.getSettings() });
+  const rows = visibleWindows(provider, settings.data?.hiddenWindows ?? {});
+  const showsAccount = settings.data?.showAccountLabels ?? true;
   return (
-    <article className={`my-3.5 px-3 py-4 ${enabled ? "" : "opacity-60"}`}>
+    <article className={`my-3.5 rounded-2xl border border-line bg-[#0f1319]/70 px-4 py-4 ${enabled ? "" : "opacity-60"}`}>
       <div className="flex items-center justify-between gap-[18px]">
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
           <img className="h-[22px] w-[22px] object-contain" src={`./${PROVIDER_LOGOS[provider.kind]}`} alt="" />
-          <h2 className="m-0 text-xl font-semibold">{provider.kind}</h2>
-          <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: statusDotColor(provider.error !== null) }} />
+          <div className="min-w-0">
+            <h2 className="m-0 flex items-center gap-2.5 text-xl font-semibold">
+              {provider.kind}
+              <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: statusDotColor(provider.error !== null) }} />
+            </h2>
+            {showsAccount && provider.accountLabel && <p className="m-0 truncate text-xs text-dim">{provider.accountLabel}</p>}
+          </div>
         </div>
         <button
           type="button"
@@ -82,7 +96,10 @@ function ProviderCard({ provider, enabled, onStatus }: { provider: ProviderUsage
       </div>
       {!provider.available && <p className="m-0 mt-4 leading-relaxed text-dim">{provider.setupHint}</p>}
       {provider.error && <p className="m-0 mt-4 leading-relaxed text-dim">{provider.error}</p>}
-      {provider.windows.map((row) => <UsageRow key={row.title} window={row} />)}
+      {provider.windows.length > 0 && rows.length === 0 && (
+        <p className="m-0 mt-4 leading-relaxed text-dim">Every usage window for {provider.kind} is hidden. Turn one back on in Settings → Providers.</p>
+      )}
+      {rows.map((row) => <UsageRow key={row.title} window={row} />)}
     </article>
   );
 }
@@ -212,40 +229,213 @@ function PairingSection(): JSX.Element {
 
 const REFRESH_OPTIONS = [300, 600, 900, 1800];
 const PLATFORM_LABEL: Record<string, string> = { win32: "Windows", linux: "Linux", darwin: "macOS" };
+const SELECT_CLASS = "cursor-pointer border border-line2 bg-surface px-2.5 py-1.5 text-fg";
+const TABS = [["general", "General"], ["providers", "Providers"], ["phone", "Phone"]] as const;
+type SettingsTab = (typeof TABS)[number][0];
 
-function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
-  const [notice, setNotice] = useState("");
+/** The widget is a Windows/Linux surface; macOS uses the menu bar instead. */
+function hasWidget(platform: string | undefined): boolean { return platform === "win32" || platform === "linux"; }
+
+function useSettings(): AppSettings | undefined {
+  return useQuery({ queryKey: ["settings"], queryFn: () => window.metria.getSettings() }).data;
+}
+
+/** Settings mutations all answer with the whole settings object, so they all land the same
+ * way: replace the cache, never refetch usage (that would hit every provider's API). */
+function useSettingsMutation<T>(call: (value: T) => Promise<AppSettings>) {
+  return useMutation({ mutationFn: call, onSuccess: (next) => queryClient.setQueryData(["settings"], next) });
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+  return (
+    <section className="mt-7 first:mt-0">
+      <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: React.ReactNode }): JSX.Element {
+  return (
+    <div className="mt-2.5 flex items-center justify-between gap-4">
+      <label className="text-dim" htmlFor={htmlFor}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+/** Switch shaped like the native toggles, so a boolean setting reads the same on both apps. */
+function Toggle({ label, srLabel, hint, checked, disabled, onChange }: { label: string; srLabel?: string; hint?: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }): JSX.Element {
+  return (
+    <div className="mt-2.5 flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <span>{label}</span>
+        {hint && <p className="m-0 mt-1 leading-relaxed text-dim">{hint}</p>}
+      </div>
+      <button
+        type="button" role="switch" aria-checked={checked} aria-label={srLabel ?? label} disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`mt-0.5 flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border p-[3px] disabled:opacity-55 ${checked ? "justify-end border-accent bg-accent/25" : "justify-start border-line2 bg-transparent"}`}
+      >
+        <span className="block h-[16px] w-[16px] rounded-full bg-[#d8d8dc]" />
+      </button>
+    </div>
+  );
+}
+
+function GeneralTab({ onNotice }: { onNotice: (message: string) => void }): JSX.Element {
   const [updateStatus, setUpdateStatus] = useState<"idle" | "downloaded">("idle");
+  const settings = useSettings();
   const appInfo = useQuery({ queryKey: ["app-info"], queryFn: () => window.metria.getAppInfo() });
   const loginItem = useQuery({ queryKey: ["login-item"], queryFn: () => window.metria.getLoginItemStatus() });
+  const setRefreshInterval = useSettingsMutation((seconds: number) => window.metria.setRefreshInterval(seconds));
+  const setSpendDisplay = useSettingsMutation((display: SpendDisplay) => window.metria.setSpendDisplay(display));
+  const setShowAccountLabels = useSettingsMutation((show: boolean) => window.metria.setShowAccountLabels(show));
   const checkUpdates = useMutation({
     mutationFn: () => window.metria.checkUpdates(),
-    onSuccess: (result) => { setUpdateStatus(result.status === "downloaded" ? "downloaded" : "idle"); setNotice(result.message); }
+    onSuccess: (result) => { setUpdateStatus(result.status === "downloaded" ? "downloaded" : "idle"); onNotice(result.message); }
   });
-  const installUpdate = useMutation({
-    mutationFn: () => window.metria.installUpdate(),
-    onSuccess: () => setNotice("The update is installing…")
-  });
-  const setRefreshInterval = useMutation({
-    mutationFn: (seconds: number) => window.metria.setRefreshInterval(seconds),
-    onSuccess: (next) => queryClient.setQueryData(["settings"], next)
-  });
-  const setSpendDisplay = useMutation({
-    mutationFn: (display: SpendDisplay) => window.metria.setSpendDisplay(display),
-    onSuccess: (next) => queryClient.setQueryData(["settings"], next)
-  });
+  const installUpdate = useMutation({ mutationFn: () => window.metria.installUpdate(), onSuccess: () => onNotice("The update is installing…") });
   const setLoginItem = useMutation({
     mutationFn: (enabled: boolean) => window.metria.setLaunchAtLogin(enabled),
-    onSuccess: (status) => { queryClient.setQueryData(["login-item"], status); setNotice(status.message); }
+    onSuccess: (status) => { queryClient.setQueryData(["login-item"], status); onNotice(status.message); }
   });
-  const uninstall = useMutation({
-    mutationFn: () => window.metria.uninstall(),
-    onSuccess: (result) => setNotice(result.message)
-  });
+  const uninstall = useMutation({ mutationFn: () => window.metria.uninstall(), onSuccess: (result) => onNotice(result.message) });
   const quit = useMutation({ mutationFn: () => window.metria.quit() });
-  const currentInterval = (useQuery({ queryKey: ["settings"], queryFn: () => window.metria.getSettings() }).data ?? { refreshIntervalSeconds: DEFAULT_REFRESH_INTERVAL_SECONDS }).refreshIntervalSeconds;
-  const spendDisplay = useSpendDisplay();
-  const providerSources = useProviderSources();
+  const info = appInfo.data;
+  const currentInterval = settings?.refreshIntervalSeconds ?? DEFAULT_REFRESH_INTERVAL_SECONDS;
+  const intervalOptions = REFRESH_OPTIONS.includes(currentInterval) ? REFRESH_OPTIONS : [currentInterval, ...REFRESH_OPTIONS].sort((a, b) => a - b);
+  return (
+    <>
+      <Section title="App">
+        <dl className="mt-2 leading-relaxed">
+          <div className="flex justify-between gap-4"><dt className="m-0 text-dim">Version</dt><dd className="m-0 font-mono">{info?.version ?? "…"}</dd></div>
+          <div className="flex justify-between gap-4"><dt className="m-0 text-dim">Platform</dt><dd className="m-0">{info ? PLATFORM_LABEL[info.platform] ?? info.platform : "…"}</dd></div>
+          {info && <div className="mt-2"><dt className="m-0 text-dim">Data folder</dt><dd className="m-0 mt-1 break-all font-mono text-xs text-mute">{info.dataPath}</dd></div>}
+        </dl>
+      </Section>
+
+      <Section title="Display">
+        <Field label="Show usage as" htmlFor="spend-display">
+          <select id="spend-display" className={SELECT_CLASS} value={settings?.spendDisplay ?? DEFAULT_SPEND_DISPLAY}
+            onChange={(event) => setSpendDisplay.mutate(event.target.value as SpendDisplay)} disabled={setSpendDisplay.isPending}>
+            <option value="percent">Percentage</option>
+            <option value="dollars">Dollars</option>
+            <option value="both">Both</option>
+          </select>
+        </Field>
+        <p className="m-0 mt-2 leading-relaxed text-dim">Cursor is the only provider that reports what a cycle costs; the others always show a percentage.</p>
+        <Toggle
+          label="Show provider account"
+          hint="The signed-in email where the provider exposes one, or a masked key for OpenCode Go."
+          checked={settings?.showAccountLabels ?? true}
+          disabled={setShowAccountLabels.isPending}
+          onChange={(value) => setShowAccountLabels.mutate(value)}
+        />
+      </Section>
+
+      <Section title="Refresh">
+        <Field label="Usage every" htmlFor="refresh-interval">
+          <select id="refresh-interval" className={SELECT_CLASS} value={currentInterval}
+            onChange={(event) => setRefreshInterval.mutate(Number(event.target.value))} disabled={setRefreshInterval.isPending}>
+            {intervalOptions.map((seconds) => <option key={seconds} value={seconds}>{Math.round(seconds / 60)} min</option>)}
+          </select>
+        </Field>
+      </Section>
+
+      {hasWidget(info?.platform) && <WidgetSection />}
+
+      <Section title="Startup">
+        <Toggle
+          label="Launch at login"
+          hint={loginItem.data?.available === false ? loginItem.data.message : undefined}
+          checked={loginItem.data?.enabled ?? false}
+          disabled={setLoginItem.isPending || loginItem.data?.available === false}
+          onChange={(value) => setLoginItem.mutate(value)}
+        />
+      </Section>
+
+      <Section title="Updates">
+        <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+          <button type="button" className={BUTTON_CLASS} onClick={() => void checkUpdates.mutate()} disabled={checkUpdates.isPending}>
+            {checkUpdates.isPending ? "Checking…" : "Check for updates"}
+          </button>
+          {updateStatus === "downloaded" &&
+            <button type="button" className="cursor-pointer border border-accent px-3 py-1.5 text-accent"
+              onClick={() => void installUpdate.mutate()} disabled={installUpdate.isPending}>Restart &amp; install update</button>}
+        </div>
+      </Section>
+
+      <section className="mt-7 border-t border-line pt-5">
+        <div className="flex flex-wrap gap-2.5">
+          {(info?.platform === "win32" || info?.platform === "linux") && (
+            <button type="button" className="cursor-pointer border border-[#ff453a]/60 px-3 py-1.5 text-[#ff6961]"
+              onClick={() => void uninstall.mutate()} disabled={uninstall.isPending}>Uninstall</button>
+          )}
+          <button type="button" className={BUTTON_CLASS} onClick={() => void quit.mutate()} disabled={quit.isPending}>Quit Metria Electron</button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+/** The floating rail: how big it is, which screen edge and monitor it lives on, and
+ * whether it stays out or collapses to a sliver until the pointer finds it. */
+function WidgetSection(): JSX.Element {
+  const settings = useSettings();
+  const displays = useQuery({ queryKey: ["displays"], queryFn: () => window.metria.getDisplays() });
+  const setSize = useSettingsMutation((size: WidgetSize) => window.metria.setWidgetSize(size));
+  const setEdge = useSettingsMutation((edge: WidgetEdge) => window.metria.setWidgetEdge(edge));
+  const setBehavior = useSettingsMutation((behavior: WidgetBehavior) => window.metria.setWidgetBehavior(behavior));
+  const setDisplay = useSettingsMutation((displayId: number | null) => window.metria.setWidgetDisplay(displayId));
+  return (
+    <Section title="Widget">
+      <Field label="Size" htmlFor="widget-size">
+        <select id="widget-size" className={SELECT_CLASS} value={settings?.widgetSize ?? DEFAULT_WIDGET_SIZE}
+          onChange={(event) => setSize.mutate(event.target.value as WidgetSize)} disabled={setSize.isPending}>
+          <option value="compact">Compact</option>
+          <option value="regular">Regular</option>
+          <option value="large">Large</option>
+        </select>
+      </Field>
+      <Field label="Screen edge" htmlFor="widget-edge">
+        <select id="widget-edge" className={SELECT_CLASS} value={settings?.widgetEdge ?? DEFAULT_WIDGET_EDGE}
+          onChange={(event) => setEdge.mutate(event.target.value as WidgetEdge)} disabled={setEdge.isPending}>
+          <option value="right">Right</option>
+          <option value="left">Left</option>
+        </select>
+      </Field>
+      <Field label="Behavior" htmlFor="widget-behavior">
+        <select id="widget-behavior" className={SELECT_CLASS} value={settings?.widgetBehavior ?? DEFAULT_WIDGET_BEHAVIOR}
+          onChange={(event) => setBehavior.mutate(event.target.value as WidgetBehavior)} disabled={setBehavior.isPending}>
+          <option value="always">Always visible</option>
+          <option value="hover">Collapse until hover</option>
+        </select>
+      </Field>
+      <Field label="Monitor" htmlFor="widget-display">
+        <select id="widget-display" className={SELECT_CLASS} value={settings?.widgetDisplayId ?? ""}
+          onChange={(event) => setDisplay.mutate(event.target.value === "" ? null : Number(event.target.value))} disabled={setDisplay.isPending}>
+          <option value="">Follow the pointer</option>
+          {(displays.data ?? []).map((display) => (
+            <option key={display.id} value={display.id}>{display.primary ? `${display.label} (primary)` : display.label}</option>
+          ))}
+        </select>
+      </Field>
+      <p className="m-0 mt-2 leading-relaxed text-dim">Drag the rail up or down to move it; these choose which screen it docks to and how much of it stays visible.</p>
+    </Section>
+  );
+}
+
+/** Everything about one provider in one place: whether Metria tracks it, which machine the
+ * data comes from, and which of its usage windows the cards draw. */
+function ProvidersTab(): JSX.Element {
+  const settings = useSettings();
+  const usage = useQuery({ queryKey: ["usage"], queryFn: () => window.metria.getUsage() });
+  const sources = useProviderSources();
+  const setProviderEnabled = useMutation({
+    mutationFn: (variables: { kind: ProviderKind; enabled: boolean }) => window.metria.setProviderEnabled(variables.kind, variables.enabled),
+    onSuccess: (next) => { queryClient.setQueryData(["settings"], next); void queryClient.invalidateQueries({ queryKey: ["usage"] }); }
+  });
   const setProviderSource = useMutation({
     mutationFn: (variables: { kind: ProviderKind; source: ProviderSourceChoice }) => window.metria.setProviderSource(variables.kind, variables.source),
     onSuccess: (next) => {
@@ -254,122 +444,91 @@ function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
       void queryClient.invalidateQueries({ queryKey: ["usage"] });
     }
   });
+  const setWindowHidden = useSettingsMutation((variables: { kind: ProviderKind; title: string; hidden: boolean }) =>
+    window.metria.setWindowHidden(variables.kind, variables.title, variables.hidden));
+  const providers = usage.data ?? [];
+  if (!providers.length) return <p className="m-0 leading-relaxed text-dim">Loading providers…</p>;
+  return (
+    <>
+      {providers.map((provider) => {
+        const source = (sources.data ?? []).find((entry) => entry.kind === provider.kind);
+        const wslOptions = (source?.wsl ?? []).filter((entry) => entry.present);
+        const enabled = settings?.enabledProviders.includes(provider.kind) ?? true;
+        const hidden = settings?.hiddenWindows[provider.kind] ?? [];
+        return (
+          <section key={provider.kind} className="mt-4 rounded-2xl border border-line bg-[#0f1319]/70 p-4 first:mt-0">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <img className="h-[22px] w-[22px] object-contain" src={`./${PROVIDER_LOGOS[provider.kind]}`} alt="" />
+                <div className="min-w-0">
+                  <h4 className="m-0 text-base font-semibold">{provider.kind}</h4>
+                  <p className="m-0 truncate text-xs text-dim">
+                    {provider.accountLabel ?? (provider.available ? "Signed in" : "Not connected")}
+                  </p>
+                </div>
+              </div>
+              <Toggle label="Track" srLabel={`Track ${provider.kind}`} checked={enabled} disabled={setProviderEnabled.isPending}
+                onChange={(value) => setProviderEnabled.mutate({ kind: provider.kind, enabled: value })} />
+            </div>
+            {wslOptions.length > 0 && (
+              <Field label="Data source" htmlFor={`source-${provider.kind}`}>
+                <select id={`source-${provider.kind}`} className={SELECT_CLASS} value={sourceValue(source?.source ?? null)}
+                  onChange={(event) => setProviderSource.mutate({ kind: provider.kind, source: parseSource(event.target.value) })}
+                  disabled={setProviderSource.isPending}>
+                  <option value="host">This computer</option>
+                  {wslOptions.map((entry) => <option key={entry.distro} value={`wsl:${entry.distro}`}>WSL: {entry.distro}</option>)}
+                </select>
+              </Field>
+            )}
+            {provider.windows.length > 0 && (
+              <div className="mt-3 border-t border-line pt-2">
+                {provider.windows.map((row) => (
+                  <Toggle key={row.title} label={`Show "${row.title}"`} checked={!hidden.includes(row.title)}
+                    disabled={setWindowHidden.isPending}
+                    onChange={(value) => setWindowHidden.mutate({ kind: provider.kind, title: row.title, hidden: !value })} />
+                ))}
+              </div>
+            )}
+            {!provider.available && <p className="m-0 mt-3 leading-relaxed text-dim">{provider.setupHint}</p>}
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
+  const [tab, setTab] = useState<SettingsTab>("general");
+  const [notice, setNotice] = useState("");
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const intervalOptions = REFRESH_OPTIONS.includes(currentInterval) ? REFRESH_OPTIONS : [currentInterval, ...REFRESH_OPTIONS].sort((a, b) => a - b);
-  const wslDetected = (providerSources.data ?? []).some((entry) => entry.wsl.length > 0);
-  const sourceOptions = (providerSources.data ?? []).filter((entry) => entry.wsl.some((candidate) => candidate.present) || entry.source?.location === "wsl");
-  const info = appInfo.data;
-  const loginMessage = loginItem.data?.message;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-label="Settings" className="max-h-[85vh] w-[min(600px,100%)] overflow-y-auto bg-surface p-6 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-line pb-4">
-          <h2 className="m-0 text-2xl font-semibold tracking-[-0.05em]">Settings</h2>
-          <button type="button" aria-label="Close settings" className="cursor-pointer border border-line2 bg-transparent px-3 py-1.5 text-dim hover:text-fg" onClick={onClose}>Close</button>
-        </div>
-
-        <section className="mt-5">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">App</h3>
-          <dl className="mt-2 leading-relaxed">
-            <div className="flex justify-between gap-4"><dt className="m-0 text-dim">Version</dt><dd className="m-0 font-mono">{info?.version ?? "…"}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="m-0 text-dim">Platform</dt><dd className="m-0">{info ? PLATFORM_LABEL[info.platform] ?? info.platform : "…"}</dd></div>
-            {info && <div className="mt-2"><dt className="m-0 text-dim">Data folder</dt><dd className="m-0 mt-1 break-all font-mono text-xs text-mute">{info.dataPath}</dd></div>}
-          </dl>
-        </section>
-
-        <section className="mt-6">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Refresh</h3>
-          <div className="mt-2.5 flex items-center gap-2.5">
-            <label className="text-dim" htmlFor="refresh-interval">Usage every</label>
-            <select id="refresh-interval" className="cursor-pointer border border-line2 bg-surface px-2.5 py-1.5 text-fg"
-              value={currentInterval}
-              onChange={(event) => setRefreshInterval.mutate(Number(event.target.value))}
-              disabled={setRefreshInterval.isPending}
-            >
-              {intervalOptions.map((seconds) => <option key={seconds} value={seconds}>{Math.round(seconds / 60)} min</option>)}
-            </select>
-          </div>
-        </section>
-
-        <section className="mt-6">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Usage display</h3>
-          <div className="mt-2.5 flex items-center gap-2.5">
-            <label className="text-dim" htmlFor="spend-display">Show usage as</label>
-            <select id="spend-display" className="cursor-pointer border border-line2 bg-surface px-2.5 py-1.5 text-fg"
-              value={spendDisplay}
-              onChange={(event) => setSpendDisplay.mutate(event.target.value as SpendDisplay)}
-              disabled={setSpendDisplay.isPending}
-            >
-              <option value="percent">Percentage</option>
-              <option value="dollars">Dollars</option>
-              <option value="both">Both</option>
-            </select>
-          </div>
-          <p className="m-0 mt-2 leading-relaxed text-dim">Cursor is the only provider that reports what a cycle costs; the others always show a percentage.</p>
-        </section>
-
-        {wslDetected && sourceOptions.length > 0 && (
-          <section className="mt-6">
-            <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Provider data source</h3>
-            {sourceOptions.map((entry) => (
-              <div key={entry.kind} className="mt-2.5 flex items-center gap-2.5">
-                <label className="min-w-24 text-dim" htmlFor={`source-${entry.kind}`}>{entry.kind}</label>
-                <select id={`source-${entry.kind}`} className="cursor-pointer border border-line2 bg-surface px-2.5 py-1.5 text-fg"
-                  value={sourceValue(entry.source)}
-                  onChange={(event) => setProviderSource.mutate({ kind: entry.kind, source: parseSource(event.target.value) })}
-                  disabled={setProviderSource.isPending}
-                >
-                  <option value="host">Windows</option>
-                  {entry.wsl.filter((candidate) => candidate.present).map((candidate) => (
-                    <option key={candidate.distro} value={`wsl:${candidate.distro}`}>WSL: {candidate.distro}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </section>
-        )}
-
-        <PairingSection />
-
-        <section className="mt-6">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Updates</h3>
-          <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
-            <button type="button" className="cursor-pointer border border-line2 bg-transparent px-3 py-1.5 text-[#d8d8dc] disabled:opacity-55"
-              onClick={() => void checkUpdates.mutate()} disabled={checkUpdates.isPending}>
-              {checkUpdates.isPending ? "Checking…" : "Check for updates"}
+      <div role="dialog" aria-modal="true" aria-label="Settings" className="flex h-[85vh] w-[min(720px,100%)] overflow-hidden bg-surface shadow-2xl">
+        <nav className="flex w-[150px] shrink-0 flex-col gap-1 border-r border-line bg-[#0b0e12] p-3" aria-label="Settings sections">
+          {TABS.map(([value, label]) => (
+            <button key={value} type="button" aria-current={tab === value}
+              className={`cursor-pointer border px-3 py-2 text-left ${tab === value ? "border-line2 bg-[#161b22] text-fg" : "border-transparent bg-transparent text-dim hover:text-fg"}`}
+              onClick={() => setTab(value)}>
+              {label}
             </button>
-            {updateStatus === "downloaded" &&
-              <button type="button" className="cursor-pointer border border-accent px-3 py-1.5 text-accent"
-                onClick={() => void installUpdate.mutate()} disabled={installUpdate.isPending}>Restart &amp; install update</button>}
+          ))}
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-between border-b border-line px-6 py-4">
+            <h2 className="m-0 text-2xl font-semibold tracking-[-0.05em]">Settings</h2>
+            <button type="button" aria-label="Close settings" className="cursor-pointer border border-line2 bg-transparent px-3 py-1.5 text-dim hover:text-fg" onClick={onClose}>Close</button>
           </div>
-        </section>
-
-        <section className="mt-6">
-          <h3 className="m-0 text-sm font-semibold uppercase tracking-wider text-dim">Startup</h3>
-          <button type="button" role="switch" aria-checked={loginItem.data?.enabled ?? false}
-            className="mt-2.5 cursor-pointer border border-line2 bg-transparent px-3 py-1.5 text-[#d8d8dc] disabled:opacity-55"
-            onClick={() => setLoginItem.mutate(!(loginItem.data?.enabled ?? false))}
-            disabled={setLoginItem.isPending}>
-            {loginItem.data?.enabled ? "Launches at login" : "Starts manually"}
-          </button>
-        </section>
-
-        <section className="mt-6 border-t border-line pt-5">
-          <div className="flex flex-wrap gap-2.5">
-            {(info?.platform === "win32" || info?.platform === "linux") && (
-              <button type="button" className="cursor-pointer border border-[#ff453a]/60 px-3 py-1.5 text-[#ff6961]"
-                onClick={() => void uninstall.mutate()} disabled={uninstall.isPending}>Uninstall</button>
-            )}
-            <button type="button" className="cursor-pointer border border-line2 bg-transparent px-3 py-1.5 text-[#d8d8dc]"
-              onClick={() => void quit.mutate()} disabled={quit.isPending}>Quit Metria Electron</button>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            {tab === "general" && <GeneralTab onNotice={setNotice} />}
+            {tab === "providers" && <ProvidersTab />}
+            {tab === "phone" && <PairingSection />}
           </div>
-        </section>
-
-        {(notice || loginMessage) && <p className="m-0 mt-5 leading-relaxed text-dim" role="status">{notice || loginMessage}</p>}
+          {notice && <p className="m-0 border-t border-line px-6 py-3 leading-relaxed text-dim" role="status">{notice}</p>}
+        </div>
       </div>
     </div>
   );

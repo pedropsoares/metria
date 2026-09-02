@@ -15,6 +15,9 @@ export type SpendDisplay = "percent" | "dollars" | "both";
 
 export interface ProviderUsage {
   kind: ProviderKind;
+  /** The signed-in account: an email where the provider exposes one, a masked key for
+   * OpenCode Go, and null when the credentials carry neither. */
+  accountLabel: string | null;
   windows: UsageWindow[];
   updatedAt: string | null;
   error: string | null;
@@ -25,8 +28,16 @@ export interface ProviderUsage {
 export interface AppSettings {
   refreshIntervalSeconds: number;
   spendDisplay: SpendDisplay;
+  showAccountLabels: boolean;
+  /** Usage windows the dashboard and card leave out, per provider, by title. */
+  hiddenWindows: Partial<Record<ProviderKind, string[]>>;
   enabledProviders: ProviderKind[];
   widgetYOffset: number;
+  widgetSize: WidgetSize;
+  widgetEdge: WidgetEdge;
+  widgetBehavior: WidgetBehavior;
+  /** Which display the widget lives on; null follows the display under the pointer. */
+  widgetDisplayId: number | null;
   providerSource: Partial<Record<ProviderKind, ProviderSourceChoice>>;
   ntfyServer: string;
   localServerPort: number;
@@ -72,6 +83,14 @@ export interface MetriaApi {
   quit(): Promise<void>;
   setRefreshInterval(seconds: number): Promise<AppSettings>;
   setSpendDisplay(display: SpendDisplay): Promise<AppSettings>;
+  setShowAccountLabels(show: boolean): Promise<AppSettings>;
+  setWindowHidden(kind: ProviderKind, title: string, hidden: boolean): Promise<AppSettings>;
+  setWidgetSize(size: WidgetSize): Promise<AppSettings>;
+  setWidgetEdge(edge: WidgetEdge): Promise<AppSettings>;
+  setWidgetBehavior(behavior: WidgetBehavior): Promise<AppSettings>;
+  setWidgetDisplay(displayId: number | null): Promise<AppSettings>;
+  getDisplays(): Promise<DisplayInfo[]>;
+  setWidgetHover(hovering: boolean): Promise<void>;
   getProviderSources(): Promise<ProviderSourceInfo[]>;
   setProviderSource(kind: ProviderKind, source: ProviderSourceChoice): Promise<AppSettings>;
   getPairing(): Promise<PairingInfo>;
@@ -81,6 +100,12 @@ export interface MetriaApi {
   setCustomPwaUrl(url: string): Promise<PairingInfo>;
   copyText(text: string): Promise<void>;
   onPairingChanged(callback: () => void): void;
+}
+
+export interface DisplayInfo {
+  id: number;
+  label: string;
+  primary: boolean;
 }
 
 export interface LoginItemStatus { available: boolean; enabled: boolean; message: string; }
@@ -137,6 +162,43 @@ export function providerShortLabel(kind: ProviderKind): string {
   return kind === "OpenCode Go" ? "Go" : kind;
 }
 
+/** The widget's three sizes, and everything the main process and the renderer each need
+ * to lay one out: the window is sized from these, and the rail draws itself to match. */
+export type WidgetSize = "compact" | "regular" | "large";
+export type WidgetEdge = "left" | "right";
+/** "always" keeps the rail on screen; "hover" collapses it to a sliver against the screen
+ * edge until the pointer reaches it. */
+export type WidgetBehavior = "always" | "hover";
+
+export interface WidgetMetrics { width: number; itemHeight: number; ring: number; gap: number; padding: number; }
+
+export const WIDGET_METRICS: Record<WidgetSize, WidgetMetrics> = {
+  compact: { width: 68, itemHeight: 42, ring: 30, gap: 6, padding: 10 },
+  regular: { width: 88, itemHeight: 52, ring: 38, gap: 8, padding: 12 },
+  large: { width: 112, itemHeight: 66, ring: 50, gap: 10, padding: 14 }
+};
+
+/** How wide the collapsed rail stays: enough to be a hover target and to show which edge
+ * it is docked to, narrow enough to stay out of the way. */
+export const WIDGET_COLLAPSED_WIDTH = 10;
+
+export function isWidgetSize(value: unknown): value is WidgetSize {
+  return value === "compact" || value === "regular" || value === "large";
+}
+export function isWidgetEdge(value: unknown): value is WidgetEdge {
+  return value === "left" || value === "right";
+}
+export function isWidgetBehavior(value: unknown): value is WidgetBehavior {
+  return value === "always" || value === "hover";
+}
+
+/** The windows a surface should draw for a provider, with the ones hidden in Settings
+ * left out. */
+export function visibleWindows(provider: ProviderUsage, hidden: AppSettings["hiddenWindows"]): UsageWindow[] {
+  const titles = hidden[provider.kind] ?? [];
+  return provider.windows.filter((row) => !titles.includes(row.title));
+}
+
 export function isSpendDisplay(value: unknown): value is SpendDisplay {
   return value === "percent" || value === "dollars" || value === "both";
 }
@@ -176,11 +238,13 @@ export function statusDotColor(hasError: boolean): string {
   return hasError ? "#ff9f0a" : "#30d158";
 }
 
-export const WIDGET_ITEM_HEIGHT = 52;
 export const CARD_WIDTH = 316;
 export const DEFAULT_WIDGET_Y_OFFSET = 12;
 export const DEFAULT_REFRESH_INTERVAL_SECONDS = 300;
 export const DEFAULT_SPEND_DISPLAY: SpendDisplay = "both";
+export const DEFAULT_WIDGET_SIZE: WidgetSize = "regular";
+export const DEFAULT_WIDGET_EDGE: WidgetEdge = "right";
+export const DEFAULT_WIDGET_BEHAVIOR: WidgetBehavior = "always";
 export const DEFAULT_NTFY_SERVER = "https://ntfy.sh";
 export const DEFAULT_LOCAL_SERVER_PORT = 8973;
 /** The hosted PWA the native app pairs against by default; an empty setting pairs

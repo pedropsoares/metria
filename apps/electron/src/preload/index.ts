@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { CardShowPayload, MetriaApi, ProviderKind, ProviderSourceChoice, SpendDisplay } from "../shared/types";
+import type { CardShowPayload, MetriaApi, ProviderKind, ProviderSourceChoice, SpendDisplay, WidgetBehavior, WidgetEdge, WidgetSize } from "../shared/types";
 
 const api: MetriaApi = {
   getUsage: () => ipcRenderer.invoke("metria:get-usage"),
@@ -23,6 +23,14 @@ const api: MetriaApi = {
   quit: () => ipcRenderer.invoke("metria:quit"),
   setRefreshInterval: (seconds: number) => ipcRenderer.invoke("metria:set-refresh-interval", seconds),
   setSpendDisplay: (display: SpendDisplay) => ipcRenderer.invoke("metria:set-spend-display", display),
+  setShowAccountLabels: (show: boolean) => ipcRenderer.invoke("metria:set-account-labels", show),
+  setWindowHidden: (kind: ProviderKind, title: string, hidden: boolean) => ipcRenderer.invoke("metria:set-window-hidden", kind, title, hidden),
+  setWidgetSize: (size: WidgetSize) => ipcRenderer.invoke("metria:set-widget-size", size),
+  setWidgetEdge: (edge: WidgetEdge) => ipcRenderer.invoke("metria:set-widget-edge", edge),
+  setWidgetBehavior: (behavior: WidgetBehavior) => ipcRenderer.invoke("metria:set-widget-behavior", behavior),
+  setWidgetDisplay: (displayId: number | null) => ipcRenderer.invoke("metria:set-widget-display", displayId),
+  getDisplays: () => ipcRenderer.invoke("metria:get-displays"),
+  setWidgetHover: (hovering: boolean) => ipcRenderer.invoke("metria:widget-hover", hovering),
   getProviderSources: () => ipcRenderer.invoke("metria:get-provider-sources"),
   setProviderSource: (kind: ProviderKind, source: ProviderSourceChoice) => ipcRenderer.invoke("metria:set-provider-source", kind, source),
   getPairing: () => ipcRenderer.invoke("metria:get-pairing"),

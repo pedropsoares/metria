@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatCents, spendText, usageParts } from "../shared/types";
-import type { UsageWindow } from "../shared/types";
+import { formatCents, spendText, usageParts, visibleWindows } from "../shared/types";
+import type { ProviderUsage, UsageWindow } from "../shared/types";
 
 const cursor: UsageWindow = { title: "This cycle", percent: 52, resetDate: null, usedCents: 13000, limitCents: 25000 };
 const claude: UsageWindow = { title: "Session", percent: 52, resetDate: null };
@@ -29,4 +29,14 @@ test("usageParts keeps the percentage for a window without amounts", () => {
   for (const display of ["percent", "dollars", "both"] as const) {
     assert.deepEqual(usageParts(claude, display), { percent: true, spend: null });
   }
+});
+
+test("visibleWindows drops the titles hidden for that provider only", () => {
+  const provider: ProviderUsage = {
+    kind: "Claude", accountLabel: null, windows: [claude, { ...claude, title: "All models" }],
+    updatedAt: null, error: null, available: true, setupHint: ""
+  };
+  assert.deepEqual(visibleWindows(provider, { Claude: ["All models"] }).map((row) => row.title), ["Session"]);
+  assert.deepEqual(visibleWindows(provider, { Cursor: ["Session"] }).map((row) => row.title), ["Session", "All models"]);
+  assert.deepEqual(visibleWindows(provider, {}).map((row) => row.title), ["Session", "All models"]);
 });

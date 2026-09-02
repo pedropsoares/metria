@@ -1,7 +1,7 @@
 import { useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { CARD_WIDTH, clampPercent, DEFAULT_SPEND_DISPLAY, gaugeColor, PROVIDER_LOGOS, providerShortLabel, statusDotColor, usageParts } from "../shared/types";
+import { CARD_WIDTH, clampPercent, DEFAULT_SPEND_DISPLAY, gaugeColor, PROVIDER_LOGOS, providerShortLabel, statusDotColor, usageParts, visibleWindows } from "../shared/types";
 import type { CardShowPayload, ProviderUsage, SpendDisplay, UsageWindow } from "../shared/types";
 import "./app.css";
 
@@ -59,6 +59,7 @@ function Card(): JSX.Element {
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => window.metria.getSettings(), refetchOnWindowFocus: false });
   const provider = usage.data?.find((candidate) => candidate.kind === payload?.kind);
   const display = settings.data?.spendDisplay ?? DEFAULT_SPEND_DISPLAY;
+  const rows = provider ? visibleWindows(provider, settings.data?.hiddenWindows ?? {}) : [];
 
   useEffect(() => {
     const apply = (next: CardShowPayload | null): void => setPayload(next);
@@ -77,7 +78,7 @@ function Card(): JSX.Element {
   useEffect(() => {
     if (!payload) return;
     requestAnimationFrame(() => { void window.metria.resizeCard(Math.ceil(document.body.scrollHeight)); });
-  }, [payload, provider, usage.data, display]);
+  }, [payload, provider, usage.data, display, rows.length]);
 
   const content = provider ? (
     provider.windows.length === 0 ? (
@@ -87,8 +88,12 @@ function Card(): JSX.Element {
         </div>
         {provider.error && <p className="mt-3 text-[12px] leading-[1.4] text-[#ff8d6c]">{provider.error}</p>}
       </>
+    ) : rows.length === 0 ? (
+      <div className="flex items-center gap-2 text-[13px] leading-[1.4] text-mute">
+        Every usage window for {providerShortLabel(provider.kind)} is hidden. Turn one back on in Settings.
+      </div>
     ) : (
-      provider.windows.map((row) => <WindowRow key={row.title} window={row} display={display} />)
+      rows.map((row) => <WindowRow key={row.title} window={row} display={display} />)
     )
   ) : (
     <div className="flex items-center gap-2 text-[13px] leading-[1.4] text-mute">Waiting for usage data...</div>

@@ -1,8 +1,8 @@
-import { useEffect, useRef, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { clampPercent, DEFAULT_WIDGET_Y_OFFSET, PROVIDER_LOGOS, WIDGET_ITEM_HEIGHT } from "../shared/types";
-import type { ProviderKind, ProviderUsage } from "../shared/types";
+import { clampPercent, DEFAULT_WIDGET_SIZE, DEFAULT_WIDGET_Y_OFFSET, gaugeColor, PROVIDER_LOGOS, WIDGET_COLLAPSED_WIDTH, WIDGET_METRICS } from "../shared/types";
+import type { ProviderKind, ProviderUsage, WidgetMetrics } from "../shared/types";
 import "./app.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
@@ -16,14 +16,14 @@ const ACCENT: Record<ProviderKind, string> = {
 
 function primary(provider: ProviderUsage): number { return provider.windows[0]?.percent ?? 0; }
 
-function Ring({ provider }: { provider: ProviderUsage }): JSX.Element {
+function Ring({ provider, size }: { provider: ProviderUsage; size: number }): JSX.Element {
   const clamped = clampPercent(primary(provider));
   const r = 17;
   const c = 2 * Math.PI * r;
   const stroke = provider.kind === "Codex" ? "url(#codex-ring)" : ACCENT[provider.kind];
   return (
-    <span className="relative block h-[38px] w-[38px]">
-      <svg className="absolute inset-0" width="38" height="38" viewBox="0 0 38 38">
+    <span className="relative block" style={{ height: size, width: size }}>
+      <svg className="absolute inset-0" width={size} height={size} viewBox="0 0 38 38">
         {provider.kind === "Codex" && (
           <defs>
             <linearGradient id="codex-ring" x1="0" y1="0" x2="1" y2="1">
@@ -40,12 +40,36 @@ function Ring({ provider }: { provider: ProviderUsage }): JSX.Element {
           transform="rotate(-90 19 19)"
         />
       </svg>
-      <img className="pointer-events-none absolute inset-0 m-auto h-[15px] w-[15px] object-contain" src={`./${PROVIDER_LOGOS[provider.kind]}`} alt="" />
+      <img className="pointer-events-none absolute inset-0 m-auto object-contain" style={{ height: size * 0.4, width: size * 0.4 }} src={`./${PROVIDER_LOGOS[provider.kind]}`} alt="" />
     </span>
   );
 }
 
 const DRAG_THRESHOLD = 4;
+
+/** The rail is as wide as its window: in hover mode the main process shrinks that window
+ * to a sliver, and this is how the renderer notices it has to draw one. */
+function useCollapsed(): boolean {
+  const [collapsed, setCollapsed] = useState(window.innerWidth <= WIDGET_COLLAPSED_WIDTH + 2);
+  useEffect(() => {
+    const onResize = (): void => setCollapsed(window.innerWidth <= WIDGET_COLLAPSED_WIDTH + 2);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return collapsed;
+}
+
+/** What the sliver shows: the worst reading, as a single stripe of its gauge color. */
+function CollapsedRail({ providers }: { providers: ProviderUsage[] }): JSX.Element {
+  const worst = providers.reduce((highest, provider) => Math.max(highest, clampPercent(primary(provider))), 0);
+  return (
+    <main
+      className="h-full w-full cursor-pointer"
+      style={{ background: providers.length ? gaugeColor(worst) : "#3a3a3c" }}
+      onMouseEnter={() => { void window.metria.setWidgetHover(true); }}
+    />
+  );
+}
 
 function Widget(): JSX.Element {
   // The dashboard can enable/disable providers at any time; refresh our cached
@@ -60,6 +84,7 @@ function Widget(): JSX.Element {
     queryFn: () => window.metria.getUsage(),
     refetchInterval: settings.data ? settings.data.refreshIntervalSeconds * 1000 : undefined
   });
+  const collapsed = useCollapsed();
   const drag = useRef<{ startScreenY: number; startOffset: number } | null>(null);
   const moved = useRef(false);
   const offsetRef = useRef(DEFAULT_WIDGET_Y_OFFSET);
@@ -80,6 +105,8 @@ function Widget(): JSX.Element {
     });
   };
   const visible = (usage.data ?? []).filter((provider) => settings.data?.enabledProviders.includes(provider.kind) && provider.available);
+  const metrics: WidgetMetrics = WIDGET_METRICS[settings.data?.widgetSize ?? DEFAULT_WIDGET_SIZE];
+  if (collapsed) return <CollapsedRail providers={visible} />;
   const onPointerDown = (event: React.PointerEvent<HTMLElement>): void => {
     moved.current = false;
     // Use screenY, not clientY: the widget window moves while dragging, so
@@ -110,19 +137,24 @@ function Widget(): JSX.Element {
     }
   };
   return (
-    <main className="flex h-full w-full cursor-grab select-none flex-col overflow-hidden py-3 active:cursor-grabbing" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-      <section className="flex min-h-0 flex-1 flex-col items-center gap-2">
+    <main
+      className="flex h-full w-full cursor-grab select-none flex-col overflow-hidden active:cursor-grabbing"
+      style={{ paddingTop: metrics.padding, paddingBottom: metrics.padding }}
+      onMouseEnter={() => { void window.metria.setWidgetHover(true); }}
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+    >
+      <section className="flex min-h-0 flex-1 flex-col items-center" style={{ gap: metrics.gap }}>
         {visible.map((provider, index) => (
           <div
             key={provider.kind}
             data-index={index}
-            className="flex w-16 shrink-0 cursor-pointer flex-col items-center justify-center gap-[3px]"
-            style={{ height: WIDGET_ITEM_HEIGHT }}
+            className="flex shrink-0 cursor-pointer flex-col items-center justify-center gap-[3px]"
+            style={{ height: metrics.itemHeight, width: metrics.width - 2 * metrics.padding }}
             onClick={() => { if (!moved.current) void window.metria.openDashboard(); }}
             onMouseEnter={() => { void window.metria.setProviderHover(index); }}
           >
-            <Ring provider={provider} />
-            <span className="text-[11px] font-semibold leading-none text-white">
+            <Ring provider={provider} size={metrics.ring} />
+            <span className="font-semibold leading-none text-white" style={{ fontSize: Math.round(metrics.ring * 0.29) }}>
               {Math.round(clampPercent(primary(provider)))}%
             </span>
           </div>
@@ -140,5 +172,8 @@ function Root(): JSX.Element {
   );
 }
 
-document.body.addEventListener("mouseleave", () => { void window.metria.setProviderHover(null); });
+document.body.addEventListener("mouseleave", () => {
+  void window.metria.setProviderHover(null);
+  void window.metria.setWidgetHover(false);
+});
 createRoot(document.body).render(<Root />);

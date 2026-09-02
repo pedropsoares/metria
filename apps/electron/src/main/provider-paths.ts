@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 export interface PathEnvironment { platform: NodeJS.Platform; home: string; env: NodeJS.ProcessEnv; }
 
-export interface ProviderPaths { codexAuth: string; codexSessions: string; openCodeAuth: string; claudeCredentials: string; cursorState: string; }
+export interface ProviderPaths { codexAuth: string; codexSessions: string; openCodeAuth: string; claudeCredentials: string; claudeConfig: string; cursorState: string; }
 
 /** Vendor-owned roots only; environment overrides take precedence so portable installs stay opt-in. */
 export function providerPaths(context: PathEnvironment): ProviderPaths {
@@ -16,5 +16,5 @@ export function providerPaths(context: PathEnvironment): ProviderPaths {
     : context.platform === "darwin"
       ? join(context.home, "Library", "Application Support")
       : (context.env.XDG_CONFIG_HOME || join(context.home, ".config"));
-  return { codexAuth: join(codexRoot, "auth.json"), codexSessions: join(codexRoot, "sessions"), openCodeAuth: join(dataRoot, "opencode", "auth.json"), claudeCredentials: join(context.home, ".claude", ".credentials.json"), cursorState: join(cursorRoot, "Cursor", "User", "globalStorage", "state.vscdb") };
+  return { codexAuth: join(codexRoot, "auth.json"), codexSessions: join(codexRoot, "sessions"), openCodeAuth: join(dataRoot, "opencode", "auth.json"), claudeCredentials: join(context.home, ".claude", ".credentials.json"), claudeConfig: join(context.home, ".claude.json"), cursorState: join(cursorRoot, "Cursor", "User", "globalStorage", "state.vscdb") };
 }

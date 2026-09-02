@@ -1,14 +1,24 @@
 import { app } from "electron";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ALL_PROVIDER_KINDS, DEFAULT_LOCAL_SERVER_PORT, DEFAULT_NTFY_SERVER, DEFAULT_PWA_URL, DEFAULT_REFRESH_INTERVAL_SECONDS, DEFAULT_SPEND_DISPLAY, DEFAULT_WIDGET_Y_OFFSET, isProviderKind, isSpendDisplay } from "../shared/types";
-import type { AppSettings, ProviderKind, ProviderSourceChoice, SpendDisplay } from "../shared/types";
+import {
+  ALL_PROVIDER_KINDS, DEFAULT_LOCAL_SERVER_PORT, DEFAULT_NTFY_SERVER, DEFAULT_PWA_URL, DEFAULT_REFRESH_INTERVAL_SECONDS,
+  DEFAULT_SPEND_DISPLAY, DEFAULT_WIDGET_BEHAVIOR, DEFAULT_WIDGET_EDGE, DEFAULT_WIDGET_SIZE, DEFAULT_WIDGET_Y_OFFSET,
+  isProviderKind, isSpendDisplay, isWidgetBehavior, isWidgetEdge, isWidgetSize
+} from "../shared/types";
+import type { AppSettings, ProviderKind, ProviderSourceChoice, SpendDisplay, WidgetBehavior, WidgetEdge, WidgetSize } from "../shared/types";
 
 const defaults: AppSettings = {
   refreshIntervalSeconds: DEFAULT_REFRESH_INTERVAL_SECONDS,
   spendDisplay: DEFAULT_SPEND_DISPLAY,
+  showAccountLabels: true,
+  hiddenWindows: {},
   enabledProviders: [...ALL_PROVIDER_KINDS],
   widgetYOffset: DEFAULT_WIDGET_Y_OFFSET,
+  widgetSize: DEFAULT_WIDGET_SIZE,
+  widgetEdge: DEFAULT_WIDGET_EDGE,
+  widgetBehavior: DEFAULT_WIDGET_BEHAVIOR,
+  widgetDisplayId: null,
   providerSource: {},
   ntfyServer: DEFAULT_NTFY_SERVER,
   localServerPort: DEFAULT_LOCAL_SERVER_PORT,
@@ -24,8 +34,14 @@ export class SettingsStore {
       return {
         refreshIntervalSeconds: Number.isFinite(parsed.refreshIntervalSeconds) ? Math.max(60, Number(parsed.refreshIntervalSeconds)) : defaults.refreshIntervalSeconds,
         spendDisplay: isSpendDisplay(parsed.spendDisplay) ? parsed.spendDisplay : defaults.spendDisplay,
+        showAccountLabels: typeof parsed.showAccountLabels === "boolean" ? parsed.showAccountLabels : defaults.showAccountLabels,
+        hiddenWindows: normalizeHiddenWindows(parsed.hiddenWindows),
         enabledProviders: Array.isArray(parsed.enabledProviders) ? parsed.enabledProviders.filter(isProviderKind) : defaults.enabledProviders,
         widgetYOffset: Number.isFinite(parsed.widgetYOffset) && Number(parsed.widgetYOffset) >= 0 ? Number(parsed.widgetYOffset) : defaults.widgetYOffset,
+        widgetSize: isWidgetSize(parsed.widgetSize) ? parsed.widgetSize : defaults.widgetSize,
+        widgetEdge: isWidgetEdge(parsed.widgetEdge) ? parsed.widgetEdge : defaults.widgetEdge,
+        widgetBehavior: isWidgetBehavior(parsed.widgetBehavior) ? parsed.widgetBehavior : defaults.widgetBehavior,
+        widgetDisplayId: Number.isFinite(parsed.widgetDisplayId) ? Number(parsed.widgetDisplayId) : defaults.widgetDisplayId,
         providerSource: normalizeProviderSource(parsed.providerSource),
         ntfyServer: normalizeNtfyServer(parsed.ntfyServer),
         localServerPort: normalizePort(parsed.localServerPort),
@@ -41,6 +57,25 @@ export class SettingsStore {
   }
 
   setSpendDisplay(spendDisplay: SpendDisplay): AppSettings { return this.save({ ...this.load(), spendDisplay }); }
+
+  setShowAccountLabels(showAccountLabels: boolean): AppSettings { return this.save({ ...this.load(), showAccountLabels }); }
+
+  setWidgetSize(widgetSize: WidgetSize): AppSettings { return this.save({ ...this.load(), widgetSize }); }
+
+  setWidgetEdge(widgetEdge: WidgetEdge): AppSettings { return this.save({ ...this.load(), widgetEdge }); }
+
+  setWidgetBehavior(widgetBehavior: WidgetBehavior): AppSettings { return this.save({ ...this.load(), widgetBehavior }); }
+
+  setWidgetDisplay(widgetDisplayId: number | null): AppSettings { return this.save({ ...this.load(), widgetDisplayId }); }
+
+  /** Hiding every window of a provider is allowed — the card says so rather than looking
+   * broken — so this stores the titles verbatim instead of guarding the last one. */
+  setWindowHidden(kind: ProviderKind, title: string, hidden: boolean): AppSettings {
+    const current = this.load();
+    const titles = current.hiddenWindows[kind] ?? [];
+    const next = hidden ? [...new Set([...titles, title])] : titles.filter((candidate) => candidate !== title);
+    return this.save({ ...current, hiddenWindows: { ...current.hiddenWindows, [kind]: next } });
+  }
 
   setNtfyServer(server: string): AppSettings { return this.save({ ...this.load(), ntfyServer: normalizeNtfyServer(server) }); }
 
@@ -69,6 +104,17 @@ export class SettingsStore {
     const next = { ...current, enabledProviders };
     return this.save(next);
   }
+}
+
+function normalizeHiddenWindows(value: unknown): Partial<Record<ProviderKind, string[]>> {
+  if (typeof value !== "object" || value === null) return {};
+  const source = value as Record<string, unknown>;
+  const normalized: Partial<Record<ProviderKind, string[]>> = {};
+  ALL_PROVIDER_KINDS.forEach((kind) => {
+    const titles = source[kind];
+    if (Array.isArray(titles)) normalized[kind] = titles.filter((title): title is string => typeof title === "string");
+  });
+  return normalized;
 }
 
 function normalizeProviderSource(value: unknown): Partial<Record<ProviderKind, ProviderSourceChoice>> {

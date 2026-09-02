@@ -93,20 +93,28 @@ class ClaudeProvider implements Provider {
   readonly hint = "Run `claude auth login` in your terminal to create local Claude Code credentials, then refresh Metria.";
   constructor(private readonly paths: ProviderPaths) {}
   hasHostCredentials(): boolean { return existsSync(this.paths.claudeCredentials); }
-  async fetchHost(): Promise<ProviderUsage> { return this.usage(this.readToken(this.paths.claudeCredentials)); }
-  async fetchWsl(shell: WslShell, distro: string): Promise<ProviderUsage> { return this.usage(this.readToken(await shell.readFile(distro, ".claude/.credentials.json"))); }
+  async fetchHost(): Promise<ProviderUsage> {
+    // `readToken` parses JSON, so it needs the file's contents — passing the path made
+    // every host fetch fail with "credentials were not found".
+    return this.usage(this.readToken(readTextOrEmpty(this.paths.claudeCredentials)), parseClaudeAccount(readTextOrEmpty(this.paths.claudeConfig)));
+  }
+  async fetchWsl(shell: WslShell, distro: string): Promise<ProviderUsage> {
+    let account: string | undefined;
+    try { account = parseClaudeAccount(await shell.readFile(distro, ".claude.json")); } catch { /* No account file in this distro. */ }
+    return this.usage(this.readToken(await shell.readFile(distro, ".claude/.credentials.json")), account);
+  }
   private readToken(credentials: string): string | undefined {
     try {
       return (JSON.parse(credentials) as { claudeAiOauth?: { accessToken?: string } }).claudeAiOauth?.accessToken;
     } catch { return undefined; }
   }
-  private async usage(token?: string): Promise<ProviderUsage> {
+  private async usage(token?: string, accountLabel?: string): Promise<ProviderUsage> {
     if (!token) throw new Error("Claude Code credentials were not found. Run `claude auth login`.");
     const data = JSON.parse(await requestWithRetry("https://api.anthropic.com/api/oauth/usage", { Authorization: `Bearer ${token}`, "anthropic-beta": "oauth-2025-04-20" })) as { five_hour?: { utilization?: number; resets_at?: string }; seven_day?: { utilization?: number; resets_at?: string } };
     return loaded(this.kind, [
       { title: "Current session", percent: Number(data.five_hour?.utilization ?? 0), resetDate: data.five_hour?.resets_at ?? null },
       { title: "All models", percent: Number(data.seven_day?.utilization ?? 0), resetDate: data.seven_day?.resets_at ?? null }
-    ]);
+    ], accountLabel ?? null);
   }
 }
 
@@ -148,7 +156,7 @@ class OpenCodeGoProvider implements Provider {
     if (!key) throw new Error("OpenCode Go credentials were not found.");
     const data = await requestWithRetry("https://opencode.ai/zen/go/v1/usage", { Authorization: `Bearer ${key}` });
     const windows = parseOpenCodeGoWindows(data);
-    return loaded(this.kind, windows);
+    return loaded(this.kind, windows, maskedKey(key));
   }
 }
 
@@ -161,6 +169,7 @@ export function parseOpenCodeGoWindows(data: string): UsageWindow[] {
 }
 
 const CURSOR_TOKEN_KEY = "cursorAuth/accessToken";
+const CURSOR_EMAIL_KEY = "cursorAuth/cachedEmail";
 const CURSOR_USAGE_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
 /** Without `includePooledUsage`, a team or enterprise account gets a stub answer
  * back — no `planUsage`, no `spendLimitUsage`, and a billing cycle whose start
@@ -186,7 +195,7 @@ class CursorProvider implements Provider {
         "Content-Type": "application/json",
         "Connect-Protocol-Version": "1"
       }, { method: "POST", body: CURSOR_USAGE_BODY });
-      return loaded(this.kind, parseCursorWindows(data));
+      return loaded(this.kind, parseCursorWindows(data), readCursorItem(this.paths.cursorState, CURSOR_EMAIL_KEY) ?? null);
     } catch (error) {
       // There is no refresh grant to use, so an unauthorized token is a sign-in prompt.
       if (error instanceof HttpError && (error.status === 401 || error.status === 403)) throw new Error("Sign in to Cursor again.");
@@ -305,18 +314,22 @@ async function openCodeRemoteUsage(auth: string): Promise<ProviderUsage | undefi
     return loaded("Codex", [["Current session", rateLimit.primary_window], ["All models", rateLimit.secondary_window]].flatMap(([title, limit]) => {
       const typed = limit as { used_percent?: number; reset_at?: number } | undefined;
       return typed?.used_percent === undefined ? [] : [{ title: String(title), percent: Number(typed.used_percent), resetDate: typed.reset_at ? new Date(typed.reset_at * 1000).toISOString() : null }];
-    }));
+    }), parsed.email ?? null);
   } catch { return undefined; }
 }
 
-export function parseCodexAuth(auth: string): { access: string; accountId: string } | undefined {
+export function parseCodexAuth(auth: string): { access: string; accountId: string; email?: string } | undefined {
   try {
     const parsed = JSON.parse(auth) as {
       openai?: { access?: string; accountId?: string };
-      tokens?: { access_token?: string; account_id?: string };
+      tokens?: { access_token?: string; account_id?: string; id_token?: string };
     };
-    if (parsed.tokens?.access_token && parsed.tokens.account_id) return { access: parsed.tokens.access_token, accountId: parsed.tokens.account_id };
-    return parsed.openai?.access && parsed.openai.accountId ? { access: parsed.openai.access, accountId: parsed.openai.accountId } : undefined;
+    // The id token is the one that carries the account's email; the access token is the
+    // fallback for older auth files that store only it.
+    if (parsed.tokens?.access_token && parsed.tokens.account_id) {
+      return { access: parsed.tokens.access_token, accountId: parsed.tokens.account_id, email: (parsed.tokens.id_token ? tokenEmail(parsed.tokens.id_token) : undefined) ?? tokenEmail(parsed.tokens.access_token) };
+    }
+    return parsed.openai?.access && parsed.openai.accountId ? { access: parsed.openai.access, accountId: parsed.openai.accountId, email: tokenEmail(parsed.openai.access) } : undefined;
   } catch { return undefined; }
 }
 
@@ -350,11 +363,47 @@ function newestSessionFile(path: string): string | undefined {
   return files.sort((left, right) => right.modified - left.modified)[0]?.path;
 }
 
+/** A plain file read that treats "missing" and "unreadable" as empty, for the credential
+ * and account files a provider may simply not have. */
+function readTextOrEmpty(path: string): string {
+  try { return existsSync(path) ? readFileSync(path, "utf8") : ""; } catch { return ""; }
+}
+
 function readFileSyncPathOrEmpty(path: string): string {
   const newest = newestSessionFile(path);
   return newest ? readFileSync(newest, "utf8") : "";
 }
 
-function loaded(kind: ProviderKind, windows: UsageWindow[]): ProviderUsage { return { kind, windows, updatedAt: new Date().toISOString(), error: null, available: true, setupHint: "" }; }
+function loaded(kind: ProviderKind, windows: UsageWindow[], accountLabel: string | null = null): ProviderUsage {
+  return { kind, accountLabel, windows, updatedAt: new Date().toISOString(), error: null, available: true, setupHint: "" };
+}
 function empty(kind: ProviderKind): ProviderUsage { return { ...loaded(kind, []), error: "No current usage data was found." }; }
-function unavailable(kind: ProviderKind, setupHint: string): ProviderUsage { return { kind, windows: [], updatedAt: null, error: null, available: false, setupHint }; }
+function unavailable(kind: ProviderKind, setupHint: string): ProviderUsage { return { kind, accountLabel: null, windows: [], updatedAt: null, error: null, available: false, setupHint }; }
+
+/** The email a token carries, read from the JWT payload without verifying the signature —
+ * the same claims the native app looks at, in the same order. Claude's OAuth token is not
+ * a JWT at all, which is why its email comes from `~/.claude.json` instead. */
+export function tokenEmail(token: string): string | undefined {
+  const segments = token.split(".");
+  if (segments.length < 2) return undefined;
+  try {
+    const claims = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8")) as Record<string, unknown>;
+    return ["email", "preferred_username", "unique_name"]
+      .map((claim) => claims[claim])
+      .find((value): value is string => typeof value === "string" && value.includes("@"));
+  } catch { return undefined; }
+}
+
+/** Claude Code writes the signed-in account beside its credentials, in `~/.claude.json`. */
+export function parseClaudeAccount(config: string): string | undefined {
+  try {
+    const email = (JSON.parse(config) as { oauthAccount?: { emailAddress?: string } }).oauthAccount?.emailAddress;
+    return typeof email === "string" && email.length > 0 ? email : undefined;
+  } catch { return undefined; }
+}
+
+/** An API key is not an identity, but it is what OpenCode Go has; mask it the way the
+ * native app does so the card can still say which credential is in use. */
+export function maskedKey(key: string): string {
+  return key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : "****";
+}

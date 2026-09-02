@@ -6,7 +6,7 @@ import { encryptionKeyFromSecret } from "../main/pairing-secret";
 import type { ProviderUsage } from "../shared/types";
 
 function provider(kind: ProviderUsage["kind"], windows: ProviderUsage["windows"]): ProviderUsage {
-  return { kind, windows, updatedAt: null, error: null, available: true, setupHint: "" };
+  return { kind, accountLabel: null, windows, updatedAt: null, error: null, available: true, setupHint: "" };
 }
 
 test("publishes the primary window of each provider in the shared wire format", () => {

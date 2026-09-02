@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chooseSource, isExpiredJwt, parseCodexAuth, parseCursorWindows, parseOpenCodeGoWindows } from "../main/providers";
+import { chooseSource, isExpiredJwt, maskedKey, parseClaudeAccount, parseCodexAuth, parseCursorWindows, parseOpenCodeGoWindows, tokenEmail } from "../main/providers";
 import type { ProviderSourceInfo } from "../shared/types";
 
 function info(host: boolean, present: string[]): Pick<ProviderSourceInfo, "host" | "wsl"> {
@@ -35,11 +35,40 @@ test("chooseSource returns null when no source has data", () => {
 });
 
 test("parseCodexAuth reads the current tokens format", () => {
-  assert.deepEqual(parseCodexAuth(JSON.stringify({ tokens: { access_token: "access", account_id: "account" } })), { access: "access", accountId: "account" });
+  assert.deepEqual(parseCodexAuth(JSON.stringify({ tokens: { access_token: "access", account_id: "account" } })), { access: "access", accountId: "account", email: undefined });
 });
 
 test("parseCodexAuth keeps supporting the legacy format", () => {
-  assert.deepEqual(parseCodexAuth(JSON.stringify({ openai: { access: "access", accountId: "account" } })), { access: "access", accountId: "account" });
+  assert.deepEqual(parseCodexAuth(JSON.stringify({ openai: { access: "access", accountId: "account" } })), { access: "access", accountId: "account", email: undefined });
+});
+
+// Account labels: Codex signs its email into the id token, Claude keeps it beside the
+// credentials, and OpenCode Go has only a key to mask.
+function jwt(claims: Record<string, unknown>): string {
+  return `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
+}
+
+test("parseCodexAuth prefers the id token's email over the access token's", () => {
+  const auth = JSON.stringify({ tokens: { access_token: jwt({ email: "access@example.com" }), account_id: "account", id_token: jwt({ email: "ada@example.com" }) } });
+  assert.equal(parseCodexAuth(auth)?.email, "ada@example.com");
+});
+
+test("tokenEmail reads the first claim that looks like an address", () => {
+  assert.equal(tokenEmail(jwt({ preferred_username: "ada@example.com" })), "ada@example.com");
+  assert.equal(tokenEmail(jwt({ email: "not-an-address", unique_name: "ada@example.com" })), "ada@example.com");
+  assert.equal(tokenEmail(jwt({ sub: "user_1" })), undefined);
+  assert.equal(tokenEmail("opaque-token"), undefined);
+});
+
+test("parseClaudeAccount reads the account email Claude Code stores", () => {
+  assert.equal(parseClaudeAccount(JSON.stringify({ oauthAccount: { emailAddress: "ada@example.com" } })), "ada@example.com");
+  assert.equal(parseClaudeAccount(JSON.stringify({ oauthAccount: {} })), undefined);
+  assert.equal(parseClaudeAccount("not json"), undefined);
+});
+
+test("maskedKey keeps the ends of a key and nothing else", () => {
+  assert.equal(maskedKey("sk-live-1234567890"), "sk-l...7890");
+  assert.equal(maskedKey("short"), "****");
 });
 
 test("parseOpenCodeGoWindows reads the API reset date", () => {

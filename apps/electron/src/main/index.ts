@@ -2,14 +2,17 @@ import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, screen, shel
 import { autoUpdater } from "electron-updater";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { ALL_PROVIDER_KINDS, CARD_WIDTH, isProviderKind, isSpendDisplay, PROVIDER_LOGOS, providerShortLabel, WIDGET_ITEM_HEIGHT } from "../shared/types";
+import {
+  ALL_PROVIDER_KINDS, CARD_WIDTH, isProviderKind, isSpendDisplay, isWidgetBehavior, isWidgetEdge, isWidgetSize,
+  PROVIDER_LOGOS, providerShortLabel, WIDGET_COLLAPSED_WIDTH, WIDGET_METRICS
+} from "../shared/types";
 import { LocalPWAServer } from "./local-pwa-server";
 import { NtfyPublisher } from "./ntfy";
 import { PairingStore } from "./pairing";
 import { ProviderService } from "./providers";
 import { findResource } from "./resources";
 import { SettingsStore } from "./settings";
-import type { PairingInfo, ProviderKind, ProviderSourceChoice, ProviderUsage } from "../shared/types";
+import type { DisplayInfo, PairingInfo, ProviderKind, ProviderSourceChoice, ProviderUsage, WidgetMetrics } from "../shared/types";
 
 let window: BrowserWindow | undefined;
 let widgetWindow: BrowserWindow | undefined;
@@ -56,22 +59,55 @@ function showDashboard(): void { if (!window) window = createWindow(); window.sh
 /** Opaque compact widget that stays visible on Windows and Linux. Linux needs
  * it because the system tray is unavailable to some GUI environments; Windows
  * uses it as the primary provider surface instead of separate tray badges. */
-const WIDGET_WIDTH = 88;
-const WIDGET_ITEM_GAP = 8;
-const WIDGET_PADDING = 12;
+const WIDGET_EDGE_MARGIN = 12;
+/** Set while the pointer is on the rail; only "hover" behavior ever collapses it. */
+let widgetExpanded = false;
+let pendingWidgetCollapse: NodeJS.Timeout | undefined;
 function supportsWidget(): boolean { return process.platform === "win32" || process.platform === "linux"; }
-function displayArea(): Electron.Rectangle {
-  return screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+function widgetMetrics(): WidgetMetrics { return WIDGET_METRICS[settings.load().widgetSize]; }
+/** The chosen display, falling back to the one under the pointer whenever that monitor is
+ * gone — an unplugged screen must not strand the rail off-screen. */
+function widgetDisplay(): Electron.Display {
+  const { widgetDisplayId } = settings.load();
+  const chosen = widgetDisplayId === null ? undefined : screen.getAllDisplays().find((display) => display.id === widgetDisplayId);
+  return chosen ?? screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
 }
+function displayArea(): Electron.Rectangle { return widgetDisplay().workArea; }
+function isWidgetCollapsed(): boolean { return settings.load().widgetBehavior === "hover" && !widgetExpanded; }
 function widgetBounds(area: Electron.Rectangle, providerCount: number): Electron.Rectangle {
-  const height = Math.max(76, providerCount * WIDGET_ITEM_HEIGHT + (Math.max(0, providerCount - 1) * WIDGET_ITEM_GAP) + WIDGET_PADDING * 2);
-  const offset = settings.load().widgetYOffset;
-  const y = Math.min(Math.max(area.y + offset, area.y), Math.max(area.y, area.y + area.height - height));
-  return { x: area.x + area.width - WIDGET_WIDTH - 12, y, width: WIDGET_WIDTH, height };
+  const metrics = widgetMetrics();
+  const { widgetYOffset, widgetEdge } = settings.load();
+  const collapsed = isWidgetCollapsed();
+  const height = Math.max(76, providerCount * metrics.itemHeight + (Math.max(0, providerCount - 1) * metrics.gap) + metrics.padding * 2);
+  const width = collapsed ? WIDGET_COLLAPSED_WIDTH : metrics.width;
+  const y = Math.min(Math.max(area.y + widgetYOffset, area.y), Math.max(area.y, area.y + area.height - height));
+  // Collapsed, the rail hugs the screen edge so only the sliver shows; expanded, it keeps
+  // the same margin it always had.
+  const margin = collapsed ? 0 : WIDGET_EDGE_MARGIN;
+  const x = widgetEdge === "left" ? area.x + margin : area.x + area.width - width - margin;
+  return { x, y, width, height };
+}
+/** Expand on hover, collapse a beat after the pointer leaves so crossing to the card does
+ * not snap the rail shut under the cursor. */
+function setWidgetExpanded(expanded: boolean): void {
+  clearTimeout(pendingWidgetCollapse);
+  if (expanded) {
+    if (!widgetExpanded) { widgetExpanded = true; updateWidgetBounds(lastUsage); }
+    return;
+  }
+  pendingWidgetCollapse = setTimeout(() => {
+    if (!widgetExpanded) return;
+    widgetExpanded = false;
+    hideCard();
+    updateWidgetBounds(lastUsage);
+  }, 300);
 }
 function createWidgetWindow(): BrowserWindow {
+  // The rail starts expanded even in hover mode: it is how a new user finds it at all,
+  // and the first pointer-leave collapses it.
+  widgetExpanded = true;
   const widget = new BrowserWindow({
-    width: WIDGET_WIDTH, height: 120, frame: false, resizable: false, movable: false,
+    width: widgetMetrics().width, height: 120, frame: false, resizable: false, movable: false,
     backgroundColor: "#0d1117", skipTaskbar: true, alwaysOnTop: true, hasShadow: false, type: "toolbar", title: "Metria usage widget",
     webPreferences: { preload: join(__dirname, "../preload/index.js"), contextIsolation: true, sandbox: true, nodeIntegration: false }
   });
@@ -150,21 +186,24 @@ function refreshCard(): void {
   positionCard(cardActiveIndex);
 }
 
-/** Card sits to the left of the widget, vertically centred on the hovered item.
- * If the widget is gone, anchor to the display's right edge so the card never
- * falls back to the centered default position of a fresh BrowserWindow. */
+/** Card sits beside the widget on its open side, vertically centred on the hovered item.
+ * If the widget is gone, anchor to the display's edge so the card never falls back to the
+ * centered default position of a fresh BrowserWindow. */
 function cardBounds(index: number, height?: number): Electron.Rectangle {
   const area = widgetWindow?.getBounds();
   const workArea = displayArea();
+  const metrics = widgetMetrics();
   const cardHeight = height ?? 200;
   const anchorTop = (area ?? workArea).y;
-  const itemCenterY = anchorTop + WIDGET_PADDING + index * (WIDGET_ITEM_HEIGHT + WIDGET_ITEM_GAP) + WIDGET_ITEM_HEIGHT / 2;
+  const itemCenterY = anchorTop + metrics.padding + index * (metrics.itemHeight + metrics.gap) + metrics.itemHeight / 2;
   // Vertically center the card on the hovered item.
   const minY = workArea.y + 8;
   const maxY = workArea.y + workArea.height - cardHeight - 8;
   const y = Math.min(Math.max(itemCenterY - cardHeight / 2, minY), Math.max(minY, maxY));
-  const anchorX = area ? area.x : workArea.x + workArea.width;
-  const x = anchorX - CARD_SPACING - CARD_WIDTH;
+  // The card sits on whichever side of the rail has the screen: left edge pushes it right.
+  const x = settings.load().widgetEdge === "left"
+    ? (area ? area.x + area.width : workArea.x) + CARD_SPACING
+    : (area ? area.x : workArea.x + workArea.width) - CARD_SPACING - CARD_WIDTH;
   return { x, y, width: CARD_WIDTH, height: cardHeight };
 }
 
@@ -278,6 +317,24 @@ function updateBadges(providers: typeof lastUsage): void {
     badge.on("click", showDashboard);
     badgeTrays.set(provider.kind, badge);
   }
+}
+
+/** Every window keeps its own settings snapshot, so a change has to reach all of them. */
+function broadcastSettings<T>(next: T): T {
+  widgetWindow?.webContents.send("metria:settings-changed");
+  cardWindow?.webContents.send("metria:settings-changed");
+  window?.webContents.send("metria:settings-changed");
+  return next;
+}
+
+/** Monitors the widget can be pinned to, named the way the display picker shows them. */
+function displays(): DisplayInfo[] {
+  const primaryId = screen.getPrimaryDisplay().id;
+  return screen.getAllDisplays().map((display, index) => ({
+    id: display.id,
+    label: `${display.label && display.label !== "unknown" ? display.label : `Display ${index + 1}`} — ${display.size.width}×${display.size.height}`,
+    primary: display.id === primaryId
+  }));
 }
 
 function validProviderSource(value: unknown): value is ProviderSourceChoice {
@@ -473,11 +530,53 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("metria:set-spend-display", (event, display: unknown) => {
     requireTrustedSender(event);
     if (!isSpendDisplay(display)) throw new Error("Invalid usage display.");
-    const next = settings.setSpendDisplay(display);
-    // The card window keeps its own settings snapshot, so tell it to re-read.
-    widgetWindow?.webContents.send("metria:settings-changed");
-    cardWindow?.webContents.send("metria:settings-changed");
+    return broadcastSettings(settings.setSpendDisplay(display));
+  });
+  ipcMain.handle("metria:set-account-labels", (event, show: unknown) => {
+    requireTrustedSender(event);
+    if (typeof show !== "boolean") throw new Error("Invalid account label setting.");
+    return broadcastSettings(settings.setShowAccountLabels(show));
+  });
+  ipcMain.handle("metria:set-window-hidden", (event, kind: unknown, title: unknown, hidden: unknown) => {
+    requireTrustedSender(event);
+    if (!isProviderKind(kind) || typeof title !== "string" || typeof hidden !== "boolean") throw new Error("Invalid usage window setting.");
+    return broadcastSettings(settings.setWindowHidden(kind, title, hidden));
+  });
+  ipcMain.handle("metria:set-widget-size", (event, size: unknown) => {
+    requireTrustedSender(event);
+    if (!isWidgetSize(size)) throw new Error("Invalid widget size.");
+    const next = broadcastSettings(settings.setWidgetSize(size));
+    updateWidgetBounds(lastUsage);
     return next;
+  });
+  ipcMain.handle("metria:set-widget-edge", (event, edge: unknown) => {
+    requireTrustedSender(event);
+    if (!isWidgetEdge(edge)) throw new Error("Invalid widget edge.");
+    const next = broadcastSettings(settings.setWidgetEdge(edge));
+    updateWidgetBounds(lastUsage);
+    return next;
+  });
+  ipcMain.handle("metria:set-widget-behavior", (event, behavior: unknown) => {
+    requireTrustedSender(event);
+    if (!isWidgetBehavior(behavior)) throw new Error("Invalid widget behavior.");
+    const next = broadcastSettings(settings.setWidgetBehavior(behavior));
+    // Switching back to "always" must not leave the rail stuck as a sliver.
+    widgetExpanded = behavior === "always";
+    updateWidgetBounds(lastUsage);
+    return next;
+  });
+  ipcMain.handle("metria:set-widget-display", (event, displayId: unknown) => {
+    requireTrustedSender(event);
+    if (displayId !== null && !Number.isFinite(displayId)) throw new Error("Invalid display.");
+    const next = broadcastSettings(settings.setWidgetDisplay(displayId === null ? null : Number(displayId)));
+    updateWidgetBounds(lastUsage);
+    return next;
+  });
+  ipcMain.handle("metria:get-displays", (event) => { requireTrustedSender(event); return displays(); });
+  ipcMain.handle("metria:widget-hover", (event, hovering: unknown) => {
+    requireTrustedSender(event);
+    if (typeof hovering !== "boolean") throw new Error("Invalid widget hover.");
+    if (settings.load().widgetBehavior === "hover") setWidgetExpanded(hovering);
   });
   ipcMain.handle("metria:get-provider-sources", (event) => {
     requireTrustedSender(event);
