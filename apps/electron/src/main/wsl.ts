@@ -5,6 +5,10 @@ export interface WslProviderPresence {
   codex: boolean;
   openCode: boolean;
   claude: boolean;
+  /** Always false: Cursor is read from the host installation only, because its
+   * credential lives in a binary SQLite file that the UTF-8 `readFile` path
+   * above cannot carry across the WSL boundary. */
+  cursor: boolean;
 }
 
 const WSL_TIMEOUT_MS = 20_000;
@@ -44,7 +48,7 @@ export function makeWslShell(options: { platform?: NodeJS.Platform; exec?: WslEx
   }
 
   async function presence(distro: string): Promise<WslProviderPresence> {
-    if (platform !== "win32") return { codex: false, openCode: false, claude: false };
+    if (platform !== "win32") return { codex: false, openCode: false, claude: false, cursor: false };
     const cached = results.get(distro);
     if (cached && Date.now() - cached.at < PRESENCE_CACHE_TTL_MS) return cached.presence;
     try {
@@ -53,12 +57,13 @@ export function makeWslShell(options: { platform?: NodeJS.Platform; exec?: WslEx
       const presence: WslProviderPresence = {
         codex: hits.includes("codex_auth") || hits.includes("codex_sessions"),
         openCode: hits.includes("opencode"),
-        claude: hits.includes("claude")
+        claude: hits.includes("claude"),
+        cursor: false
       };
       results.set(distro, { at: Date.now(), presence });
       return presence;
     } catch {
-      return { codex: false, openCode: false, claude: false };
+      return { codex: false, openCode: false, claude: false, cursor: false };
     }
   }
 

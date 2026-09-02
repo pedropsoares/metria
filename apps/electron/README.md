@@ -62,6 +62,14 @@ dashboard asks which to track once, then remembers the choice in settings:
   files inside WSL.
 - OpenCode Go reads `XDG_DATA_HOME`/`~/.local/share/opencode/auth.json` on Unix,
   `%APPDATA%` on Windows, or the WSL path.
+- Cursor reads the JWT stored in `ItemTable` inside Cursor's
+  `state.vscdb` — `%APPDATA%\Cursor\User\globalStorage` on Windows,
+  `XDG_CONFIG_HOME`/`~/.config/Cursor/User/globalStorage` on Linux — and calls
+  the same usage endpoint the Cursor dashboard uses. That endpoint is not
+  published by Cursor and can change without notice. Cursor is **host-only**:
+  it is never read from a WSL distribution, so the source picker offers no WSL
+  option for it. The database is read through Node's built-in `node:sqlite`,
+  loaded lazily, so nothing SQLite-related is loaded for users without Cursor.
 
 These read-only locations are fixture-tested, not runtime-tested on
 Windows/Linux.

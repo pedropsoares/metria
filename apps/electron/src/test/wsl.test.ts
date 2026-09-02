@@ -16,7 +16,7 @@ test("wsl presence runs the probe script through sh stdin", async () => {
   let input = "";
   const results = new Map<string, { at: number; presence: WslProviderPresence }>();
   const shell = makeWslShell({ platform: "win32", exec: async (_command, _args, options) => { input = options?.input ?? ""; return { stdout: "codex_sessions\n" }; }, results });
-  assert.deepEqual(await shell.presence("Ubuntu"), { codex: true, openCode: false, claude: false });
+  assert.deepEqual(await shell.presence("Ubuntu"), { codex: true, openCode: false, claude: false, cursor: false });
   assert.match(input, /for f in codex_auth:|opencode:/);
   results.clear();
 });
@@ -28,12 +28,12 @@ test("wsl distros returns empty when wsl.exe fails", async () => {
 
 test("wsl presence maps probe tokens", async () => {
   const shell = makeWslShell({ platform: "win32", exec: async () => ({ stdout: "codex_auth\nclaude\n" }) });
-  assert.deepEqual(await shell.presence("Ubuntu"), { codex: true, openCode: false, claude: true });
+  assert.deepEqual(await shell.presence("Ubuntu"), { codex: true, openCode: false, claude: true, cursor: false });
 });
 
 test("wsl presence treats codex sessions as codex data", async () => {
   const shell = makeWslShell({ platform: "win32", exec: async () => ({ stdout: "codex_sessions\nopencode\n" }) });
-  assert.deepEqual(await shell.presence("Ubuntu"), { codex: true, openCode: true, claude: false });
+  assert.deepEqual(await shell.presence("Ubuntu"), { codex: true, openCode: true, claude: false, cursor: false });
 });
 
 test("wsl presence caches results", async () => {

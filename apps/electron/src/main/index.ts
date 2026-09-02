@@ -357,6 +357,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle("metria:reconnect", async (event, kind: unknown) => {
     requireTrustedSender(event); if (!isProviderKind(kind)) throw new Error("Invalid provider.");
+    if (kind === "Cursor") {
+      // Cursor has no sign-in CLI: the app itself is the only place to authenticate.
+      return { command: "", message: "Open Cursor and sign in, then refresh Metria." };
+    }
     const command = kind === "Claude" ? "claude auth login" : kind === "Codex" ? "codex login" : "opencode auth login";
     await shell.openPath(app.getPath("home"));
     return { command, message: `Run \`${command}\` in your terminal, then refresh Metria.` };

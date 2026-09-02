@@ -92,6 +92,7 @@ The native app reads credentials at runtime from the Keychain and local configur
 - **Claude** — credentials read from `~/.claude/.credentials.json` on Unix and from the equivalent host or WSL location on Windows.
 - **Codex** — credentials and the newest session read from `CODEX_HOME`/`~/.codex`, including WSL locations on Windows.
 - **OpenCode Go** — credentials read from `XDG_DATA_HOME`/`~/.local/share/opencode/auth.json` on Unix, `%APPDATA%` on Windows, or the WSL path.
+- **Cursor** — JWT read from Cursor's `state.vscdb` (VS Code global storage SQLite database) on the host, usage fetched from Cursor's dashboard endpoint. Host-only: Cursor is not read from WSL. This endpoint is not published by Cursor and can change without notice, outside this project's control.
 
 Electron discovers provider data on the host filesystem and, on Windows, in installed WSL distributions. See the [Electron provider documentation](apps/electron/README.md).
 

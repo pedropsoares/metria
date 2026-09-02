@@ -1,4 +1,4 @@
-export type ProviderKind = "Claude" | "Codex" | "OpenCode Go";
+export type ProviderKind = "Claude" | "Codex" | "OpenCode Go" | "Cursor";
 
 export interface UsageWindow {
   title: string;
@@ -89,16 +89,17 @@ export interface ProviderSourceInfo {
   needsChoice: boolean;
 }
 
-export const ALL_PROVIDER_KINDS: ProviderKind[] = ["Claude", "Codex", "OpenCode Go"];
+export const ALL_PROVIDER_KINDS: ProviderKind[] = ["Claude", "Codex", "OpenCode Go", "Cursor"];
 
 export function isProviderKind(value: unknown): value is ProviderKind {
-  return value === "Claude" || value === "Codex" || value === "OpenCode Go";
+  return value === "Claude" || value === "Codex" || value === "OpenCode Go" || value === "Cursor";
 }
 
 export const PROVIDER_LOGOS: Record<ProviderKind, string> = {
   "Claude": "claude-logo.png",
   "Codex": "codex-logo.png",
-  "OpenCode Go": "opencode-logo.png"
+  "OpenCode Go": "opencode-logo.png",
+  "Cursor": "cursor-logo.png"
 };
 
 export function providerShortLabel(kind: ProviderKind): string {

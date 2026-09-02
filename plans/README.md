@@ -14,7 +14,7 @@ rather than committing to an undocumented vendor endpoint sight unseen.
 |---|---|---|---|---|---|
 | 001 | Add a maintainable Electron companion without replacing native macOS | P1 | L | — | TODO |
 | 002 | Add a Cursor usage provider to the native macOS app | P2 | M | — | TODO |
-| 003 | Add a Cursor usage provider to the Electron app | P2 | M | 002 (phase 0) | TODO |
+| 003 | Add a Cursor usage provider to the Electron app | P2 | M | 002 (phase 0) | DONE (WSL support in phase 5 deferred) |
 | 004 | Add a native iOS companion with Home Screen and Lock Screen widgets | P2 | L | — | TODO |
 
 ## Dependency notes

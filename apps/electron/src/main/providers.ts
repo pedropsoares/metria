@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AppSettings, ProviderKind, ProviderSourceChoice, ProviderSourceInfo, ProviderUsage, UsageWindow, WslPresence } from "../shared/types";
 import { PRESENCE_CACHE_TTL_MS } from "../shared/types";
+import { readCursorItem } from "./cursor-state";
 import { providerPaths, type ProviderPaths } from "./provider-paths";
 import { makeWslShell, type WslProviderPresence, type WslShell } from "./wsl";
 
@@ -25,7 +26,7 @@ export class ProviderService {
     private readonly wsl: WslShell = makeWslShell(),
     paths: ProviderPaths = defaultPaths
   ) {
-    this.providers = [new ClaudeProvider(paths), new CodexProvider(paths), new OpenCodeGoProvider(paths)];
+    this.providers = [new ClaudeProvider(paths), new CodexProvider(paths), new OpenCodeGoProvider(paths), new CursorProvider(paths)];
   }
 
   async fetch(enabled: ProviderKind[]): Promise<ProviderUsage[]> {
@@ -71,7 +72,7 @@ export class ProviderService {
   }
 }
 
-const POPULATION_BY_KIND: Record<ProviderKind, keyof WslProviderPresence> = { Claude: "claude", Codex: "codex", "OpenCode Go": "openCode" };
+const POPULATION_BY_KIND: Record<ProviderKind, keyof WslProviderPresence> = { Claude: "claude", Codex: "codex", "OpenCode Go": "openCode", Cursor: "cursor" };
 const WSL_DIR_BY_KIND: Partial<Record<ProviderKind, string>> = { Codex: ".codex/sessions" };
 
 /** Pick the data source for a provider given saved preference (if any) and presence. */
@@ -159,32 +160,96 @@ export function parseOpenCodeGoWindows(data: string): UsageWindow[] {
   });
 }
 
+const CURSOR_TOKEN_KEY = "cursorAuth/accessToken";
+const CURSOR_USAGE_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
+
+/** Reads the JWT Cursor stores in its VS Code-derived global storage and calls
+ * the same endpoint the Cursor dashboard uses. Host-only: see
+ * plans/003-cursor-provider-electron.md for why WSL is deferred. */
+class CursorProvider implements Provider {
+  readonly kind = "Cursor" as const;
+  readonly hint = "Sign in to Cursor to make usage available.";
+  constructor(private readonly paths: ProviderPaths) {}
+  hasHostCredentials(): boolean { return existsSync(this.paths.cursorState) && readCursorItem(this.paths.cursorState, CURSOR_TOKEN_KEY) !== undefined; }
+  async fetchHost(): Promise<ProviderUsage> {
+    const token = readCursorItem(this.paths.cursorState, CURSOR_TOKEN_KEY);
+    if (!token) throw new Error("Cursor credentials were not found. Sign in to Cursor, then refresh Metria.");
+    if (isExpiredJwt(token)) throw new Error("Sign in to Cursor again.");
+    try {
+      const data = await requestWithRetry(CURSOR_USAGE_URL, {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "Connect-Protocol-Version": "1"
+      }, { method: "POST", body: "{}" });
+      return loaded(this.kind, parseCursorWindows(data));
+    } catch (error) {
+      // There is no refresh grant to use, so an unauthorized token is a sign-in prompt.
+      if (error instanceof HttpError && (error.status === 401 || error.status === 403)) throw new Error("Sign in to Cursor again.");
+      throw error;
+    }
+  }
+  async fetchWsl(): Promise<ProviderUsage> {
+    throw new Error("Cursor usage is read from the Windows or Linux host installation.");
+  }
+}
+
+export function parseCursorWindows(data: string): UsageWindow[] {
+  let parsed: { planUsage?: { totalPercentUsed?: number } | null; billingCycleEnd?: string };
+  try {
+    parsed = JSON.parse(data) as typeof parsed;
+  } catch {
+    throw new Error("Cursor returned an unreadable usage response.");
+  }
+  const percent = parsed?.planUsage?.totalPercentUsed;
+  if (typeof percent !== "number") throw new Error("Cursor did not report plan usage for this account.");
+  const cycleEnd = Number(parsed.billingCycleEnd);
+  return [{ title: "This cycle", percent, resetDate: Number.isFinite(cycleEnd) && cycleEnd > 0 ? new Date(cycleEnd).toISOString() : null }];
+}
+
+/** Reads the JWT `exp` claim without verifying the signature: Metria only wants
+ * to skip a pointless network call for a token it already knows has expired. */
+export function isExpiredJwt(token: string, now: number = Date.now()): boolean {
+  const segments = token.split(".");
+  if (segments.length < 2) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8")) as { exp?: number };
+    return typeof payload.exp === "number" && payload.exp * 1000 < now;
+  } catch { return false; }
+}
+
 const REQUEST_TIMEOUT_MS = 10_000;
 
-async function fetchWithTimeout(url: string, headers: Record<string, string>): Promise<Response> {
+interface RequestOptions { method?: string; body?: string }
+
+async function fetchWithTimeout(url: string, headers: Record<string, string>, options?: RequestOptions): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(url, { headers: { ...headers, "User-Agent": "Metria-Electron/0.1" }, signal: controller.signal });
+    return await fetch(url, { method: options?.method ?? "GET", body: options?.body, headers: { ...headers, "User-Agent": "Metria-Electron/0.1" }, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
 }
 
+/** Carries the HTTP status so a provider can translate it into its own wording. */
+class HttpError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 function sleep(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
-async function requestWithRetry(url: string, headers: Record<string, string>): Promise<string> {
+async function requestWithRetry(url: string, headers: Record<string, string>, options?: RequestOptions): Promise<string> {
   let lastError: Error | undefined;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetchWithTimeout(url, headers);
+      const response = await fetchWithTimeout(url, headers, options);
       if (response.ok) return response.text();
       if (response.status === 429 && attempt < 2) {
         const retry = Math.min(Number(response.headers.get("Retry-After") ?? 2 ** (attempt + 1)) * 1000, 30_000);
         await sleep(Number.isFinite(retry) ? retry : 2000);
         continue;
       }
-      throw new Error(response.status === 429 ? "The provider rate limited Metria. Try again shortly." : `The provider returned ${response.status}.`);
+      throw new HttpError(response.status === 429 ? "The provider rate limited Metria. Try again shortly." : `The provider returned ${response.status}.`, response.status);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       if (attempt === 2) throw lastError;
