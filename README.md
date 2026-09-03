@@ -71,7 +71,7 @@ Credentials are never committed. The native app reads them at runtime from its d
 
 Metria's companion PWA works on compatible iPhone and Android browsers. Start the native Mac app, then scan the QR code in **Settings > Phone** while the phone and Mac are on the same Wi-Fi network. The local server port defaults to `8973` and can be changed in Settings; if it is in use, Metria tries subsequent ports automatically.
 
-The local HTTP server is available for same-network pairing, but browsers require HTTPS to install a PWA or use Web Push. Metria's PWA is a static site; deploy it to any HTTPS static host. Clear **Settings > Phone > Custom PWA URL** to pair through the local server instead. Build and deploy to Cloudflare Pages with:
+The local HTTP server is available for same-network pairing, but browsers require HTTPS to install a PWA or use Web Push. Metria uses the hosted Cloudflare PWA by default at `https://metria-pwa.yuriramos2406.workers.dev`. Clear **Settings > Phone > Custom PWA URL** to pair through the local server instead. Build and deploy the static files with:
 
 ```sh
 cd apps/pwa
@@ -84,7 +84,7 @@ You can replace the Cloudflare URL in **Settings > Phone > Custom PWA URL** with
 
 #### Mobile alerts
 
-Install the HTTPS-hosted PWA on your phone, open it from the QR link, and select **Enable notifications**. The Mac keeps the VAPID private key and sends the current provider usage directly to Apple/Google's push service; the `ntfy` server only carries the encrypted subscription registration. The local HTTP server cannot provide system notifications because Web Push requires HTTPS.
+Install the Cloudflare-hosted PWA on your phone, open it, and select **Enable alerts**. Metria sends the current provider usage whenever the Mac app publishes a new snapshot. The local HTTP server cannot provide system notifications because Web Push requires HTTPS.
 
 ## Requirements
 

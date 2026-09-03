@@ -27,7 +27,6 @@
 		B0D16525171231FFE5C69C84 /* OpenCodeGoProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488A30C52B2A951130A87634 /* OpenCodeGoProvider.swift */; };
 		BCAAA4FF3E584906BD4F3006 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F76937A0473449017F3EB57 /* OnboardingView.swift */; };
 		C60A0D354E8CDD43466B3457 /* CursorStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */; };
-		C97B82A46DCA51F27B5487DB /* WebPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94530F3DBEDE69D73A8436BF /* WebPush.swift */; };
 		E87CBB5215F9C3C201D860CE /* UsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C81534D399ED080DD3983A /* UsageSnapshot.swift */; };
 		EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */; };
 		EFCA4810DF283BE11713152C /* BIP39Wordlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */; };
@@ -75,7 +74,6 @@
 		8EB81A191BD1F3F9D21426FB /* MetriaCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MetriaCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8F37E9B9BF1481EC13F0AB9B /* KeychainReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainReader.swift; sourceTree = "<group>"; };
 		942FF095F80398F2F48468E8 /* LocalPWAServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPWAServer.swift; sourceTree = "<group>"; };
-		94530F3DBEDE69D73A8436BF /* WebPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPush.swift; sourceTree = "<group>"; };
 		97692A6C8502A27D4FA476F0 /* MetriaResources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetriaResources.swift; sourceTree = "<group>"; };
 		9BD185ECDE501CAD12DA5438 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		ABC404DE64C320E52402D468 /* MetriaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetriaApp.swift; sourceTree = "<group>"; };
@@ -108,7 +106,6 @@
 				5F76937A0473449017F3EB57 /* OnboardingView.swift */,
 				EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */,
 				36216E6ACB911FA08CA36234 /* Updater.swift */,
-				94530F3DBEDE69D73A8436BF /* WebPush.swift */,
 				5B52A35A5B1800D8DF53A0E9 /* Providers */,
 			);
 			path = Metria;
@@ -307,7 +304,6 @@
 				9CC880BFC528518A30EFE40A /* ProviderKind+Presentation.swift in Sources */,
 				9401FE6A4D61FC25C4CADA12 /* ProviderRegistry.swift in Sources */,
 				636C3963D32BD250319A58EF /* Updater.swift in Sources */,
-				C97B82A46DCA51F27B5487DB /* WebPush.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -4,10 +4,11 @@
   "scripts": {
     "build": "cp ../../Assets/claude-logo.png ../../Assets/codex-logo.png ../../Assets/cursor-logo.png ../../Assets/metria-logo.png ../../Assets/metria-mascot.png ../../Assets/opencode-logo.png public/ && tailwindcss -i ./public/tailwind.input.css -o ./public/app.css --minify",
 
-    "deploy": "npm run build && wrangler pages deploy public --project-name metria-pwa",
-    "preview": "wrangler pages dev public"
+    "deploy": "npm run build && wrangler deploy",
+    "preview": "wrangler dev"
   },
   "devDependencies": {
+    "@pushforge/builder": "^2.0.5",
     "tailwindcss": "^3.4.17",
     "wrangler": "^4.127.1"
   }

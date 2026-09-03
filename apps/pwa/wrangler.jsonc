@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "metria-pwa",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-28",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "METRIA_PUSH_SUBSCRIPTIONS",
+      "id": "22c1513aa34440189779cc51af1b1dd6"
+    }
+  ],
+  "vars": {
+    "VAPID_PUBLIC_KEY": "BBAbhoxQZ7B4-Nk8PC1FJ9z6ggcYCjZ9VskX_jUAq6VznhjeQcV9XknQofgxMbMdX93Hfn6BIstbhrc3tyedNks",
+    "VAPID_SUBJECT": "https://metria-pwa.yuriramos2406.workers.dev"
+  }
+}
