@@ -1589,7 +1589,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: String(localized: "General")
         case .design: String(localized: "Design")
-        case .providers: String(localized: "Providers")
+        case .providers: String(localized: "AI Tools")
         case .iPhone: String(localized: "Phone")
         }
     }
@@ -2388,7 +2388,7 @@ struct SettingsView: View {
             .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
-        .padding(20)
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .alert("Regenerate pairing?", isPresented: $isRegenerateConfirmationShown) {
             Button("Cancel", role: .cancel) {}

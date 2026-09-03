@@ -391,9 +391,9 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Diagnóstico do provedor" } }
       }
     },
-    "Providers" : {
+    "AI Tools" : {
       "localizations" : {
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Provedores" } }
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "AI Tools" } }
       }
     },
     "PWA hosting" : {
