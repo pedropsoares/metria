@@ -14,14 +14,18 @@ enum KeychainReader {
         return SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
     }
 
-    static func readClaudeCredentials() async throws -> ClaudeCredentials {
-        let process = Process(); let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w", "-g"]
-        process.standardOutput = output; process.standardError = Pipe()
-        try process.run(); process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw ProviderError.unavailable }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
+    static func readClaudeCredentials() throws -> ClaudeCredentials {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Claude Code-credentials",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else {
+            throw ProviderError.unavailable
+        }
         guard let document = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let oauth = document["claudeAiOauth"] as? [String: Any],
               let accessToken = oauth["accessToken"] as? String,

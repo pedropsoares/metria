@@ -10,7 +10,7 @@ struct ClaudeProvider: UsageProvider {
     private static let accountEmailCache = ClaudeAccountEmailCache()
     func fetch() async -> ProviderFetchResult {
         do {
-            let credentials = try await KeychainReader.readClaudeCredentials()
+            let credentials = try KeychainReader.readClaudeCredentials()
             var accessToken = credentials.accessToken
             let data: Data
             do {
