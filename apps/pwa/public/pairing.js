@@ -98,6 +98,14 @@ async function deriveFromSecret(secretBytes) {
   return { topic, cryptoKey };
 }
 
+async function derivePushFromSecret(secretBytes) {
+  const topicBytes = await hkdf(secretBytes, "metria-push-topic-v1", 16);
+  const keyBytes = await hkdf(secretBytes, "metria-push-key-v1", 32);
+  const topic = Array.from(topicBytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["encrypt", "decrypt"]);
+  return { topic, cryptoKey };
+}
+
 // Decrypts a published snapshot. The combined body is IV(12) + ciphertext + tag(16), the
 // same layout CryptoKit's AES.GCM.SealedBox.combined produces on the Mac. A message that
 // fails here is either encrypted with a different key or forged noise on the topic —
@@ -110,4 +118,4 @@ async function decryptSnapshot(base64Body, cryptoKey) {
   return JSON.parse(new TextDecoder().decode(plaintext));
 }
 
-window.MetriaPairing = { wordsToSecret, secretToWords, base64UrlToBytes, bytesToBase64Url, deriveFromSecret, decryptSnapshot };
+window.MetriaPairing = { wordsToSecret, secretToWords, base64UrlToBytes, bytesToBase64Url, deriveFromSecret, derivePushFromSecret, decryptSnapshot };

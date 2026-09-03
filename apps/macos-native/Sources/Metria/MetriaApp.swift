@@ -82,7 +82,7 @@ extension Data {
 /// Owns the pairing secret's presentation: the QR code and the 12-word phrase shown in
 /// Settings, plus the shareable link. The secret itself lives in `PairingKeychain`.
 @MainActor final class PairingManager: ObservableObject {
-    static let defaultRemotePWAURL = "https://metria-pwa.yuriramos2406.workers.dev"
+    static let defaultRemotePWAURL = "https://metria-pwa.pages.dev"
 
     @Published private(set) var words: [String] = []
     @Published private(set) var qrImage: NSImage?
@@ -108,17 +108,17 @@ extension Data {
     /// `localURL`, when the local server has a reachable address, rides along in the same
     /// QR code the PWA already reads: the PWA ignores unknown fragment parameters, so one
     /// code now pairs both clients.
-    func pairingLink(pwaBaseURL: String, ntfyServer: String, localURL: String?) -> String {
+    func pairingLink(pwaBaseURL: String, ntfyServer: String, localURL: String?, vapidPublicKey: String) -> String {
         let encodedServer = ntfyServer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ntfyServer
-        var link = "\(pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
+        var link = "\(pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)&vapid=\(vapidPublicKey)"
         if let localURL, let encodedLocal = localURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             link += "&local=\(encodedLocal)"
         }
         return link
     }
 
-    func refreshQRCode(pwaBaseURL: String, ntfyServer: String, localURL: String?) {
-        qrImage = Self.renderQRCode(for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localURL))
+    func refreshQRCode(pwaBaseURL: String, ntfyServer: String, localURL: String?, vapidPublicKey: String) {
+        qrImage = Self.renderQRCode(for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localURL, vapidPublicKey: vapidPublicKey))
     }
 
     private static func renderQRCode(for string: String) -> NSImage? {
@@ -141,7 +141,20 @@ extension Data {
     private let defaults = UserDefaults.standard
     private var lastPayload: Data?
     private var publishTask: Task<Void, Never>?
+    private var subscriptionTask: Task<Void, Never>?
+    private var subscriptionServer: URL?
+    private var subscriptions: [WebPushSubscription] = []
+    private let webPush = WebPushSender()
+    var vapidPublicKey: String { webPush.publicKey }
+    private var latestSnapshot: Data?
     var onSnapshot: ((Data) -> Void)?
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: "webPushSubscriptions"),
+           let saved = try? JSONDecoder().decode([WebPushSubscription].self, from: data) {
+            subscriptions = saved
+        }
+    }
 
     func publish(_ providers: [ProviderUsage], secret: Data) {
         guard let server = URL(string: defaults.string(forKey: "ntfyServer") ?? "https://ntfy.sh"),
@@ -158,6 +171,8 @@ extension Data {
         )
         let encoder = UsageSnapshotCoding.makeEncoder()
         guard let payload = try? encoder.encode(snapshot), payload != lastPayload else { return }
+        latestSnapshot = payload
+        startSubscriptionListener(server: server, secret: secret)
         onSnapshot?(payload)
 
         let topic = PairingSecret.topic(from: secret)
@@ -177,11 +192,68 @@ extension Data {
         publishTask?.cancel()
         publishTask = Task {
             _ = try? await URLSession.shared.data(for: request)
+            await self.sendWebPush(payload)
         }
+    }
+
+    private func startSubscriptionListener(server: URL, secret: Data) {
+        if subscriptionServer != server {
+            subscriptionTask?.cancel()
+            subscriptionTask = nil
+            subscriptionServer = server
+        }
+        guard subscriptionTask == nil else { return }
+        let topic = PairingSecret.pushTopic(from: secret)
+        let key = PairingSecret.pushEncryptionKey(from: secret)
+        subscriptionTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                var request = URLRequest(url: server.appendingPathComponent("\(topic)/sse?since=all"))
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let (bytes, _) = try await URLSession.shared.bytes(for: request)
+                for try await line in bytes.lines where line.hasPrefix("data: ") {
+                    guard let message = line.dropFirst(6).data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: message) as? [String: Any],
+                          let encoded = json["message"] as? String,
+                          let combined = Data(base64Encoded: encoded), combined.count > 12 else { continue }
+                    do {
+                        let box = try AES.GCM.SealedBox(combined: combined)
+                        let plain = try AES.GCM.open(box, using: key, authenticating: Data())
+                        let subscription = try JSONDecoder().decode(WebPushSubscription.self, from: plain)
+                        self.addSubscription(subscription)
+                    } catch { continue }
+                }
+            } catch {
+                return
+            }
+        }
+    }
+
+    private func addSubscription(_ subscription: WebPushSubscription) {
+        subscriptions.removeAll { $0.endpoint == subscription.endpoint }
+        subscriptions.append(subscription)
+        if let data = try? JSONEncoder().encode(subscriptions) {
+            UserDefaults.standard.set(data, forKey: "webPushSubscriptions")
+        }
+        if let latestSnapshot { publishTask = Task { await sendWebPush(latestSnapshot) } }
+    }
+
+    private func sendWebPush(_ payload: Data) async {
+        let body = notificationPayload(from: payload)
+        for subscription in subscriptions {
+            _ = try? await webPush.send(body, to: subscription)
+        }
+    }
+
+    private func notificationPayload(from data: Data) -> Data {
+        guard let snapshot = try? UsageSnapshotCoding.makeDecoder().decode(UsageSnapshot.self, from: data) else { return data }
+        let body = snapshot.providers.map { "\($0.name) \(Int($0.percent.rounded()))%" }.joined(separator: " · ")
+        return (try? JSONSerialization.data(withJSONObject: ["title": "AI Usage", "body": body.isEmpty ? "No provider usage available." : body, "url": "/", "tag": "metria-usage"])) ?? data
     }
 
     deinit {
         publishTask?.cancel()
+        subscriptionTask?.cancel()
     }
 }
 
@@ -1631,6 +1703,7 @@ struct SettingsView: View {
     let onChangeServer: (String) -> Void
     let localPWAURL: () -> String?
     let localServerURL: () -> String?
+    let vapidPublicKey: String
     @State private var localServerPort: String
     let onChangeLocalServerPort: (UInt16) -> Void
     @State private var customPWAURL: String
@@ -1678,6 +1751,7 @@ struct SettingsView: View {
         onChangeServer: @escaping (String) -> Void,
         localPWAURL: @escaping () -> String?,
         localServerURL: @escaping () -> String?,
+        vapidPublicKey: String,
         localServerPort: UInt16,
         onChangeLocalServerPort: @escaping (UInt16) -> Void,
         customPWAURL: String,
@@ -1721,6 +1795,7 @@ struct SettingsView: View {
         self.onChangeServer = onChangeServer
         self.localPWAURL = localPWAURL
         self.localServerURL = localServerURL
+        self.vapidPublicKey = vapidPublicKey
         _localServerPort = State(initialValue: String(localServerPort))
         self.onChangeLocalServerPort = onChangeLocalServerPort
         _customPWAURL = State(initialValue: customPWAURL)
@@ -2142,7 +2217,7 @@ struct SettingsView: View {
                     Button("Copy link") {
                         guard let pwaBaseURL = localPWAURL() else { return }
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(pairing.pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localServerURL()), forType: .string)
+                         NSPasteboard.general.setString(pairing.pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localServerURL(), vapidPublicKey: vapidPublicKey), forType: .string)
                     }
                     Spacer()
                     Button("Regenerate", role: .destructive) {
@@ -2386,7 +2461,7 @@ extension NSMenu {
 
     private func refreshPairingQRCode() {
         guard let pwaBaseURL else { return }
-        pairing.refreshQRCode(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localServerURL)
+        pairing.refreshQRCode(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localServerURL, vapidPublicKey: ntfyPublisher.vapidPublicKey)
     }
 
     private func regeneratePairing() {
@@ -3374,8 +3449,9 @@ extension NSMenu {
                     self.refreshPairingQRCode()
                     self.store.refresh()
                 },
-                localPWAURL: { [weak self] in self?.pwaBaseURL },
-                localServerURL: { [weak self] in self?.localServerURL },
+                 localPWAURL: { [weak self] in self?.pwaBaseURL },
+                 localServerURL: { [weak self] in self?.localServerURL },
+                 vapidPublicKey: ntfyPublisher.vapidPublicKey,
                 localServerPort: localServerPort,
                 onChangeLocalServerPort: { [weak self] port in
                     guard let self else { return }

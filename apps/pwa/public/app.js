@@ -130,7 +130,7 @@ async function connect(config) {
 }
 
 async function updateNotificationButton(config) {
-  if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+  if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window) || !config.vapidPublicKey) {
     notificationButton.hidden = true;
     return;
   }
@@ -148,19 +148,22 @@ async function enableNotifications() {
   if (permission !== "granted") return;
 
   const registration = await navigator.serviceWorker.ready;
-  const keyResponse = await fetch("/api/push-key");
-  if (!keyResponse.ok) throw new Error("Notifications are unavailable.");
-  const { publicKey } = await keyResponse.json();
   const existingSubscription = await registration.pushManager.getSubscription();
   if (existingSubscription) await existingSubscription.unsubscribe();
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: window.MetriaPairing.base64UrlToBytes(publicKey)
+    applicationServerKey: window.MetriaPairing.base64UrlToBytes(activeConfig.vapidPublicKey)
   });
-  const response = await fetch("/api/subscriptions", {
+  const { topic, cryptoKey } = await window.MetriaPairing.derivePushFromSecret(window.MetriaPairing.base64UrlToBytes(activeConfig.secretBase64));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, new TextEncoder().encode(JSON.stringify(subscription)));
+  const combined = new Uint8Array(12 + encrypted.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(encrypted), 12);
+  const response = await fetch(`${activeConfig.server}/${topic}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ secret: activeConfig.secretBase64, subscription })
+    headers: { "Content-Type": "text/plain", "X-Tags": "metria-push-registration" },
+    body: btoa(String.fromCharCode(...combined))
   });
   if (!response.ok) throw new Error("Notifications are unavailable.");
   notificationButton.textContent = "Notifications enabled";
@@ -252,7 +255,7 @@ function parsePairingParams(hashString) {
   const secretBase64 = params.get("s");
   if (!secretBase64) return null;
   const server = params.get("server") || "https://ntfy.sh";
-  return { secretBase64, server };
+  return { secretBase64, server, vapidPublicKey: params.get("vapid") || "" };
 }
 
 // Reads a pairing link's fragment (e.g. from opening the QR code in the system Camera

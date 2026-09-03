@@ -77,6 +77,15 @@ public enum PairingSecret {
         base64URLEncode(derive(from: secret, info: "metria-local-token-v1", byteCount: 32))
     }
 
+    public static func pushTopic(from secret: Data) -> String {
+        let bytes = derive(from: secret, info: "metria-push-topic-v1", byteCount: 16)
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    public static func pushEncryptionKey(from secret: Data) -> SymmetricKey {
+        SymmetricKey(data: derive(from: secret, info: "metria-push-key-v1", byteCount: 32))
+    }
+
     private static func base64URLEncode(_ data: Data) -> String {
         data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
