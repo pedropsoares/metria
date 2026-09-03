@@ -117,7 +117,13 @@ import Network
                 .dropFirst()
                 .first { $0.lowercased().hasPrefix("x-metria-secret:") }
                 .flatMap { $0.split(separator: ":", maxSplits: 1).last.map { $0.trimmingCharacters(in: .whitespaces) } }
-            guard let snapshotToken, !validSnapshotTokens.isEmpty, validSnapshotTokens.contains(snapshotToken), let snapshot else {
+            // Distinct from a missing snapshot: a phone paired against a token that no
+            // longer validates (the pairing was regenerated) needs to be told its pairing
+            // was rejected, not left to read the same as a Mac that hasn't published yet.
+            guard let snapshotToken, !validSnapshotTokens.isEmpty, validSnapshotTokens.contains(snapshotToken) else {
+                return Self.response(status: "401 Unauthorized", body: Data())
+            }
+            guard let snapshot else {
                 return Self.response(status: "204 No Content", body: Data())
             }
             return Self.response(status: "200 OK", body: snapshot, contentType: "application/json; charset=utf-8")
