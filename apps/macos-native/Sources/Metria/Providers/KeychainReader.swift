@@ -2,6 +2,13 @@ import Foundation
 import Security
 
 /// Reads credentials that other apps store in the macOS Keychain on the user's behalf.
+///
+/// Claude Code creates its OAuth credential as a Keychain generic password owned by Claude
+/// Code, not by Metria. macOS therefore shows an authorization prompt the first time Metria
+/// reads it — and because Metria's release builds are unsigned (`CODE_SIGNING_ALLOWED: NO`),
+/// macOS treats every rebuild as a different app and re-prompts each time. To avoid that, the
+/// first authorized read is cached to a file Metria owns; later launches read that file and
+/// never touch the Keychain again, exactly like the Antigravity/Codex providers do.
 enum KeychainReader {
     private static let claudeCredentialsLock = NSLock()
     private static var cachedClaudeCredentials: ClaudeCredentials?
@@ -23,6 +30,15 @@ enum KeychainReader {
         if let cachedClaudeCredentials { return cachedClaudeCredentials }
         guard !attemptedClaudeCredentialsRead else { throw ProviderError.unavailable }
         attemptedClaudeCredentialsRead = true
+
+        // The disk cache (written after the very first authorized Keychain read) is the normal
+        // path — it never prompts. Only fall through to the Keychain when there is no cache.
+        if let cachedDocument = ClaudeCredentialCache.load(),
+           let credentials = makeCredentials(from: cachedDocument) {
+            cachedClaudeCredentials = credentials
+            return credentials
+        }
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "Claude Code-credentials",
@@ -35,19 +51,56 @@ enum KeychainReader {
             throw ProviderError.unavailable
         }
         guard let document = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let oauth = document["claudeAiOauth"] as? [String: Any],
-              let accessToken = oauth["accessToken"] as? String,
-              let refreshToken = oauth["refreshToken"] as? String else {
+              let credentials = makeCredentials(from: document) else {
             throw ProviderError.unavailable
         }
-        let credentials = ClaudeCredentials(
+        cachedClaudeCredentials = credentials
+        ClaudeCredentialCache.save(document)
+        return credentials
+    }
+
+    private static func makeCredentials(from document: [String: Any]) -> ClaudeCredentials? {
+        guard let oauth = document["claudeAiOauth"] as? [String: Any],
+              let accessToken = oauth["accessToken"] as? String,
+              let refreshToken = oauth["refreshToken"] as? String else { return nil }
+        return ClaudeCredentials(
             document: document,
             accessToken: accessToken,
             refreshToken: refreshToken,
             scopes: oauth["scopes"] as? [String]
         )
-        cachedClaudeCredentials = credentials
-        return credentials
+    }
+
+    /// The single on-disk copy of Claude Code's credential, kept restricted to the current user.
+    /// Deliberately JSON so the same loading logic used for the Keychain document can read it.
+    private enum ClaudeCredentialCache {
+        private static var fileURL: URL {
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Metria", isDirectory: true)
+                .appendingPathComponent("claude-credentials.json")
+        }
+
+        static func load() -> [String: Any]? {
+            guard let data = try? Data(contentsOf: fileURL),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return nil
+            }
+            return object
+        }
+
+        static func save(_ document: [String: Any]) {
+            do {
+                let directory = fileURL.deletingLastPathComponent()
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: fileURL, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            } catch {
+                // Best-effort. If the write fails the provider still works; it just re-reads the
+                // Keychain (and re-prompts) next launch.
+                FileHandle.standardError.write("[KeychainReader] cache save failed: \(error)\n".data(using: .utf8)!)
+            }
+        }
     }
 
     static func accountEmail(from credentials: ClaudeCredentials) -> String? {
@@ -79,7 +132,13 @@ enum KeychainReader {
         let multiplier = normalized.range(of: #"\d+x"#, options: .regularExpression).map { String(normalized[$0]) }
         if normalized.contains("max") { return ["Max", multiplier].compactMap { $0 }.joined(separator: " ") }
         if normalized.contains("enterprise") { return "Enterprise" }
-        if normalized.contains("team") { return "Team" }
+        // Team plan seats come in two tiers ("Standard" and "Premium"); check the more
+        // specific "premium" match first so it isn't swallowed by the generic "team" check.
+        if normalized.contains("team") {
+            if normalized.contains("premium") { return "Team Premium" }
+            if normalized.contains("standard") { return "Team Standard" }
+            return "Team"
+        }
         if normalized.contains("pro") { return "Pro" }
         return raw.capitalized
     }

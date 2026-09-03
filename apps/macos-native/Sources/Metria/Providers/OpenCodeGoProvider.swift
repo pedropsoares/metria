@@ -6,7 +6,7 @@ struct OpenCodeGoProvider: UsageProvider {
     let kind = ProviderKind.openCodeGo
     var isAvailable: Bool { FileManager.default.fileExists(atPath: authURL.path) }
     let setupHint = "Sign in to OpenCode Go to create a local API credential."
-    let usageWindowTitles = ["Current session", "This week", "This month"]
+    let usageWindowTitles = ["5-hour limit", "Weekly limit", "Monthly limit"]
 
     private var authURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
@@ -23,13 +23,13 @@ struct OpenCodeGoProvider: UsageProvider {
                     kind: kind, accountLabel: maskedKey(key),
                     windows: [
                         UsageWindow(
-                            title: "Current session", percent: usage.rolling.percent,
+                            title: "5-hour limit", percent: usage.rolling.percent,
                             resetDate: usage.rolling.resetDate),
                         UsageWindow(
-                            title: "This week", percent: usage.weekly.percent,
+                            title: "Weekly limit", percent: usage.weekly.percent,
                             resetDate: usage.weekly.resetDate),
                         UsageWindow(
-                            title: "This month", percent: usage.monthly.percent,
+                            title: "Monthly limit", percent: usage.monthly.percent,
                             resetDate: usage.monthly.resetDate),
                     ], updatedAt: Date(), error: nil))
         } catch {

@@ -1514,6 +1514,7 @@ enum LaunchAtLoginManager {
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
     case general
+    case design
     case providers
     case iPhone
 
@@ -1521,6 +1522,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "General"
+        case .design: "Design"
         case .providers: "Providers"
         case .iPhone: "Phone"
         }
@@ -1528,6 +1530,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .design: "paintpalette"
         case .providers: "square.stack.3d.up"
         case .iPhone: "iphone"
         }
@@ -1646,6 +1649,7 @@ struct SettingsView: View {
     @State private var reconnectMessage = ""
     @State private var launchAtLoginMessage: String?
     @State private var selectedSection: SettingsSection = .general
+    @State private var expandedProviderKinds: Set<ProviderKind> = []
 
     init(
         store: UsageStore,
@@ -1767,6 +1771,7 @@ struct SettingsView: View {
                 Divider()
                 Button(role: .destructive, action: onQuit) {
                     Label("Quit", systemImage: "power")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.red)
@@ -1791,12 +1796,85 @@ struct SettingsView: View {
     @ViewBuilder private var detailView: some View {
         switch selectedSection {
         case .general: generalView
+        case .design: designView
         case .providers: providersView
         case .iPhone: phoneView
         }
     }
 
     private var generalView: some View {
+        Form {
+            Section("Behavior") {
+                Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
+                    Text("Refresh every \(Int(store.refreshInterval / 60)) min")
+                }
+                Toggle(
+                    "Launch at login",
+                    isOn: Binding(
+                        get: { launchAtLoginEnabled },
+                        set: { enabled in
+                            if let message = onChangeLaunchAtLogin(enabled) {
+                                launchAtLoginMessage = message
+                            } else {
+                                launchAtLoginEnabled = enabled
+                            }
+                        }
+                    ))
+                Text("Metria will start automatically and remain available in the menu bar.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Button("Check for Updates…", action: onCheckForUpdates)
+                    .disabled(!canCheckForUpdates)
+                if !canCheckForUpdates {
+                    Text("Automatic updates aren't configured for this build.")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                HStack {
+                    Text("Software Update")
+                    Spacer()
+                    Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown")")
+                        .foregroundStyle(.secondary)
+                        .textCase(nil)
+                }
+            }
+
+            Section("Uninstall") {
+                Text("To uninstall Metria, quit the app and move it to the Trash from Finder.")
+                    .foregroundStyle(.secondary)
+                Button("Quit Metria", role: .destructive, action: onQuit)
+            }
+
+            Section("About") {
+                Text("Metria")
+                    .font(.headline)
+                Text("A lightweight usage monitor for your AI providers.")
+                    .foregroundStyle(.secondary)
+                if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                    Text("Version \(version)")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .alert(
+            "Launch at login",
+            isPresented: Binding(
+                get: { launchAtLoginMessage != nil },
+                set: { if !$0 { launchAtLoginMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { launchAtLoginMessage = nil }
+        } message: {
+            Text(launchAtLoginMessage ?? "")
+        }
+    }
+
+    private var designView: some View {
         Form {
             Section("Display") {
                 Toggle(
@@ -1933,52 +2011,10 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
             }
 
-            Section("Refresh") {
-                Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
-                    Text("Refresh every \(Int(store.refreshInterval / 60)) min")
-                }
-            }
-
-            Section("Software Update") {
-                Button("Check for Updates…", action: onCheckForUpdates)
-                    .disabled(!canCheckForUpdates)
-                if !canCheckForUpdates {
-                    Text("Automatic updates aren't configured for this build.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Startup") {
-                Toggle(
-                    "Launch at login",
-                    isOn: Binding(
-                        get: { launchAtLoginEnabled },
-                        set: { enabled in
-                            if let message = onChangeLaunchAtLogin(enabled) {
-                                launchAtLoginMessage = message
-                            } else {
-                                launchAtLoginEnabled = enabled
-                            }
-                        }
-                    ))
-                Text("Metria will start automatically and remain available in the menu bar.")
-                    .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .alert(
-            "Launch at login",
-            isPresented: Binding(
-                get: { launchAtLoginMessage != nil },
-                set: { if !$0 { launchAtLoginMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { launchAtLoginMessage = nil }
-        } message: {
-            Text(launchAtLoginMessage ?? "")
-        }
     }
 
     private var menuBarAlertControls: some View {
@@ -2021,76 +2057,128 @@ struct SettingsView: View {
             ))
     }
 
-    private var providersView: some View {
-        Form {
-            ForEach(ProviderKind.allCases) { kind in
-                Section {
-                    Toggle(
-                        "Use this provider",
-                        isOn: Binding(
-                            get: { store.enabledProviderKinds.contains(kind) },
-                            set: { store.setProviderEnabled(kind, isEnabled: $0) }
-                        )
-                    )
-                    .disabled(!store.isProviderAvailable(kind))
+    /// A small colored status dot shown right after the provider name: green when connected
+    /// (available and enabled), red when it isn't connected at all, orange-gray when available
+    /// but turned off.
+    private func providerStatusDot(for kind: ProviderKind) -> some View {
+        let color: Color
+        if !store.isProviderAvailable(kind) {
+            color = .red
+        } else if store.enabledProviderKinds.contains(kind) {
+            color = .green
+        } else {
+            color = .gray
+        }
+        return Circle()
+            .fill(color)
+            .frame(width: 9, height: 9)
+    }
 
-                    ForEach(store.usageWindowTitles(for: kind), id: \.self) { title in
-                        Toggle(
-                            "Show \"\(title)\"",
-                            isOn: Binding(
-                                get: {
-                                    !(store.hiddenWindowTitlesByProvider[kind]?.contains(title)
-                                        ?? false)
-                                },
-                                set: { store.setWindowVisible(title, for: kind, isVisible: $0) }
-                            ))
-                    }
-
-                    HStack {
-                        Button("Diagnose") {
-                            diagnosticMessage = store.diagnosis(for: kind)
-                            isDiagnosticShown = true
-                        }
-                        Button("Reconnect") {
-                            onReconnect(kind)
-                            reconnectMessage =
-                                "The login command for \(kind.rawValue) was sent to Terminal. If it did not start automatically, paste this command:\n\n\(kind.reconnectCommand)"
-                            isReconnectShown = true
-                        }
-                        Spacer()
-                    }
-                    .controlSize(.small)
-
-                    if let usage = store.providers.first(where: { $0.kind == kind }) {
-                        if let error = usage.error {
-                            Label(error, systemImage: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                                .lineLimit(2)
-                        }
-                        if let updatedAt = usage.updatedAt {
-                            Text("Last update: \(updatedAt.formatted(.dateTime.hour().minute()))")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } header: {
-                    Label {
-                        Text(kind.rawValue)
-                    } icon: {
-                        ProviderLogo(provider: kind, size: 18)
-                    }
-                } footer: {
-                    if !store.isProviderAvailable(kind), let hint = store.setupHint(for: kind) {
-                        Text(hint)
-                    } else {
-                        Text("Reconnect opens the provider's sign-in flow in Terminal.")
-                    }
+    /// The dismissable header row of a provider: logo, name, a short status right after the
+    /// name, and the disclosure chevron pushed to the trailing edge. The entire row is a
+    /// button so clicking anywhere on it toggles the provider's settings.
+    private func providerRowHeader(for kind: ProviderKind) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                if expandedProviderKinds.contains(kind) {
+                    expandedProviderKinds.remove(kind)
+                } else {
+                    expandedProviderKinds.insert(kind)
                 }
             }
+        } label: {
+            HStack(spacing: 12) {
+                ProviderLogo(provider: kind, size: 18)
+                Text(kind.rawValue)
+                providerStatusDot(for: kind)
+                Spacer()
+                Image(systemName: expandedProviderKinds.contains(kind) ? "chevron.down" : "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+        }
+        .buttonStyle(.plain)
+    }
 
-            Text(
-                "At least one provider must remain enabled, and at least one usage window per provider."
+    private func providerDetail(for kind: ProviderKind) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(
+                "Use this provider",
+                isOn: Binding(
+                    get: { store.enabledProviderKinds.contains(kind) },
+                    set: { store.setProviderEnabled(kind, isEnabled: $0) }
+                )
             )
-            .foregroundStyle(.secondary)
+            .disabled(!store.isProviderAvailable(kind))
+
+            ForEach(store.usageWindowTitles(for: kind), id: \.self) { title in
+                Toggle(
+                    "Show \"\(title)\"",
+                    isOn: Binding(
+                        get: {
+                            !(store.hiddenWindowTitlesByProvider[kind]?.contains(title) ?? false)
+                        },
+                        set: { store.setWindowVisible(title, for: kind, isVisible: $0) }
+                    ))
+            }
+
+            HStack {
+                Button("Diagnose") {
+                    diagnosticMessage = store.diagnosis(for: kind)
+                    isDiagnosticShown = true
+                }
+                Button("Reconnect") {
+                    onReconnect(kind)
+                    reconnectMessage =
+                        "The login command for \(kind.rawValue) was sent to Terminal. If it did not start automatically, paste this command:\n\n\(kind.reconnectCommand)"
+                    isReconnectShown = true
+                }
+                Spacer()
+            }
+            .controlSize(.small)
+
+            if let usage = store.providers.first(where: { $0.kind == kind }), let error = usage.error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .lineLimit(4)
+            }
+            if let usage = store.providers.first(where: { $0.kind == kind }), let updatedAt = usage.updatedAt {
+                Text("Last update: \(updatedAt.formatted(.dateTime.hour().minute()))")
+                    .foregroundStyle(.secondary)
+            }
+
+            if !store.isProviderAvailable(kind), let hint = store.setupHint(for: kind) {
+                Text(hint).foregroundStyle(.secondary)
+            } else {
+                Text("Reconnect opens the provider's sign-in flow in Terminal.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
+    }
+
+    private var providersView: some View {
+        Form {
+            Section {
+                ForEach(ProviderKind.allCases) { kind in
+                    providerRow(for: kind)
+                }
+            } footer: {
+                Text(
+                    "At least one provider must remain enabled, and at least one usage window per provider."
+                )
+                .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding(12)
@@ -2105,6 +2193,18 @@ struct SettingsView: View {
         } message: {
             Text(reconnectMessage)
         }
+    }
+
+    /// One provider's collapsible block inside the grouped form: the full-width header row
+    /// plus, when expanded, its settings details.
+    private func providerRow(for kind: ProviderKind) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            providerRowHeader(for: kind)
+            if expandedProviderKinds.contains(kind) {
+                providerDetail(for: kind)
+            }
+        }
+        .padding(.vertical, 6)
     }
 
     private var phoneView: some View {

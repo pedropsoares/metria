@@ -9,7 +9,7 @@ struct CodexProvider: UsageProvider {
         FileManager.default.fileExists(atPath: codexAuthURL.path) || FileManager.default.fileExists(atPath: sessionsURL.path)
     }
     let setupHint = "Sign in to Codex to create local usage data."
-    let usageWindowTitles = ["Current session", "All models"]
+    let usageWindowTitles = ["5-hour limit", "Weekly limit"]
 
     private var codexAuthURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/auth.json") }
     private var sessionsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions") }
@@ -50,16 +50,16 @@ struct CodexProvider: UsageProvider {
                 accountLabel: credentials.idToken.flatMap(KeychainReader.tokenEmail) ?? KeychainReader.tokenEmail(credentials.accessToken),
                 planLabel: credentials.idToken.flatMap(planLabel),
                 windows: [
-                UsageWindow(title: "Current session", percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
-                UsageWindow(title: "All models", percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
+                UsageWindow(title: "5-hour limit", percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
+                UsageWindow(title: "Weekly limit", percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
             ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
             return .failed(kind, error.localizedDescription, retryAfter: providerError?.retryAfter)
         }
     }
-    /// Decodes the ChatGPT plan (e.g. "Plus", "Pro", "Team") from the `id_token` JWT's
-    /// `https://api.openai.com/auth` claim. Best-effort — this claim is undocumented and
+    /// Decodes the ChatGPT plan (e.g. "free", "plus", "pro", "business") from the `id_token`
+    /// JWT's `https://api.openai.com/auth` claim. Best-effort — this claim is undocumented and
     /// has been observed missing from some token refresh paths.
     private func planLabel(from idToken: String) -> String? {
         let parts = idToken.split(separator: ".")
@@ -70,7 +70,16 @@ struct CodexProvider: UsageProvider {
               let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let auth = claims["https://api.openai.com/auth"] as? [String: Any],
               let planType = auth["chatgpt_plan_type"] as? String, !planType.isEmpty else { return nil }
-        return planType.capitalized
+        return planDisplayName(planType)
+    }
+
+    /// OpenAI's "Team" plan was renamed to "Business"; the raw claim may still use either
+    /// name depending on when the account was created, so both are normalized to "Business".
+    private func planDisplayName(_ raw: String) -> String {
+        let normalized = raw.lowercased()
+        if normalized.contains("business") || normalized.contains("team") { return "Business" }
+        // Fall back to Title Case for snake_case raw values (e.g. "chatgpt_plus" -> "Chatgpt Plus").
+        return normalized.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
     }
     private func fetchLocalUsage() -> ProviderFetchResult {
         let candidates = findCandidates()
@@ -81,8 +90,8 @@ struct CodexProvider: UsageProvider {
                 guard line.contains("rate_limits"), let data = line.data(using: .utf8), let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let payload = event["payload"] as? [String: Any] else { continue }
                 let limits = (payload["rate_limits"] as? [String: Any]) ?? ((payload["info"] as? [String: Any])?["rate_limits"] as? [String: Any])
                 guard let limits else { continue }
-                let primary = parseLimit(limits["primary"] as? [String: Any], title: "Current session")
-                let secondary = parseLimit(limits["secondary"] as? [String: Any], title: "All models")
+                let primary = parseLimit(limits["primary"] as? [String: Any], title: "5-hour limit")
+                let secondary = parseLimit(limits["secondary"] as? [String: Any], title: "Weekly limit")
                 return .loaded(ProviderUsage(kind: kind, windows: [primary, secondary].compactMap { $0 }, updatedAt: candidate.0, error: nil))
             }
         }

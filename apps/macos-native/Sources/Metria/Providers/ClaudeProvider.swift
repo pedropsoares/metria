@@ -6,7 +6,7 @@ struct ClaudeProvider: UsageProvider {
     let kind = ProviderKind.claude
     var isAvailable: Bool { KeychainReader.hasClaudeCredentials }
     let setupHint = "Install Claude Code and sign in to make usage available."
-    let usageWindowTitles = ["Current session", "All models"]
+    let usageWindowTitles = ["5-hour limit", "Weekly limit"]
     private static let accountEmailCache = ClaudeAccountEmailCache()
     func fetch() async -> ProviderFetchResult {
         do {
@@ -31,8 +31,8 @@ struct ClaudeProvider: UsageProvider {
                 accountEmail = email
             }
             return .loaded(ProviderUsage(kind: kind, accountLabel: accountEmail, planLabel: KeychainReader.planLabel(from: credentials), windows: [
-                UsageWindow(title: "Current session", percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
-                UsageWindow(title: "All models", percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
+                UsageWindow(title: "5-hour limit", percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
+                UsageWindow(title: "Weekly limit", percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
             ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
