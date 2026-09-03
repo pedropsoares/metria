@@ -2240,7 +2240,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Local address")
                         .font(.headline)
-                     Text(localServerURL() ?? "Starting local server…")
+                    Text(localPWAURL() ?? "Starting local server…")
                         .font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2261,7 +2261,7 @@ struct SettingsView: View {
                         .onSubmit { onChangeCustomPWAURL(customPWAURL) }
                 }
                 Text(
-                     "Leave Custom PWA URL empty to use the hosted PWA. Enter an HTTPS URL to use another host; the local address is available for development on the same Wi-Fi network."
+                    "Leave Custom PWA URL empty to pair through this Mac on the same Wi-Fi network. Use an HTTPS URL to keep remote access and PWA installation."
                 )
                 .foregroundStyle(.secondary)
             }
