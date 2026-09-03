@@ -2,9 +2,7 @@
 
 *A native macOS app that tracks your AI coding assistant usage in real time.*
 
-> A fork of [yurirxmos/metria](https://github.com/yurirxmos/metria) that adds a
-> Cursor provider and iPhone pairing on the macOS side. The Windows/Linux and
-> iOS apps live in their own repositories — see
+> The Windows/Linux app lives in its own repository — see
 > [Related repositories](#related-repositories).
 
 <p align="center">
@@ -50,7 +48,7 @@ Download the native `.dmg` for Apple Silicon or Intel Macs.
 
 ## To do
 
-- Build a native Android app to improve usage update delivery alongside the existing PWA. The iOS app already exists in [its own repository](https://github.com/pedropsoares/metria-ios); the PWA remains the Android path.
+- Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
 
 ### Shared
 
@@ -163,19 +161,18 @@ git push origin macos-v0.2.0
 
 ## Related repositories
 
-Metria is one product across three codebases. This repository is the native
+Metria is one product across two codebases. This repository is the native
 macOS app and the companion PWA.
 
 | Repository | What it holds |
 |---|---|
-| [pedropsoares/metria](https://github.com/pedropsoares/metria) (here) | Native macOS app and the mobile PWA. Fork of [yurirxmos/metria](https://github.com/yurirxmos/metria). |
-| [pedropsoares/metria-win-linux](https://github.com/pedropsoares/metria-win-linux) | The Windows and Linux Electron app. Fork of [yurirxmos/metria-win-linux](https://github.com/yurirxmos/metria-win-linux). |
-| [pedropsoares/metria-ios](https://github.com/pedropsoares/metria-ios) | The native iOS app and its Home Screen and Lock Screen widgets. |
+| [yurirxmos/metria](https://github.com/yurirxmos/metria) (here) | Native macOS app and the mobile PWA. |
+| [yurirxmos/metria-win-linux](https://github.com/yurirxmos/metria-win-linux) | The Windows and Linux Electron app. |
 
 The pairing derivations in `apps/macos-native/Sources/MetriaCore` are duplicated
-in the other two repositories on purpose, and must stay byte-identical: one
-phone pairs with either desktop app, so changing a derivation in one place
-without the others breaks pairing.
+in the other repository on purpose, and must stay byte-identical: one phone
+pairs with either desktop app, so changing a derivation in one place without
+the other breaks pairing.
 
 ## Contributing
 
