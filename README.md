@@ -112,8 +112,15 @@ Open the disk image, drag `Metria.app` to `Applications`, and launch it from Fin
 ### Run in development
 
 ```sh
+make run
+```
+
+This builds the current working tree (including uncommitted changes) as a real, unsigned Debug `.app` via `xcodebuild` and launches it — unlike `swift run`, it produces a proper `CFBundleIdentifier` and a compiled String Catalog. It quits any running `Metria` instance first, then rebuilds and relaunches, so it's the fast loop for iterating locally. See `apps/macos-native/scripts/dev-run.sh` for details.
+
+To just verify the Swift package compiles, without building the full app bundle:
+
+```sh
 swift build
-swift run Metria
 ```
 
 To create a local macOS application archive for installation:
@@ -191,7 +198,7 @@ Join the Metria contributors group on WhatsApp to ask questions, share feedback,
   </a>
 </p>
 
-- Run `swift build` from the repository root.
+- Use `make run` to build and launch the app locally while iterating; run `swift build` to verify the package compiles.
 - Runtime-test native macOS changes on macOS 13 or later.
 
 ### Mobile PWA
