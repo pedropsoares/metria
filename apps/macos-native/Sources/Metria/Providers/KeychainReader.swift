@@ -4,23 +4,14 @@ import Security
 /// Reads credentials that other apps store in the macOS Keychain on the user's behalf.
 enum KeychainReader {
     private static let claudeCredentialsLock = NSLock()
-    private static var hasClaudeCredentialsCache: Bool?
     private static var cachedClaudeCredentials: ClaudeCredentials?
 
     static var hasClaudeCredentials: Bool {
         claudeCredentialsLock.lock()
-        defer { claudeCredentialsLock.unlock() }
-        if let hasClaudeCredentialsCache { return hasClaudeCredentialsCache }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Claude Code-credentials",
-            kSecReturnAttributes as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: AnyObject?
-        let hasCredentials = SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
-        if hasCredentials { hasClaudeCredentialsCache = true }
-        return hasCredentials
+        let cached = cachedClaudeCredentials != nil
+        claudeCredentialsLock.unlock()
+        if cached { return true }
+        return (try? readClaudeCredentials()) != nil
     }
 
     static func readClaudeCredentials() throws -> ClaudeCredentials {
@@ -51,7 +42,6 @@ enum KeychainReader {
             scopes: oauth["scopes"] as? [String]
         )
         cachedClaudeCredentials = credentials
-        hasClaudeCredentialsCache = true
         return credentials
     }
 
@@ -126,7 +116,6 @@ enum KeychainReader {
             refreshToken: refreshToken,
             scopes: oauth["scopes"] as? [String]
         )
-        hasClaudeCredentialsCache = true
         claudeCredentialsLock.unlock()
     }
 
