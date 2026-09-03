@@ -5,19 +5,24 @@ import Security
 enum KeychainReader {
     private static let claudeCredentialsLock = NSLock()
     private static var cachedClaudeCredentials: ClaudeCredentials?
+    private static var attemptedClaudeCredentialsRead = false
 
     static var hasClaudeCredentials: Bool {
         claudeCredentialsLock.lock()
-        let cached = cachedClaudeCredentials != nil
+        let isReadSuccessful = cachedClaudeCredentials != nil
+        let hasAttemptedRead = attemptedClaudeCredentialsRead
         claudeCredentialsLock.unlock()
-        if cached { return true }
-        return (try? readClaudeCredentials()) != nil
+        // Do not probe the Keychain while UsageStore is being initialized. The first actual
+        // provider fetch performs the single protected read instead.
+        return isReadSuccessful || !hasAttemptedRead
     }
 
     static func readClaudeCredentials() throws -> ClaudeCredentials {
         claudeCredentialsLock.lock()
         defer { claudeCredentialsLock.unlock() }
         if let cachedClaudeCredentials { return cachedClaudeCredentials }
+        guard !attemptedClaudeCredentialsRead else { throw ProviderError.unavailable }
+        attemptedClaudeCredentialsRead = true
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "Claude Code-credentials",
