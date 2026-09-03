@@ -8,8 +8,10 @@ struct CodexProvider: UsageProvider {
     var isAvailable: Bool {
         FileManager.default.fileExists(atPath: codexAuthURL.path) || FileManager.default.fileExists(atPath: sessionsURL.path)
     }
-    let setupHint = "Sign in to Codex to create local usage data."
-    let usageWindowTitles = ["5-hour limit", "Weekly limit"]
+    let setupHint = String(localized: "Sign in to Codex to create local usage data.")
+    static let fiveHourLimitTitle = String(localized: "5-hour limit")
+    static let weeklyLimitTitle = String(localized: "Weekly limit")
+    let usageWindowTitles = [fiveHourLimitTitle, weeklyLimitTitle]
 
     private var codexAuthURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/auth.json") }
     private var sessionsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions") }
@@ -21,7 +23,7 @@ struct CodexProvider: UsageProvider {
                 return remoteResult
             case .failed(_, let message, let retryAfter):
                 if case .loaded(var localUsage) = fetchLocalUsage() {
-                    localUsage.error = "\(message) Showing the latest local session data."
+                    localUsage.error = String(localized: "\(message) Showing the latest local session data.")
                     return .loaded(localUsage)
                 }
                 return .failed(kind, message, retryAfter: retryAfter)
@@ -50,8 +52,8 @@ struct CodexProvider: UsageProvider {
                 accountLabel: credentials.idToken.flatMap(KeychainReader.tokenEmail) ?? KeychainReader.tokenEmail(credentials.accessToken),
                 planLabel: credentials.idToken.flatMap(planLabel),
                 windows: [
-                UsageWindow(title: "5-hour limit", percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
-                UsageWindow(title: "Weekly limit", percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
+                UsageWindow(title: Self.fiveHourLimitTitle, percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
+                UsageWindow(title: Self.weeklyLimitTitle, percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
             ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
@@ -90,12 +92,12 @@ struct CodexProvider: UsageProvider {
                 guard line.contains("rate_limits"), let data = line.data(using: .utf8), let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let payload = event["payload"] as? [String: Any] else { continue }
                 let limits = (payload["rate_limits"] as? [String: Any]) ?? ((payload["info"] as? [String: Any])?["rate_limits"] as? [String: Any])
                 guard let limits else { continue }
-                let primary = parseLimit(limits["primary"] as? [String: Any], title: "5-hour limit")
-                let secondary = parseLimit(limits["secondary"] as? [String: Any], title: "Weekly limit")
+                let primary = parseLimit(limits["primary"] as? [String: Any], title: Self.fiveHourLimitTitle)
+                let secondary = parseLimit(limits["secondary"] as? [String: Any], title: Self.weeklyLimitTitle)
                 return .loaded(ProviderUsage(kind: kind, windows: [primary, secondary].compactMap { $0 }, updatedAt: candidate.0, error: nil))
             }
         }
-        return .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: "No recent local usage data was found. Sign in and use Codex once to create a usage snapshot."))
+        return .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: String(localized: "No recent local usage data was found. Sign in and use Codex once to create a usage snapshot.")))
     }
     private struct CodexAuth: Decodable {
         let tokens: Tokens?

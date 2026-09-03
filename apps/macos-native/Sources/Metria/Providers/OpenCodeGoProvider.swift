@@ -5,8 +5,11 @@ import MetriaCore
 struct OpenCodeGoProvider: UsageProvider {
     let kind = ProviderKind.openCodeGo
     var isAvailable: Bool { FileManager.default.fileExists(atPath: authURL.path) }
-    let setupHint = "Sign in to OpenCode Go to create a local API credential."
-    let usageWindowTitles = ["5-hour limit", "Weekly limit", "Monthly limit"]
+    let setupHint = String(localized: "Sign in to OpenCode Go to create a local API credential.")
+    static let fiveHourLimitTitle = String(localized: "5-hour limit")
+    static let weeklyLimitTitle = String(localized: "Weekly limit")
+    static let monthlyLimitTitle = String(localized: "Monthly limit")
+    let usageWindowTitles = [fiveHourLimitTitle, weeklyLimitTitle, monthlyLimitTitle]
 
     private var authURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
@@ -23,13 +26,13 @@ struct OpenCodeGoProvider: UsageProvider {
                     kind: kind, accountLabel: maskedKey(key),
                     windows: [
                         UsageWindow(
-                            title: "5-hour limit", percent: usage.rolling.percent,
+                            title: Self.fiveHourLimitTitle, percent: usage.rolling.percent,
                             resetDate: usage.rolling.resetDate),
                         UsageWindow(
-                            title: "Weekly limit", percent: usage.weekly.percent,
+                            title: Self.weeklyLimitTitle, percent: usage.weekly.percent,
                             resetDate: usage.weekly.resetDate),
                         UsageWindow(
-                            title: "Monthly limit", percent: usage.monthly.percent,
+                            title: Self.monthlyLimitTitle, percent: usage.monthly.percent,
                             resetDate: usage.monthly.resetDate),
                     ], updatedAt: Date(), error: nil))
         } catch {

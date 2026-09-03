@@ -5,8 +5,10 @@ import MetriaCore
 struct ClaudeProvider: UsageProvider {
     let kind = ProviderKind.claude
     var isAvailable: Bool { KeychainReader.hasClaudeCredentials }
-    let setupHint = "Install Claude Code and sign in to make usage available."
-    let usageWindowTitles = ["5-hour limit", "Weekly limit"]
+    let setupHint = String(localized: "Install Claude Code and sign in to make usage available.")
+    static let fiveHourLimitTitle = String(localized: "5-hour limit")
+    static let weeklyLimitTitle = String(localized: "Weekly limit")
+    let usageWindowTitles = [fiveHourLimitTitle, weeklyLimitTitle]
     private static let accountEmailCache = ClaudeAccountEmailCache()
     func fetch() async -> ProviderFetchResult {
         do {
@@ -31,8 +33,8 @@ struct ClaudeProvider: UsageProvider {
                 accountEmail = email
             }
             return .loaded(ProviderUsage(kind: kind, accountLabel: accountEmail, planLabel: KeychainReader.planLabel(from: credentials), windows: [
-                UsageWindow(title: "5-hour limit", percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
-                UsageWindow(title: "Weekly limit", percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
+                UsageWindow(title: Self.fiveHourLimitTitle, percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
+                UsageWindow(title: Self.weeklyLimitTitle, percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
             ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError

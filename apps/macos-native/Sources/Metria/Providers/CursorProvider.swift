@@ -7,8 +7,9 @@ import MetriaCore
 /// research this is based on.
 struct CursorProvider: UsageProvider {
     let kind = ProviderKind.cursor
-    let setupHint = "Sign in to Cursor to make usage available."
-    let usageWindowTitles = ["This cycle"]
+    let setupHint = String(localized: "Sign in to Cursor to make usage available.")
+    static let thisCycleTitle = String(localized: "This cycle")
+    let usageWindowTitles = [thisCycleTitle]
 
     private var stateStore: CursorStateStore {
         CursorStateStore(databaseURL: FileManager.default.homeDirectoryForCurrentUser
@@ -27,14 +28,14 @@ struct CursorProvider: UsageProvider {
             let usage = try JSONDecoder().decode(CursorUsageResponse.self, from: data)
             guard let measure = usage.measure else { throw ProviderError.unavailable }
             return .loaded(ProviderUsage(kind: kind, windows: [
-                UsageWindow(title: "This cycle", percent: measure.percent, resetDate: usage.billingCycleEndDate,
+                UsageWindow(title: Self.thisCycleTitle, percent: measure.percent, resetDate: usage.billingCycleEndDate,
                             usedCents: measure.usedCents, limitCents: measure.limitCents)
             ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
             let message: String
             switch providerError {
-            case .http(401), .http(403): message = "Sign in to Cursor again to refresh usage."
+            case .http(401), .http(403): message = String(localized: "Sign in to Cursor again to refresh usage.")
             default: message = error.localizedDescription
             }
             return .failed(kind, message, retryAfter: providerError?.retryAfter)

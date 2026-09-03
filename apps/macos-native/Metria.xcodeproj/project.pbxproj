@@ -30,6 +30,7 @@
 		E87CBB5215F9C3C201D860CE /* UsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C81534D399ED080DD3983A /* UsageSnapshot.swift */; };
 		EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */; };
 		EFCA4810DF283BE11713152C /* BIP39Wordlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */; };
+		FB1F9F0C6990C4A373397544 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D588191EB0695B9A4FC447E9 /* Localizable.xcstrings */; };
 		FFC29DC11D67E94AB5CAFF31 /* MetriaResources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97692A6C8502A27D4FA476F0 /* MetriaResources.swift */; };
 /* End PBXBuildFile section */
 
@@ -79,6 +80,7 @@
 		ABC404DE64C320E52402D468 /* MetriaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetriaApp.swift; sourceTree = "<group>"; };
 		B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BIP39Wordlist.swift; sourceTree = "<group>"; };
 		C8C81534D399ED080DD3983A /* UsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSnapshot.swift; sourceTree = "<group>"; };
+		D588191EB0695B9A4FC447E9 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderActivityMonitor.swift; sourceTree = "<group>"; };
 		FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -99,6 +101,7 @@
 		32231B4583EDA193B07D0545 /* Metria */ = {
 			isa = PBXGroup;
 			children = (
+				D588191EB0695B9A4FC447E9 /* Localizable.xcstrings */,
 				18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */,
 				942FF095F80398F2F48468E8 /* LocalPWAServer.swift */,
 				ABC404DE64C320E52402D468 /* MetriaApp.swift */,
@@ -233,6 +236,7 @@
 			knownRegions = (
 				Base,
 				en,
+				"pt-BR",
 			);
 			mainGroup = DEE7314F484D35A0B765790F;
 			minimizedProjectReferenceProxies = 1;
@@ -256,6 +260,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				989E9729C42611755710CD7C /* AppIcon.icon in Resources */,
+				FB1F9F0C6990C4A373397544 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

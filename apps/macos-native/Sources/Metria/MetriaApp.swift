@@ -352,7 +352,7 @@ struct UsageCard: View {
 
 extension UsageWindow {
     var resetText: String {
-        guard let resetDate else { return "No reset data" }
+        guard let resetDate else { return String(localized: "No reset data") }
         let seconds = resetDate.timeIntervalSinceNow
 
         if seconds > 0 && seconds < 86400 {
@@ -362,14 +362,14 @@ extension UsageWindow {
 
             if hours > 0 {
                 return minutes > 0
-                    ? "Resets in \(hours) hr \(minutes) min" : "Resets in \(hours) hr"
+                    ? String(localized: "Resets in \(hours) hr \(minutes) min") : String(localized: "Resets in \(hours) hr")
             }
 
-            return "Resets in \(minutes) min"
+            return String(localized: "Resets in \(minutes) min")
         }
 
-        return
-            "Resets \(resetDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))"
+        let formattedDate = resetDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+        return String(localized: "Resets \(formattedDate)")
     }
 }
 
@@ -547,7 +547,14 @@ enum NotchPosition: String, CaseIterable, Identifiable {
     case bottom
 
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .top: String(localized: "Top")
+        case .left: String(localized: "Left")
+        case .right: String(localized: "Right")
+        case .bottom: String(localized: "Bottom")
+        }
+    }
     var axis: NotchAxis { self == .top || self == .bottom ? .horizontal : .vertical }
 
     /// The corner(s) touching the screen edge stay square; the opposite, exposed corner(s)
@@ -755,7 +762,13 @@ enum NotchSize: String, CaseIterable, Identifiable {
     case large
 
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .small: String(localized: "Small")
+        case .medium: String(localized: "Medium")
+        case .large: String(localized: "Large")
+        }
+    }
     var scale: CGFloat {
         switch self {
         case .small: 0.85
@@ -1490,7 +1503,7 @@ enum LaunchAtLoginManager {
 
     static func setEnabled(_ enabled: Bool) -> String? {
         guard isAvailable else {
-            return "Launch at login is available after installing Metria as an app in Applications."
+            return String(localized: "Launch at login is available after installing Metria as an app in Applications.")
         }
 
         do {
@@ -1500,15 +1513,68 @@ enum LaunchAtLoginManager {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            return
-                "Metria could not update its launch-at-login setting: \(error.localizedDescription)"
+            let reason = error.localizedDescription
+            return String(localized: "Metria could not update its launch-at-login setting: \(reason)")
         }
 
         if enabled, SMAppService.mainApp.status == .requiresApproval {
-            return
-                "Metria was added, but macOS requires approval. Open System Settings > General > Login Items and allow Metria."
+            return String(localized: "Metria was added, but macOS requires approval. Open System Settings > General > Login Items and allow Metria.")
         }
         return nil
+    }
+}
+
+/// The UI language Metria launches with. "System" clears the override entirely, so the app
+/// follows whatever language macOS itself uses. Foundation only reads `AppleLanguages` at
+/// process launch, so a change here only takes effect after a relaunch.
+enum AppLanguage: String, CaseIterable, Identifiable {
+    case system
+    case english = "en"
+    case portugueseBrazil = "pt-BR"
+
+    var id: String { rawValue }
+
+    /// Language names are shown in their own language (an endonym), matching how macOS's
+    /// own language picker presents them — not translated into the current UI language.
+    var displayName: String {
+        switch self {
+        case .system: String(localized: "System")
+        case .english: "English"
+        case .portugueseBrazil: "Português (Brasil)"
+        }
+    }
+}
+
+enum AppLanguageManager {
+    private static let key = "AppleLanguages"
+
+    static var current: AppLanguage {
+        guard let saved = UserDefaults.standard.array(forKey: key) as? [String],
+              let code = saved.first else { return .system }
+        return AppLanguage(rawValue: code) ?? .system
+    }
+
+    static func setLanguage(_ language: AppLanguage) {
+        switch language {
+        case .system:
+            UserDefaults.standard.removeObject(forKey: key)
+        default:
+            UserDefaults.standard.set([language.rawValue], forKey: key)
+        }
+    }
+
+    /// Relaunches Metria as a fresh process so the new `AppleLanguages` override takes
+    /// effect; a no-op (returns `false`) outside a packaged .app, e.g. `swift run`.
+    @discardableResult
+    static func relaunch() -> Bool {
+        guard LaunchAtLoginManager.isAvailable else { return false }
+        let url = Bundle.main.bundleURL
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+        return true
     }
 }
 
@@ -1648,6 +1714,8 @@ struct SettingsView: View {
     @State private var isReconnectShown = false
     @State private var reconnectMessage = ""
     @State private var launchAtLoginMessage: String?
+    @State private var selectedLanguage: AppLanguage = AppLanguageManager.current
+    @State private var isLanguageRestartPromptShown = false
     @State private var selectedSection: SettingsSection = .general
     @State private var expandedProviderKinds: Set<ProviderKind> = []
 
@@ -1824,6 +1892,19 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Language") {
+                Picker("Language", selection: $selectedLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+                .labelsHidden()
+                .onChange(of: selectedLanguage) { newLanguage in
+                    AppLanguageManager.setLanguage(newLanguage)
+                    isLanguageRestartPromptShown = true
+                }
+            }
+
             Section {
                 Button("Check for Updates…", action: onCheckForUpdates)
                     .disabled(!canCheckForUpdates)
@@ -1871,6 +1952,14 @@ struct SettingsView: View {
             Button("OK", role: .cancel) { launchAtLoginMessage = nil }
         } message: {
             Text(launchAtLoginMessage ?? "")
+        }
+        .alert("Restart Required", isPresented: $isLanguageRestartPromptShown) {
+            Button("Later", role: .cancel) {}
+            Button("Restart Now") {
+                guard AppLanguageManager.relaunch() else { return }
+            }
+        } message: {
+            Text("Restart Metria to apply the new language.")
         }
     }
 
@@ -2136,8 +2225,10 @@ struct SettingsView: View {
                 }
                 Button("Reconnect") {
                     onReconnect(kind)
+                    let providerName = kind.rawValue
+                    let command = kind.reconnectCommand
                     reconnectMessage =
-                        "The login command for \(kind.rawValue) was sent to Terminal. If it did not start automatically, paste this command:\n\n\(kind.reconnectCommand)"
+                        String(localized: "The login command for \(providerName) was sent to Terminal. If it did not start automatically, paste this command:\n\n\(command)")
                     isReconnectShown = true
                 }
                 Spacer()
@@ -2550,30 +2641,30 @@ extension NSMenu {
     private func buildAppMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(
-            withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "",
+            withTitle: String(localized: "Open dashboard"), action: #selector(togglePopover), keyEquivalent: "",
             symbolName: "rectangle.dock")
         let notchItem = menu.addItem(
-            withTitle: "Show notch", action: #selector(toggleNotchVisibility), keyEquivalent: "",
+            withTitle: String(localized: "Show notch"), action: #selector(toggleNotchVisibility), keyEquivalent: "",
             symbolName: "capsule")
         notchItem.state = showsNotch ? .on : .off
         notchItem.isEnabled = !(showsNotch && !showsMenuBar)
         let menuBarItem = menu.addItem(
-            withTitle: "Show in menu bar", action: #selector(toggleMenuBarVisibility),
+            withTitle: String(localized: "Show in menu bar"), action: #selector(toggleMenuBarVisibility),
             keyEquivalent: "", symbolName: "menubar.rectangle")
         menuBarItem.state = showsMenuBar ? .on : .off
         menuBarItem.isEnabled = !(showsMenuBar && !showsNotch)
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",",
+            withTitle: String(localized: "Settings…"), action: #selector(openSettings), keyEquivalent: ",",
             symbolName: "gearshape")
         if updater.isConfigured {
             menu.addItem(
-                withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)),
+                withTitle: String(localized: "Check for Updates…"), action: #selector(AppUpdater.checkForUpdates(_:)),
                 keyEquivalent: "", symbolName: "arrow.trianglehead.2.clockwise")
         }
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "Quit", action: #selector(quit), keyEquivalent: "q", symbolName: "power")
+            withTitle: String(localized: "Quit"), action: #selector(quit), keyEquivalent: "q", symbolName: "power")
         menu.items.forEach { $0.target = self }
         if updater.isConfigured {
             menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target =
@@ -2596,20 +2687,20 @@ extension NSMenu {
     private func buildNotchMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(
-            withTitle: "Open dashboard", action: #selector(togglePopover), keyEquivalent: "",
+            withTitle: String(localized: "Open dashboard"), action: #selector(togglePopover), keyEquivalent: "",
             symbolName: "rectangle.dock")
         let notchItem = menu.addItem(
-            withTitle: "Show notch", action: #selector(toggleNotchVisibility), keyEquivalent: "",
+            withTitle: String(localized: "Show notch"), action: #selector(toggleNotchVisibility), keyEquivalent: "",
             symbolName: "capsule")
         notchItem.state = showsNotch ? .on : .off
         notchItem.isEnabled = !(showsNotch && !showsMenuBar)
         let menuBarItem = menu.addItem(
-            withTitle: "Show in menu bar", action: #selector(toggleMenuBarVisibility),
+            withTitle: String(localized: "Show in menu bar"), action: #selector(toggleMenuBarVisibility),
             keyEquivalent: "", symbolName: "menubar.rectangle")
         menuBarItem.state = showsMenuBar ? .on : .off
         menuBarItem.isEnabled = !(showsMenuBar && !showsNotch)
 
-        let positionItem = menu.addItem(withTitle: "Position", action: nil, keyEquivalent: "")
+        let positionItem = menu.addItem(withTitle: String(localized: "Position"), action: nil, keyEquivalent: "")
         positionItem.image = NSImage(
             systemSymbolName: "square.dashed.inset.filled", accessibilityDescription: nil)
         let positionMenu = NSMenu()
@@ -2625,16 +2716,16 @@ extension NSMenu {
 
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",",
+            withTitle: String(localized: "Settings…"), action: #selector(openSettings), keyEquivalent: ",",
             symbolName: "gearshape")
         if updater.isConfigured {
             menu.addItem(
-                withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates(_:)),
+                withTitle: String(localized: "Check for Updates…"), action: #selector(AppUpdater.checkForUpdates(_:)),
                 keyEquivalent: "", symbolName: "arrow.trianglehead.2.clockwise")
         }
         menu.addItem(.separator())
         menu.addItem(
-            withTitle: "Quit", action: #selector(quit), keyEquivalent: "q", symbolName: "power")
+            withTitle: String(localized: "Quit"), action: #selector(quit), keyEquivalent: "q", symbolName: "power")
         menu.items.forEach { $0.target = self }
         if updater.isConfigured {
             menu.items.first { $0.action == #selector(AppUpdater.checkForUpdates(_:)) }?.target =
@@ -3365,7 +3456,7 @@ extension NSMenu {
                 let window = NSWindow(
                     contentRect: NSRect(x: 0, y: 0, width: 720, height: 580),
                     styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-                window.title = "Settings"
+                window.title = String(localized: "Settings")
                 window.isReleasedWhenClosed = false
                 window.minSize = NSSize(width: 680, height: 500)
                 window.center()

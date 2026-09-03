@@ -1,0 +1,701 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "5-hour limit" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limite de 5 horas" } }
+      }
+    },
+    "A lightweight usage monitor for your AI providers." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Um monitor leve de uso para seus provedores de IA." } }
+      }
+    },
+    "About" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sobre" } }
+      }
+    },
+    "AI coding assistant usage" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uso dos assistentes de código com IA" } }
+      }
+    },
+    "All usage windows for %@ are hidden. Enable one in Settings." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Todas as janelas de uso do %@ estão ocultas. Ative uma em Configurações." } }
+      }
+    },
+    "Any phone using the current QR code or phrase will stop receiving updates." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Qualquer celular usando o QR code ou a frase atual deixará de receber atualizações." } }
+      }
+    },
+    "Applies to the usage card; the provider rail always stays fully opaque so it reads as part of the display." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aplica-se ao cartão de uso; a barra de provedores permanece sempre totalmente opaca para parecer parte da tela." } }
+      }
+    },
+    "At least one provider must remain enabled, and at least one usage window per provider." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pelo menos um provedor deve permanecer ativado, e pelo menos uma janela de uso por provedor." } }
+      }
+    },
+    "Authentication expired and could not be refreshed." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A autenticação expirou e não pôde ser renovada." } }
+      }
+    },
+    "Automatic updates aren't configured for this build." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As atualizações automáticas não estão configuradas para esta versão." } }
+      }
+    },
+    "Behavior" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Comportamento" } }
+      }
+    },
+    "Bottom" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Inferior" } }
+      }
+    },
+    "Both" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ambos" } }
+      }
+    },
+    "Cancel" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cancelar" } }
+      }
+    },
+    "Caution" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cuidado" } }
+      }
+    },
+    "Check for Updates…" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Verificar Atualizações…" } }
+      }
+    },
+    "Choose each alert color and when it starts appearing." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha a cor de cada alerta e quando ele começa a aparecer." } }
+      }
+    },
+    "Choose which monitor displays the notch." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha em qual monitor o notch aparece." } }
+      }
+    },
+    "Color usage alerts" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Colorir alertas de uso" } }
+      }
+    },
+    "Connected" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conectado" } }
+      }
+    },
+    "Connection" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conexão" } }
+      }
+    },
+    "Copy link" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Copiar link" } }
+      }
+    },
+    "Copy phrase" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Copiar frase" } }
+      }
+    },
+    "Critical" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Crítico" } }
+      }
+    },
+    "Custom PWA URL" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "URL personalizada do PWA" } }
+      }
+    },
+    "Cursor is the only provider that reports what a cycle costs; the others always show a percentage." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Cursor é o único provedor que informa o custo de um ciclo; os demais sempre mostram uma porcentagem." } }
+      }
+    },
+    "Dashboard" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Painel" } }
+      }
+    },
+    "Design" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aparência" } }
+      }
+    },
+    "Diagnose" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Diagnosticar" } }
+      }
+    },
+    "Display" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exibição" } }
+      }
+    },
+    "Dollars" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dólares" } }
+      }
+    },
+    "General" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Geral" } }
+      }
+    },
+    "Hide" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ocultar" } }
+      }
+    },
+    "Hide notch" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ocultar notch" } }
+      }
+    },
+    "Hover to open notch" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Passe o cursor para abrir o notch" } }
+      }
+    },
+    "Install Claude Code and sign in to make usage available." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Instale o Claude Code e faça login para disponibilizar o uso." } }
+      }
+    },
+    "Keep the provider rail visible or collapse it until you hover over the notch." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mantenha a barra de provedores visível ou recolha-a até passar o cursor sobre o notch." } }
+      }
+    },
+    "Language" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Idioma" } }
+      }
+    },
+    "Large" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Grande" } }
+      }
+    },
+    "Last successful update: %@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Última atualização bem-sucedida: %@" } }
+      }
+    },
+    "Last update: %@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Última atualização: %@" } }
+      }
+    },
+    "Latest issue: %@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Último problema: %@" } }
+      }
+    },
+    "Later" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mais tarde" } }
+      }
+    },
+    "Launch at login" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Iniciar ao fazer login" } }
+      }
+    },
+    "Launch at login is available after installing Metria as an app in Applications." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Iniciar ao fazer login fica disponível depois de instalar o Metria como aplicativo em Aplicativos." } }
+      }
+    },
+    "Leave Custom PWA URL empty to pair through this Mac on the same Wi-Fi network. Use an HTTPS URL to keep remote access and PWA installation." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Deixe a URL personalizada do PWA em branco para parear por este Mac na mesma rede Wi-Fi. Use uma URL HTTPS para manter o acesso remoto e a instalação do PWA." } }
+      }
+    },
+    "Left" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esquerda" } }
+      }
+    },
+    "Local address" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Endereço local" } }
+      }
+    },
+    "Local credentials or usage files were detected." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Credenciais ou arquivos de uso locais foram detectados." } }
+      }
+    },
+    "Local server port" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Porta do servidor local" } }
+      }
+    },
+    "Medium" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Médio" } }
+      }
+    },
+    "Menu bar" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Barra de menus" } }
+      }
+    },
+    "Metria could not update its launch-at-login setting: %@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Metria não conseguiu atualizar a configuração de início automático: %@" } }
+      }
+    },
+    "Metria has not received a response from this provider yet." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Metria ainda não recebeu uma resposta deste provedor." } }
+      }
+    },
+    "Metria was added, but macOS requires approval. Open System Settings > General > Login Items and allow Metria." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Metria foi adicionado, mas o macOS exige aprovação. Abra Ajustes do Sistema > Geral > Itens de Login e permita o Metria." } }
+      }
+    },
+    "Metria will start automatically and remain available in the menu bar." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Metria iniciará automaticamente e ficará disponível na barra de menus." } }
+      }
+    },
+    "Monitor" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Monitor" } }
+      }
+    },
+    "Monthly limit" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limite mensal" } }
+      }
+    },
+    "No current usage data was returned. Showing the last successful update." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum dado de uso atual foi retornado. Mostrando a última atualização bem-sucedida." } }
+      }
+    },
+    "No providers are available yet. Sign in to a supported provider and refresh." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum provedor disponível ainda. Faça login em um provedor compatível e atualize." } }
+      }
+    },
+    "No recent local usage data was found. Sign in and use Codex once to create a usage snapshot." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhum dado de uso local recente foi encontrado. Faça login e use o Codex uma vez para gerar um snapshot de uso." } }
+      }
+    },
+    "No reset data" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sem data de renovação" } }
+      }
+    },
+    "No usage windows are available yet." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Nenhuma janela de uso disponível ainda." } }
+      }
+    },
+    "Notch appearance" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aparência do notch" } }
+      }
+    },
+    "Ntfy server" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Servidor ntfy" } }
+      }
+    },
+    "Opacity" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Opacidade" } }
+      }
+    },
+    "Open dashboard" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir painel" } }
+      }
+    },
+    "Opening Settings…" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrindo Configurações…" } }
+      }
+    },
+    "Opening settings" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrindo configurações" } }
+      }
+    },
+    "Pair your phone" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Parear seu celular" } }
+      }
+    },
+    "Percentage" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Porcentagem" } }
+      }
+    },
+    "Phone" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Telefone" } }
+      }
+    },
+    "Pin notch" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fixar notch" } }
+      }
+    },
+    "Position" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Posição" } }
+      }
+    },
+    "Provider data is unavailable." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os dados do provedor não estão disponíveis." } }
+      }
+    },
+    "Provider diagnosis" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Diagnóstico do provedor" } }
+      }
+    },
+    "Providers" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Provedores" } }
+      }
+    },
+    "PWA hosting" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Hospedagem do PWA" } }
+      }
+    },
+    "Quit" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair" } }
+      }
+    },
+    "Quit Metria" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sair do Metria" } }
+      }
+    },
+    "Reconnect" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reconectar" } }
+      }
+    },
+    "Reconnect opens the provider's sign-in flow in Terminal." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reconectar abre o fluxo de login do provedor no Terminal." } }
+      }
+    },
+    "Reconnect provider" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reconectar provedor" } }
+      }
+    },
+    "Refresh" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizar" } }
+      }
+    },
+    "Refresh every %lld min" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizar a cada %lld min" } }
+      }
+    },
+    "Regenerate" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Regenerar" } }
+      }
+    },
+    "Regenerate pairing?" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Regenerar pareamento?" } }
+      }
+    },
+    "Resets %@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Renova %@" } }
+      }
+    },
+    "Resets in %lld hr" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Renova em %lld h" } }
+      }
+    },
+    "Resets in %lld hr %lld min" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Renova em %lld h %lld min" } }
+      }
+    },
+    "Resets in %lld min" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Renova em %lld min" } }
+      }
+    },
+    "Restart Metria to apply the new language." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reinicie o Metria para aplicar o novo idioma." } }
+      }
+    },
+    "Restart Now" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reiniciar agora" } }
+      }
+    },
+    "Restart Required" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reinício necessário" } }
+      }
+    },
+    "Right" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Direita" } }
+      }
+    },
+    "Scan the QR code with your phone's camera, or open the PWA and enter the phrase. The local address must be reachable from your phone." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escaneie o QR code com a câmera do seu celular, ou abra o PWA e digite a frase. O endereço local precisa estar acessível pelo seu celular." } }
+      }
+    },
+    "Settings" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Configurações" } }
+      }
+    },
+    "Settings…" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Configurações…" } }
+      }
+    },
+    "Show" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar" } }
+      }
+    },
+    "Show \"%@\"" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar \"%@\"" } }
+      }
+    },
+    "Show in menu bar" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar na barra de menus" } }
+      }
+    },
+    "Show notch" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar notch" } }
+      }
+    },
+    "Show provider account email" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar e-mail da conta do provedor" } }
+      }
+    },
+    "Show provider names" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar nomes dos provedores" } }
+      }
+    },
+    "Show the account email when available, or a masked API key for OpenCode Go." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostra o e-mail da conta quando disponível, ou uma chave de API mascarada para o OpenCode Go." } }
+      }
+    },
+    "Show usage as" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar uso como" } }
+      }
+    },
+    "Sign in to Codex to create local usage data." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Faça login no Codex para gerar dados de uso locais." } }
+      }
+    },
+    "Sign in to Cursor again to refresh usage." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Faça login no Cursor novamente para atualizar o uso." } }
+      }
+    },
+    "Sign in to Cursor to make usage available." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Faça login no Cursor para disponibilizar o uso." } }
+      }
+    },
+    "Sign in to OpenCode Go to create a local API credential." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Faça login no OpenCode Go para criar uma credencial de API local." } }
+      }
+    },
+    "Size" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tamanho" } }
+      }
+    },
+    "Small" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pequeno" } }
+      }
+    },
+    "Software Update" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualização de Software" } }
+      }
+    },
+    "Starting local server…" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Iniciando servidor local…" } }
+      }
+    },
+    "System" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sistema" } }
+      }
+    },
+    "The login command for %@ was sent to Terminal. If it did not start automatically, paste this command:\n\n%@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O comando de login do %@ foi enviado ao Terminal. Se ele não começou automaticamente, cole este comando:\n\n%@" } }
+      }
+    },
+    "The provider is rate limited." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O provedor está com limite de requisições excedido." } }
+      }
+    },
+    "The provider rejected the stored credentials." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O provedor rejeitou as credenciais armazenadas." } }
+      }
+    },
+    "The provider returned HTTP %lld." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O provedor retornou HTTP %lld." } }
+      }
+    },
+    "This cycle" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este ciclo" } }
+      }
+    },
+    "This provider is not registered in Metria." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Este provedor não está registrado no Metria." } }
+      }
+    },
+    "To uninstall Metria, quit the app and move it to the Trash from Finder." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Para desinstalar o Metria, feche o aplicativo e mova-o para a Lixeira pelo Finder." } }
+      }
+    },
+    "Top" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Superior" } }
+      }
+    },
+    "Top and bottom become a horizontal bar; left and right stay a vertical rail." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Em cima e embaixo, ele vira uma barra horizontal; à esquerda e à direita, continua uma barra vertical." } }
+      }
+    },
+    "Uninstall" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Desinstalar" } }
+      }
+    },
+    "Updated %@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizado %@" } }
+      }
+    },
+    "Usage data contains %lld window(s)." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Os dados de uso contêm %lld janela(s)." } }
+      }
+    },
+    "Use this provider" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Usar este provedor" } }
+      }
+    },
+    "Use white theme" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Usar tema branco" } }
+      }
+    },
+    "v%@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "v%@" } }
+      }
+    },
+    "Version %@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Versão %@" } }
+      }
+    },
+    "Waiting for usage data..." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aguardando dados de uso..." } }
+      }
+    },
+    "Warning" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aviso" } }
+      }
+    },
+    "Weekly limit" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limite semanal" } }
+      }
+    },
+    "%@ plan" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Plano %@" } }
+      }
+    },
+    "%@ Retrying in %@." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ Tentando novamente em %@." } }
+      }
+    },
+    "%@ Showing the latest local session data." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ Mostrando os dados da última sessão local." } }
+      }
+    },
+    "about 1 minute" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "cerca de 1 minuto" } }
+      }
+    },
+    "about %lld minutes" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "cerca de %lld minutos" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

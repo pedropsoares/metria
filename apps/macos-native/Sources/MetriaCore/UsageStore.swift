@@ -36,9 +36,9 @@ public enum SpendDisplay: String, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .percent: "Percentage"
-        case .dollars: "Dollars"
-        case .both: "Both"
+        case .percent: String(localized: "Percentage")
+        case .dollars: String(localized: "Dollars")
+        case .both: String(localized: "Both")
         }
     }
 }
@@ -235,24 +235,26 @@ public final class UsageStore: ObservableObject {
 
     public func diagnosis(for kind: ProviderKind) -> String {
         guard let source = sources.first(where: { $0.kind == kind }) else {
-            return "This provider is not registered in Metria."
+            return String(localized: "This provider is not registered in Metria.")
         }
 
-        var details = [source.isAvailable ? "Local credentials or usage files were detected." : source.setupHint]
+        var details = [source.isAvailable ? String(localized: "Local credentials or usage files were detected.") : source.setupHint]
         if let usage = providers.first(where: { $0.kind == kind }) {
             if usage.windows.isEmpty {
-                details.append("No usage windows are available yet.")
+                details.append(String(localized: "No usage windows are available yet."))
             } else {
-                details.append("Usage data contains \(usage.windows.count) window(s).")
+                let windowCount = usage.windows.count
+                details.append(String(localized: "Usage data contains \(windowCount) window(s)."))
             }
             if let updatedAt = usage.updatedAt {
-                details.append("Last successful update: \(updatedAt.formatted(.dateTime))")
+                let formattedDate = updatedAt.formatted(.dateTime)
+                details.append(String(localized: "Last successful update: \(formattedDate)"))
             }
             if let error = usage.error {
-                details.append("Latest issue: \(error)")
+                details.append(String(localized: "Latest issue: \(error)"))
             }
         } else {
-            details.append("Metria has not received a response from this provider yet.")
+            details.append(String(localized: "Metria has not received a response from this provider yet."))
         }
         return details.joined(separator: "\n")
     }
@@ -369,14 +371,17 @@ public final class UsageStore: ObservableObject {
             }
         case .empty(let usage):
             if let index = providers.firstIndex(where: { $0.kind == usage.kind }), !providers[index].windows.isEmpty {
-                providers[index].error = usage.error ?? "No current usage data was returned. Showing the last successful update."
+                providers[index].error = usage.error ?? String(localized: "No current usage data was returned. Showing the last successful update.")
             } else {
                 replace(usage)
             }
             retryTasks[usage.kind]?.cancel()
             retryTasks[usage.kind] = nil
         case .failed(let kind, let message, let retryAfter):
-            let displayMessage = retryAfter.map { "\(message) Retrying in \(Self.retryDescription($0))." } ?? message
+            let displayMessage = retryAfter.map { delay in
+                let retryDescription = Self.retryDescription(delay)
+                return String(localized: "\(message) Retrying in \(retryDescription).")
+            } ?? message
             if let index = providers.firstIndex(where: { $0.kind == kind }) {
                 providers[index].error = displayMessage
             } else {
@@ -435,7 +440,7 @@ public final class UsageStore: ObservableObject {
 
     private static func retryDescription(_ delay: TimeInterval) -> String {
         let minutes = max(1, Int(ceil(delay / 60)))
-        return minutes == 1 ? "about 1 minute" : "about \(minutes) minutes"
+        return minutes == 1 ? String(localized: "about 1 minute") : String(localized: "about \(minutes) minutes")
     }
 
     deinit {

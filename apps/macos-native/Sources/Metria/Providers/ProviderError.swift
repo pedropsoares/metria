@@ -10,15 +10,15 @@ enum ProviderError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unavailable:
-            return "Provider data is unavailable."
+            return String(localized: "Provider data is unavailable.")
         case .http(401):
-            return "Authentication expired and could not be refreshed."
+            return String(localized: "Authentication expired and could not be refreshed.")
         case .http(403):
-            return "The provider rejected the stored credentials."
+            return String(localized: "The provider rejected the stored credentials.")
         case .http(let status):
-            return "The provider returned HTTP \(status)."
+            return String(localized: "The provider returned HTTP \(status).")
         case .rateLimited:
-            return "The provider is rate limited."
+            return String(localized: "The provider is rate limited.")
         }
     }
 
