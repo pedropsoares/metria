@@ -60,12 +60,6 @@ struct ClaudeProvider: UsageProvider {
         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
         guard status == 200 else { throw ProviderError.http(status) }
         let token = try JSONDecoder().decode(TokenResponse.self, from: data)
-        try KeychainReader.saveClaudeCredentials(
-            credentials,
-            accessToken: token.accessToken,
-            refreshToken: token.refreshToken ?? credentials.refreshToken,
-            expiresIn: token.expiresIn
-        )
         return token.accessToken
     }
     private func requestUsage(token: String) async throws -> Data {
@@ -115,13 +109,9 @@ struct ClaudeProvider: UsageProvider {
 
     private struct TokenResponse: Decodable {
         let accessToken: String
-        let refreshToken: String?
-        let expiresIn: TimeInterval
 
         enum CodingKeys: String, CodingKey {
             case accessToken = "access_token"
-            case refreshToken = "refresh_token"
-            case expiresIn = "expires_in"
         }
     }
 

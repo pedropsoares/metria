@@ -92,38 +92,6 @@ enum KeychainReader {
         return ["email", "preferred_username", "unique_name"].compactMap { claims[$0] as? String }.first { $0.contains("@") }
     }
 
-    static func saveClaudeCredentials(
-        _ credentials: ClaudeCredentials,
-        accessToken: String,
-        refreshToken: String,
-        expiresIn: TimeInterval
-    ) throws {
-        guard var oauth = credentials.document["claudeAiOauth"] as? [String: Any] else {
-            throw ProviderError.unavailable
-        }
-        oauth["accessToken"] = accessToken
-        oauth["refreshToken"] = refreshToken
-        oauth["expiresAt"] = Int((Date().timeIntervalSince1970 + expiresIn) * 1_000)
-
-        var document = credentials.document
-        document["claudeAiOauth"] = oauth
-        let data = try JSONSerialization.data(withJSONObject: document)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Claude Code-credentials"
-        ]
-        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        guard status == errSecSuccess else { throw ProviderError.unavailable }
-        claudeCredentialsLock.lock()
-        cachedClaudeCredentials = ClaudeCredentials(
-            document: document,
-            accessToken: accessToken,
-            refreshToken: refreshToken,
-            scopes: oauth["scopes"] as? [String]
-        )
-        claudeCredentialsLock.unlock()
-    }
-
     struct ClaudeCredentials {
         fileprivate let document: [String: Any]
         let accessToken: String
