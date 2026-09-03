@@ -3,7 +3,14 @@ import Security
 
 /// Reads credentials that other apps store in the macOS Keychain on the user's behalf.
 enum KeychainReader {
+    private static let claudeCredentialsLock = NSLock()
+    private static var hasClaudeCredentialsCache: Bool?
+    private static var cachedClaudeCredentials: ClaudeCredentials?
+
     static var hasClaudeCredentials: Bool {
+        claudeCredentialsLock.lock()
+        defer { claudeCredentialsLock.unlock() }
+        if let hasClaudeCredentialsCache { return hasClaudeCredentialsCache }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "Claude Code-credentials",
@@ -11,10 +18,15 @@ enum KeychainReader {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var result: AnyObject?
-        return SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
+        let hasCredentials = SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
+        if hasCredentials { hasClaudeCredentialsCache = true }
+        return hasCredentials
     }
 
     static func readClaudeCredentials() throws -> ClaudeCredentials {
+        claudeCredentialsLock.lock()
+        defer { claudeCredentialsLock.unlock() }
+        if let cachedClaudeCredentials { return cachedClaudeCredentials }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "Claude Code-credentials",
@@ -32,12 +44,15 @@ enum KeychainReader {
               let refreshToken = oauth["refreshToken"] as? String else {
             throw ProviderError.unavailable
         }
-        return ClaudeCredentials(
+        let credentials = ClaudeCredentials(
             document: document,
             accessToken: accessToken,
             refreshToken: refreshToken,
             scopes: oauth["scopes"] as? [String]
         )
+        cachedClaudeCredentials = credentials
+        hasClaudeCredentialsCache = true
+        return credentials
     }
 
     static func accountEmail(from credentials: ClaudeCredentials) -> String? {
@@ -104,6 +119,15 @@ enum KeychainReader {
         ]
         let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         guard status == errSecSuccess else { throw ProviderError.unavailable }
+        claudeCredentialsLock.lock()
+        cachedClaudeCredentials = ClaudeCredentials(
+            document: document,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            scopes: oauth["scopes"] as? [String]
+        )
+        hasClaudeCredentialsCache = true
+        claudeCredentialsLock.unlock()
     }
 
     struct ClaudeCredentials {
