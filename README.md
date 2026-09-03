@@ -71,7 +71,7 @@ Credentials are never committed. The native app reads them at runtime from its d
 
 Metria's companion PWA works on compatible iPhone and Android browsers. Start the native Mac app, then scan the QR code in **Settings > Phone** while the phone and Mac are on the same Wi-Fi network. The local server port defaults to `8973` and can be changed in Settings; if it is in use, Metria tries subsequent ports automatically.
 
-The local HTTP server is available for same-network pairing, but browsers require HTTPS to install a PWA or use Web Push. Metria's PWA is a static site; deploy it to any HTTPS static host. Clear **Settings > Phone > Custom PWA URL** to pair through the local server instead. Build and deploy to Cloudflare Pages with:
+The local HTTP server is available for same-network pairing, but browsers require HTTPS to install a PWA or use Web Push. Metria's PWA is a static site; deploy it to any HTTPS static host. Leave **Settings > Phone > Custom PWA URL** empty to use the hosted PWA, or enter an HTTPS static host. The local address remains available for development on the same Wi-Fi network. Build and deploy to Cloudflare Pages with:
 
 ```sh
 cd apps/pwa
