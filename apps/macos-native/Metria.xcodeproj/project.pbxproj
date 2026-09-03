@@ -26,6 +26,8 @@
 		A58CC89CB7D116D25908E8DB /* UsageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4C6F8FCF0C2AE2E932ED6F /* UsageStore.swift */; };
 		B0D16525171231FFE5C69C84 /* OpenCodeGoProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488A30C52B2A951130A87634 /* OpenCodeGoProvider.swift */; };
 		BCAAA4FF3E584906BD4F3006 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F76937A0473449017F3EB57 /* OnboardingView.swift */; };
+		C60A0D354E8CDD43466B3457 /* CursorStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */; };
+		E87CBB5215F9C3C201D860CE /* UsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C81534D399ED080DD3983A /* UsageSnapshot.swift */; };
 		EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */; };
 		EFCA4810DF283BE11713152C /* BIP39Wordlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */; };
 		FFC29DC11D67E94AB5CAFF31 /* MetriaResources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97692A6C8502A27D4FA476F0 /* MetriaResources.swift */; };
@@ -59,6 +61,7 @@
 		0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexProvider.swift; sourceTree = "<group>"; };
 		17B8670774860D40198385E3 /* PairingSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSecret.swift; sourceTree = "<group>"; };
 		18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNetwork.swift; sourceTree = "<group>"; };
+		2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorStateStore.swift; sourceTree = "<group>"; };
 		329ED075E7D446A1AB88C85C /* CursorProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorProvider.swift; sourceTree = "<group>"; };
 		36216E6ACB911FA08CA36234 /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 		384012F0494BF87B637ABDE9 /* Metria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Metria.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -75,6 +78,7 @@
 		9BD185ECDE501CAD12DA5438 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		ABC404DE64C320E52402D468 /* MetriaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetriaApp.swift; sourceTree = "<group>"; };
 		B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BIP39Wordlist.swift; sourceTree = "<group>"; };
+		C8C81534D399ED080DD3983A /* UsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSnapshot.swift; sourceTree = "<group>"; };
 		EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderActivityMonitor.swift; sourceTree = "<group>"; };
 		FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -121,6 +125,7 @@
 			children = (
 				B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */,
 				17B8670774860D40198385E3 /* PairingSecret.swift */,
+				C8C81534D399ED080DD3983A /* UsageSnapshot.swift */,
 				3E4C6F8FCF0C2AE2E932ED6F /* UsageStore.swift */,
 			);
 			path = MetriaCore;
@@ -132,6 +137,7 @@
 				FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */,
 				0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */,
 				329ED075E7D446A1AB88C85C /* CursorProvider.swift */,
+				2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */,
 				8F37E9B9BF1481EC13F0AB9B /* KeychainReader.swift */,
 				488A30C52B2A951130A87634 /* OpenCodeGoProvider.swift */,
 				4030AD71B8AFE1AB81BA2549 /* ProviderError.swift */,
@@ -285,6 +291,7 @@
 				EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */,
 				31F56B15827398A3510322E7 /* CodexProvider.swift in Sources */,
 				0F9FCD0AAA8D78AACD6FA6FA /* CursorProvider.swift in Sources */,
+				C60A0D354E8CDD43466B3457 /* CursorStateStore.swift in Sources */,
 				6EF9BB36424EF416AAE77439 /* KeychainReader.swift in Sources */,
 				617E9F66F43072EBF15E76C5 /* LocalNetwork.swift in Sources */,
 				1F928336732F72EF903CE215 /* LocalPWAServer.swift in Sources */,
@@ -306,6 +313,7 @@
 			files = (
 				EFCA4810DF283BE11713152C /* BIP39Wordlist.swift in Sources */,
 				52564D3CB2D6251DD5733657 /* PairingSecret.swift in Sources */,
+				E87CBB5215F9C3C201D860CE /* UsageSnapshot.swift in Sources */,
 				A58CC89CB7D116D25908E8DB /* UsageStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

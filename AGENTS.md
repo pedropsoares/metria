@@ -18,3 +18,11 @@
 - `gh release edit <tag> --draft=false` (re-publishing a draft) resets that release's `published_at` to the current time, which can make GitHub hand the "Latest" badge to an old release just because it was touched most recently — not to whichever tag is actually newest. If you ever un-draft an older release, immediately run `gh release edit <newest-tag> --latest` and confirm with `gh release list` that the right tag is still marked `Latest`.
 - The GitHub web UI always shows drafts to anyone with repo write access, interleaved with real releases with no clear separation — that view is not what an actual end user sees. Verify the public release list with an unauthenticated request instead: `curl -s https://api.github.com/repos/<owner>/<repo>/releases` (no token) returns only non-draft releases, which is the ground truth for what end users can find and download.
 - Native macOS releases use `macos-v*` tags in this repository.
+- This repository holds the native macOS app and the companion PWA only. The
+  Electron app for Windows and Linux lives in `pedropsoares/metria-win-linux`
+  and the iOS app in `pedropsoares/metria-ios`. Do not re-add either here.
+- `Sources/MetriaCore` is duplicated in both of those repositories because the
+  pairing derivations must stay byte-identical across them: one phone pairs with
+  either desktop app. Changing a derivation here without changing it there
+  breaks pairing, so treat any edit to `PairingSecret.swift` or
+  `UsageSnapshot.swift` as a change to all three repositories.

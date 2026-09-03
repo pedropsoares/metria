@@ -17,3 +17,6 @@ node_modules/
 .agents/
 .claude/
 /skills-lock.json
+
+# Local iOS signing team (per-developer, never committed)
+/apps/ios/Local.xcconfig

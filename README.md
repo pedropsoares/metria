@@ -2,8 +2,13 @@
 
 *A native macOS app that tracks your AI coding assistant usage in real time.*
 
+> A fork of [yurirxmos/metria](https://github.com/yurirxmos/metria) that adds a
+> Cursor provider and iPhone pairing on the macOS side. The Windows/Linux and
+> iOS apps live in their own repositories — see
+> [Related repositories](#related-repositories).
+
 <p align="center">
-  <img src="https://i.imgur.com/LuYjNBr.gif" alt="Metria demo" width="720" />
+  <img src="https://i.imgur.com/shpAcSm.gif" alt="Metria demo" width="720" />
 </p>
 
 <p align="center">
@@ -23,6 +28,7 @@
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Project layout](#project-layout)
+- [Related repositories](#related-repositories)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -44,7 +50,7 @@ Download the native `.dmg` for Apple Silicon or Intel Macs.
 
 ## To do
 
-- Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
+- Build a native Android app to improve usage update delivery alongside the existing PWA. The iOS app already exists in [its own repository](https://github.com/pedropsoares/metria-ios); the PWA remains the Android path.
 
 ### Shared
 
@@ -57,7 +63,7 @@ Providers are enabled automatically only when their local credentials or usage f
 - **Claude** — OAuth token read from the macOS Keychain, usage fetched from the Anthropic usage endpoint.
 - **Codex / OpenCode** — credentials read from `~/.local/share/opencode/auth.json` and local session files.
 - **OpenCode Go** — API key read from the same `auth.json`, usage fetched from the OpenCode Go endpoint.
-- **Cursor** — OAuth session read from the editor's local `state.vscdb`, usage fetched from the Cursor dashboard endpoints (`All models` / `Cursor models`).
+- **Cursor** — session JWT read from Cursor's `state.vscdb` (its VS Code-derived global storage), usage fetched from the endpoint Cursor's own dashboard calls. That endpoint is not published by Cursor and can change without notice, outside this project's control. Cursor is the only provider that reports what a cycle costs, so its card can show dollars as well as a percentage.
 
 The native app reads credentials at runtime from the Keychain and local configuration files. See the [native provider sources](apps/macos-native/Sources/Metria/Providers/).
 
@@ -154,6 +160,22 @@ git push origin macos-v0.2.0
 ### Mobile PWA
 
 - `apps/pwa/` — mobile companion PWA and its Cloudflare Worker (`public/` holds the static site, `src/worker.js` the Worker).
+
+## Related repositories
+
+Metria is one product across three codebases. This repository is the native
+macOS app and the companion PWA.
+
+| Repository | What it holds |
+|---|---|
+| [pedropsoares/metria](https://github.com/pedropsoares/metria) (here) | Native macOS app and the mobile PWA. Fork of [yurirxmos/metria](https://github.com/yurirxmos/metria). |
+| [pedropsoares/metria-win-linux](https://github.com/pedropsoares/metria-win-linux) | The Windows and Linux Electron app. Fork of [yurirxmos/metria-win-linux](https://github.com/yurirxmos/metria-win-linux). |
+| [pedropsoares/metria-ios](https://github.com/pedropsoares/metria-ios) | The native iOS app and its Home Screen and Lock Screen widgets. |
+
+The pairing derivations in `apps/macos-native/Sources/MetriaCore` are duplicated
+in the other two repositories on purpose, and must stay byte-identical: one
+phone pairs with either desktop app, so changing a derivation in one place
+without the others breaks pairing.
 
 ## Contributing
 

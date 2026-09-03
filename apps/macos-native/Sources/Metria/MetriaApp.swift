@@ -7,17 +7,6 @@ import MetriaCore
 import ServiceManagement
 import SwiftUI
 
-private struct MetriaSnapshot: Encodable {
-    struct Provider: Encodable {
-        let name: String
-        let percent: Double
-        let resetDate: Date?
-    }
-
-    let updatedAt: Date
-    let providers: [Provider]
-}
-
 /// Stores the pairing master secret in the macOS Keychain. The secret never leaves the
 /// Mac in plaintext: the PWA only ever receives it via the QR code or 12-word phrase,
 /// both of which the user controls when and how to share.
@@ -99,7 +88,12 @@ extension Data {
     @Published private(set) var qrImage: NSImage?
     private var secret: Data = Data()
     var currentSecret: Data { secret }
+    /// The legacy token: the master secret itself, still accepted by `/snapshot` so
+    /// deployed PWA installs keep working without a re-pair.
     var currentSnapshotToken: String { secret.base64URLEncodedString }
+    /// The token new clients (the iOS app) send instead: derived from the secret, so a
+    /// header captured on the LAN cannot also unlock the ntfy relay the secret protects.
+    var currentLocalToken: String { PairingSecret.localToken(from: secret) }
 
     init() {
         secret = PairingKeychain.loadOrGenerate()
@@ -111,15 +105,20 @@ extension Data {
         words = PairingSecret.words(from: secret)
     }
 
-    func pairingLink(pwaBaseURL: String, ntfyServer: String) -> String {
-        let encodedServer =
-            ntfyServer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ntfyServer
-        return "\(pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
+    /// `localURL`, when the local server has a reachable address, rides along in the same
+    /// QR code the PWA already reads: the PWA ignores unknown fragment parameters, so one
+    /// code now pairs both clients.
+    func pairingLink(pwaBaseURL: String, ntfyServer: String, localURL: String?) -> String {
+        let encodedServer = ntfyServer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ntfyServer
+        var link = "\(pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
+        if let localURL, let encodedLocal = localURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            link += "&local=\(encodedLocal)"
+        }
+        return link
     }
 
-    func refreshQRCode(pwaBaseURL: String, ntfyServer: String) {
-        qrImage = Self.renderQRCode(
-            for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer))
+    func refreshQRCode(pwaBaseURL: String, ntfyServer: String, localURL: String?) {
+        qrImage = Self.renderQRCode(for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localURL))
     }
 
     private static func renderQRCode(for string: String) -> NSImage? {
@@ -149,17 +148,15 @@ extension Data {
             server.scheme == "https", server.host != nil
         else { return }
 
-        let snapshot = MetriaSnapshot(
+        let snapshot = UsageSnapshot(
             updatedAt: Date(),
             providers: providers.compactMap { usage in
                 guard let primary = usage.primary else { return nil }
-                return .init(
-                    name: usage.kind.rawValue, percent: primary.percent,
-                    resetDate: primary.resetDate)
+                return .init(name: usage.kind.rawValue, percent: primary.percent, resetDate: primary.resetDate,
+                             usedCents: primary.usedCents, limitCents: primary.limitCents)
             }
         )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        let encoder = UsageSnapshotCoding.makeEncoder()
         guard let payload = try? encoder.encode(snapshot), payload != lastPayload else { return }
         onSnapshot?(payload)
 
@@ -272,6 +269,7 @@ struct UsageCard: View {
     var backgroundOpacity: Double = 1
     var alertSettings: MenuBarAlertSettings = .default
     @AppStorage("showAccountEmails") private var showAccountEmails = true
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
 
     private var isCompact: Bool { width < 390 }
     private var visibleWindows: [UsageWindow] {
@@ -326,20 +324,16 @@ struct UsageCard: View {
             } else {
                 ForEach(visibleWindows) { window in
                     VStack(alignment: .leading, spacing: (isCompact ? 5 : 8) * scale) {
-                        HStack {
-                            Text(window.title)
-                            Spacer()
-                            Text(window.resetText).foregroundStyle(.secondary)
-                        }.font(.system(size: (isCompact ? 10 : 15) * scale))
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color(white: 0.10))
-                            Capsule().fill(
-                                alertSettings.usageColor(for: window.percent, fallback: .green)
-                            ).frame(
-                                width: max(0, barWidth * window.percent / 100))
-                        }.frame(height: (isCompact ? 5 : 7) * scale)
-                        Text("\(Int(window.percent.rounded()))% Used").font(
-                            .system(size: (isCompact ? 11 : 15) * scale))
+                        HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
+                        ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.10)); Capsule().fill(alertSettings.usageColor(for: window.percent, fallback: .green)).frame(width: max(0, barWidth * window.percent / 100)) }.frame(height: (isCompact ? 5 : 7) * scale)
+                        let parts = window.spendParts(spendDisplay)
+                        HStack(spacing: (isCompact ? 6 : 10) * scale) {
+                            if parts.showsPercent { Text("\(Int(window.percent.rounded()))% Used") }
+                            if let spend = parts.spend {
+                                Spacer(minLength: 0)
+                                Text(spend).monospacedDigit()
+                            }
+                        }.font(.system(size: (isCompact ? 11 : 15) * scale))
                     }
                 }
             }
@@ -385,6 +379,7 @@ struct DashboardUsageCard: View {
     var hiddenWindowTitles: Set<String> = []
     var alertSettings: MenuBarAlertSettings = .default
     @AppStorage("showAccountEmails") private var showAccountEmails = true
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
 
     private var visibleWindows: [UsageWindow] {
         usage.windows.filter { !hiddenWindowTitles.contains($0.title) }
@@ -412,20 +407,33 @@ struct DashboardUsageCard: View {
                 } else {
                     ForEach(visibleWindows) { window in
                         let color = alertSettings.usageColor(for: window.percent, fallback: .green)
+                        let parts = window.spendParts(spendDisplay)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(window.title)
                                 Spacer()
-                                Text("\(Int(window.percent.rounded()))%")
-                                    .foregroundStyle(color)
-                                    .monospacedDigit()
+                                if parts.showsPercent {
+                                    Text("\(Int(window.percent.rounded()))%")
+                                        .foregroundStyle(color)
+                                        .monospacedDigit()
+                                } else if let spend = parts.spend {
+                                    Text(spend)
+                                        .foregroundStyle(color)
+                                        .monospacedDigit()
+                                }
                             }
                             .font(.subheadline)
                             ProgressView(value: min(max(window.percent, 0), 100), total: 100)
                                 .tint(color)
-                            Text(window.resetText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            HStack {
+                                Text(window.resetText)
+                                Spacer()
+                                if parts.showsPercent, let spend = parts.spend {
+                                    Text(spend).monospacedDigit()
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -1418,7 +1426,12 @@ struct SidebarProviderItem: View {
         if percent >= Double(alertSettings.cautionThreshold) {
             return Color(nsColor: alertSettings.cautionColor)
         }
-        return .green
+        switch usage.kind {
+        case .claude: return .orange
+        case .codex: return .blue
+        case .openCodeGo: return .white
+        case .cursor: return .gray
+        }
     }
 
     var body: some View {
@@ -1582,6 +1595,7 @@ struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var pairing: PairingManager
     @AppStorage("showAccountEmails") private var showAccountEmails = true
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
     @AppStorage("whiteProviderLogos") private var whiteProviderLogos = false
     @State private var showsNotch: Bool
     let onToggleNotch: (Bool) -> Void
@@ -1616,6 +1630,7 @@ struct SettingsView: View {
     @State private var ntfyServer: String
     let onChangeServer: (String) -> Void
     let localPWAURL: () -> String?
+    let localServerURL: () -> String?
     @State private var localServerPort: String
     let onChangeLocalServerPort: (UInt16) -> Void
     @State private var customPWAURL: String
@@ -1662,6 +1677,7 @@ struct SettingsView: View {
         ntfyServer: String,
         onChangeServer: @escaping (String) -> Void,
         localPWAURL: @escaping () -> String?,
+        localServerURL: @escaping () -> String?,
         localServerPort: UInt16,
         onChangeLocalServerPort: @escaping (UInt16) -> Void,
         customPWAURL: String,
@@ -1704,6 +1720,7 @@ struct SettingsView: View {
         _ntfyServer = State(initialValue: ntfyServer)
         self.onChangeServer = onChangeServer
         self.localPWAURL = localPWAURL
+        self.localServerURL = localServerURL
         _localServerPort = State(initialValue: String(localServerPort))
         self.onChangeLocalServerPort = onChangeLocalServerPort
         _customPWAURL = State(initialValue: customPWAURL)
@@ -1804,6 +1821,16 @@ struct SettingsView: View {
                     )
                 )
                 .disabled(showsMenuBar && !showsNotch)
+                Toggle("Show provider account email", isOn: $showAccountEmails)
+                Text("Show the account email when available, or a masked API key for OpenCode Go.")
+                    .foregroundStyle(.secondary)
+                Picker("Show usage as", selection: $spendDisplay) {
+                    ForEach(SpendDisplay.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                Text("Cursor is the only provider that reports what a cycle costs; the others always show a percentage.")
+                    .foregroundStyle(.secondary)
             }
 
             Section("Notch") {
@@ -1827,7 +1854,6 @@ struct SettingsView: View {
                     "Keep the provider rail visible or collapse it until you hover over the notch."
                 )
                 .foregroundStyle(.secondary)
-                Toggle("Show provider info", isOn: $showAccountEmails)
                 Toggle("Use white theme", isOn: $whiteProviderLogos)
             }
 
@@ -2116,9 +2142,7 @@ struct SettingsView: View {
                     Button("Copy link") {
                         guard let pwaBaseURL = localPWAURL() else { return }
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(
-                            pairing.pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer),
-                            forType: .string)
+                        NSPasteboard.general.setString(pairing.pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localServerURL()), forType: .string)
                     }
                     Spacer()
                     Button("Regenerate", role: .destructive) {
@@ -2218,7 +2242,7 @@ extension NSMenu {
         configureStatusItem()
         configurePopover()
         configureSidebar()
-        localPWAServer.setSnapshotToken(pairing.currentSnapshotToken)
+        localPWAServer.setSnapshotTokens([pairing.currentSnapshotToken, pairing.currentLocalToken])
         ntfyPublisher.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             self.localPWAServer.updateSnapshot(snapshot)
@@ -2356,14 +2380,18 @@ extension NSMenu {
         return localPWAServer.baseURL?.absoluteString
     }
 
+    /// The Mac's LAN address, independent of `pwaBaseURL`'s hosted-vs-local fallback, so
+    /// the pairing link can carry it even when a custom HTTPS PWA URL is configured.
+    private var localServerURL: String? { localPWAServer.baseURL?.absoluteString }
+
     private func refreshPairingQRCode() {
         guard let pwaBaseURL else { return }
-        pairing.refreshQRCode(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer)
+        pairing.refreshQRCode(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localServerURL)
     }
 
     private func regeneratePairing() {
         pairing.regenerate()
-        localPWAServer.setSnapshotToken(pairing.currentSnapshotToken)
+        localPWAServer.setSnapshotTokens([pairing.currentSnapshotToken, pairing.currentLocalToken])
         refreshPairingQRCode()
         ntfyPublisher.publish(store.providers, secret: pairing.currentSecret)
     }
@@ -3347,6 +3375,7 @@ extension NSMenu {
                     self.store.refresh()
                 },
                 localPWAURL: { [weak self] in self?.pwaBaseURL },
+                localServerURL: { [weak self] in self?.localServerURL },
                 localServerPort: localServerPort,
                 onChangeLocalServerPort: { [weak self] port in
                     guard let self else { return }

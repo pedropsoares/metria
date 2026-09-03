@@ -15,7 +15,7 @@ let package = Package(
             name: "Metria",
             dependencies: ["MetriaCore", .product(name: "Sparkle", package: "Sparkle")],
              path: ".",
-             exclude: ["AGENTS.md", "README.md", "LICENSE", ".build", "dist", "node_modules", ".github", ".agents", ".claude", "plans", "skills-lock.json", "apps/electron", "apps/macos-native/Resources", "apps/macos-native/Sources/MetriaCore", "apps/macos-native/Metria.xcodeproj", "apps/macos-native/project.yml", "apps/macos-native/scripts", "apps/pwa/bun.lock", "apps/pwa/src", "apps/pwa/package.json", "apps/pwa/package-lock.json", "apps/pwa/tailwind.config.js", "apps/pwa/wrangler.jsonc", "apps/pwa/public/tailwind.input.css", "apps/pwa/public/claude-logo.png", "apps/pwa/public/codex-logo.png", "apps/pwa/public/opencode-logo.png", "apps/pwa/public/cursor-logo.png", "apps/pwa/public/metria-logo.png", "apps/pwa/public/metria-mascot.png"],
+             exclude: ["AGENTS.md", "README.md", "LICENSE", ".build", ".github", "plans", "apps/macos-native/Resources", "apps/macos-native/Sources/MetriaCore", "apps/macos-native/Metria.xcodeproj", "apps/macos-native/project.yml", "apps/macos-native/scripts", "apps/pwa/bun.lock", "apps/pwa/src", "apps/pwa/package.json", "apps/pwa/package-lock.json", "apps/pwa/tailwind.config.js", "apps/pwa/wrangler.jsonc", "apps/pwa/public/tailwind.input.css", "apps/pwa/public/metria-logo.png", "apps/pwa/public/metria-mascot.png"],
             sources: [
                 "apps/macos-native/Sources/Metria/MetriaApp.swift",
                 "apps/macos-native/Sources/Metria/MetriaResources.swift",
@@ -25,6 +25,7 @@ let package = Package(
                 "apps/macos-native/Sources/Metria/Providers/ClaudeProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/CodexProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/CursorProvider.swift",
+                "apps/macos-native/Sources/Metria/Providers/CursorStateStore.swift",
                 "apps/macos-native/Sources/Metria/Providers/KeychainReader.swift",
                 "apps/macos-native/Sources/Metria/Providers/OpenCodeGoProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/ProviderError.swift",
@@ -36,10 +37,10 @@ let package = Package(
              resources: [
                  .copy("Assets/claude-logo.png"),
                 .copy("Assets/codex-logo.png"),
+                .copy("Assets/cursor-logo.png"),
                 .copy("Assets/metria-logo.png"),
                 .copy("Assets/metria-mascot.png"),
                 .copy("Assets/opencode-logo.png"),
-                .copy("Assets/cursor-logo.png"),
                  .copy("apps/pwa/public/app.css"),
                  .copy("apps/pwa/public/app.js"),
                  .copy("apps/pwa/public/icon.svg"),
