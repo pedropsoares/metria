@@ -361,6 +361,16 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Telefone" } }
       }
     },
+    "Pinned" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fixado" } }
+      }
+    },
+    "Auto-hide" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ocultar automaticamente" } }
+      }
+    },
     "Pin notch" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fixar notch" } }
@@ -669,6 +679,11 @@
     "Weekly limit" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limite semanal" } }
+      }
+    },
+    "%@ color" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cor de %@" } }
       }
     },
     "%@ plan" : {

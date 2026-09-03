@@ -1486,8 +1486,8 @@ enum NotchBehavior: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .pinned: "Pinned"
-        case .autoHide: "Auto-hide"
+        case .pinned: String(localized: "Pinned")
+        case .autoHide: String(localized: "Auto-hide")
         }
     }
 }
@@ -1587,10 +1587,10 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .general: "General"
-        case .design: "Design"
-        case .providers: "Providers"
-        case .iPhone: "Phone"
+        case .general: String(localized: "General")
+        case .design: String(localized: "Design")
+        case .providers: String(localized: "Providers")
+        case .iPhone: String(localized: "Phone")
         }
     }
     var symbol: String {
@@ -2109,13 +2109,13 @@ struct SettingsView: View {
     private var menuBarAlertControls: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
             alertControl(
-                label: "Caution", color: $cautionColor, threshold: $cautionThreshold,
+                label: String(localized: "Caution"), color: $cautionColor, threshold: $cautionThreshold,
                 range: 1...(warningThreshold - 1))
             alertControl(
-                label: "Warning", color: $warningColor, threshold: $warningThreshold,
+                label: String(localized: "Warning"), color: $warningColor, threshold: $warningThreshold,
                 range: (cautionThreshold + 1)...(criticalThreshold - 1))
             alertControl(
-                label: "Critical", color: $criticalColor, threshold: $criticalThreshold,
+                label: String(localized: "Critical"), color: $criticalColor, threshold: $criticalThreshold,
                 range: (warningThreshold + 1)...100)
         }
     }
@@ -2356,7 +2356,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Local address")
                         .font(.headline)
-                    Text(localPWAURL() ?? "Starting local server…")
+                    Text(localPWAURL() ?? String(localized: "Starting local server…"))
                         .font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
