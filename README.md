@@ -183,12 +183,7 @@ the other breaks pairing.
 
 ## Contributing
 
-Contributions are welcome! Feel free to open an issue to report a bug or suggest a feature, or open a pull request with your changes.
-
-- Fork the repository and create a branch from `main`.
-- Keep changes focused and follow the existing code style.
-- Keep all repository text in en-US (comments, UI strings, commit messages, docs).
-- Do not commit credentials, generated build output, or local configuration.
+Contributions are welcome! Feel free to open an issue to report a bug or suggest a feature, or open a pull request with your changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup, the development loop, and PR guidelines.
 
 Join the Metria contributors group on WhatsApp to ask questions, share feedback, and help shape the project.
 
@@ -197,16 +192,6 @@ Join the Metria contributors group on WhatsApp to ask questions, share feedback,
     <img src="https://img.shields.io/badge/WhatsApp%20Group-Contributors-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="Join the WhatsApp contributors group" />
   </a>
 </p>
-
-- Use `make run` to build and launch the app locally while iterating; run `swift build` to verify the package compiles.
-- Runtime-test native macOS changes on macOS 13 or later.
-
-### Mobile PWA
-
-- Build the stylesheet with `cd apps/pwa && npm ci && npm run build`.
-- Deploy changes with `npm run deploy` from `apps/pwa` when appropriate.
-
-See the [project layout](#project-layout) to find where each change belongs. Thanks for helping out!
 
 ## License
 
