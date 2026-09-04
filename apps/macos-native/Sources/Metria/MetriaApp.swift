@@ -185,15 +185,6 @@ extension Data {
     }
 }
 
-struct GaugeColor {
-    static func color(for percent: Double) -> Color { Color(nsColor: nsColor(for: percent)) }
-    static func nsColor(for percent: Double) -> NSColor {
-        percent >= 85
-            ? .systemRed
-            : percent >= 65 ? .systemOrange : percent >= 40 ? .systemYellow : .systemGreen
-    }
-}
-
 struct MenuBarAlertSettings {
     var cautionThreshold: Int
     var warningThreshold: Int
@@ -211,22 +202,110 @@ struct MenuBarAlertSettings {
         criticalColor: .systemRed
     )
 
-    func usageColor(for percent: Double, fallback: Color) -> Color {
-        if percent >= Double(criticalThreshold) { return Color(nsColor: criticalColor) }
-        if percent >= Double(warningThreshold) { return Color(nsColor: warningColor) }
-        if percent >= Double(cautionThreshold) { return Color(nsColor: cautionColor) }
-        return fallback
+    static func load() -> Self {
+        let defaults = UserDefaults.standard
+        return Self(
+            cautionThreshold: defaults.object(forKey: "menuBarCautionThreshold") as? Int ?? Self.default.cautionThreshold,
+            warningThreshold: defaults.object(forKey: "menuBarWarningThreshold") as? Int ?? Self.default.warningThreshold,
+            criticalThreshold: defaults.object(forKey: "menuBarCriticalThreshold") as? Int ?? Self.default.criticalThreshold,
+            cautionColor: ProviderAppearance.loadColor(forKey: "menuBarCautionColor", fallback: Self.default.cautionColor),
+            warningColor: ProviderAppearance.loadColor(forKey: "menuBarWarningColor", fallback: Self.default.warningColor),
+            criticalColor: ProviderAppearance.loadColor(forKey: "menuBarCriticalColor", fallback: Self.default.criticalColor)
+        )
+    }
+
+}
+
+enum ProviderAppearance {
+    enum Theme: String, CaseIterable, Identifiable {
+        case `default`
+        case custom
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .default: String(localized: "Default")
+            case .custom: String(localized: "Custom")
+            }
+        }
+    }
+
+    static let themeKey = "providerColorTheme"
+    private static let customColorPrefix = "providerColor."
+
+    static var theme: Theme {
+        let defaults = UserDefaults.standard
+        if let rawValue = defaults.string(forKey: themeKey), let theme = Theme(rawValue: rawValue) {
+            return theme
+        }
+        return defaults.object(forKey: "whiteProviderLogos") as? Bool == false ? .custom : .default
+    }
+
+    static func setTheme(_ theme: Theme) {
+        UserDefaults.standard.set(theme.rawValue, forKey: themeKey)
+        UserDefaults.standard.set(theme == .default, forKey: "whiteProviderLogos")
+    }
+
+    static func color(for kind: ProviderKind) -> NSColor {
+        guard theme == .custom else { return .systemGreen }
+        return loadColor(forKey: customColorKey(for: kind), fallback: defaultColor(for: kind))
+    }
+
+    static func usageColor(for kind: ProviderKind, percent: Double) -> Color {
+        let settings = MenuBarAlertSettings.load()
+        guard UserDefaults.standard.object(forKey: "menuBarAlertColorsEnabled") as? Bool ?? true else {
+            return Color(nsColor: color(for: kind))
+        }
+        if percent >= Double(settings.criticalThreshold) { return Color(nsColor: settings.criticalColor) }
+        if percent >= Double(settings.warningThreshold) { return Color(nsColor: settings.warningColor) }
+        if percent >= Double(settings.cautionThreshold) { return Color(nsColor: settings.cautionColor) }
+        return Color(nsColor: color(for: kind))
+    }
+
+    static func loadColor(forKey key: String, fallback: NSColor) -> NSColor {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return fallback }
+        return (try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)) ?? fallback
+    }
+
+    static func saveColor(_ color: NSColor, for kind: ProviderKind) {
+        guard let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: true) else { return }
+        UserDefaults.standard.set(data, forKey: customColorKey(for: kind))
+    }
+
+    static func logo(for kind: ProviderKind) -> NSImage? {
+        guard let logo = kind.logo, theme == .default else { return kind.logo }
+        let tintedLogo = NSImage(size: logo.size)
+        tintedLogo.lockFocus()
+        logo.draw(in: NSRect(origin: .zero, size: logo.size))
+        NSColor.white.set()
+        NSRect(origin: .zero, size: logo.size).fill(using: .sourceAtop)
+        tintedLogo.unlockFocus()
+        return tintedLogo
+    }
+
+    private static func customColorKey(for kind: ProviderKind) -> String {
+        "\(customColorPrefix)\(kind.rawValue)"
+    }
+
+    private static func defaultColor(for kind: ProviderKind) -> NSColor {
+        switch kind {
+        case .claude: .orange
+        case .codex: .blue
+        case .openCodeGo: .white
+        case .cursor: .gray
+        case .antigravity: .blue
+        }
     }
 }
 
 struct ProviderLogo: View {
     let provider: ProviderKind
     let size: CGFloat
-    @AppStorage("whiteProviderLogos") private var whiteProviderLogos = false
+    @AppStorage(ProviderAppearance.themeKey) private var providerColorTheme = ProviderAppearance.theme.rawValue
 
     var body: some View {
         if let image = provider.logo {
-            if whiteProviderLogos {
+            if (ProviderAppearance.Theme(rawValue: providerColorTheme) ?? ProviderAppearance.theme) == .default {
                 Image(nsImage: image)
                     .renderingMode(.template)
                     .resizable()
@@ -267,7 +346,6 @@ struct UsageCard: View {
     var showsAccount: Bool = false
     var hiddenWindowTitles: Set<String> = []
     var backgroundOpacity: Double = 1
-    var alertSettings: MenuBarAlertSettings = .default
     @AppStorage("showAccountEmails") private var showAccountEmails = true
     @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
 
@@ -325,7 +403,7 @@ struct UsageCard: View {
                 ForEach(visibleWindows) { window in
                     VStack(alignment: .leading, spacing: (isCompact ? 5 : 8) * scale) {
                         HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
-                        ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.10)); Capsule().fill(alertSettings.usageColor(for: window.percent, fallback: .green)).frame(width: max(0, barWidth * window.percent / 100)) }.frame(height: (isCompact ? 5 : 7) * scale)
+                        ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.10)); Capsule().fill(ProviderAppearance.usageColor(for: usage.kind, percent: window.percent)).frame(width: max(0, barWidth * window.percent / 100)) }.frame(height: (isCompact ? 5 : 7) * scale)
                         let parts = window.spendParts(spendDisplay)
                         HStack(spacing: (isCompact ? 6 : 10) * scale) {
                             if parts.showsPercent { Text("\(Int(window.percent.rounded()))% Used") }
@@ -406,7 +484,7 @@ struct DashboardUsageCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(visibleWindows) { window in
-                        let color = alertSettings.usageColor(for: window.percent, fallback: .green)
+                        let color = ProviderAppearance.usageColor(for: usage.kind, percent: window.percent)
                         let parts = window.spendParts(spendDisplay)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
@@ -844,7 +922,6 @@ struct NotchContent: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var mode: NotchMode
     let backgroundOpacity: Double
-    let menuBarAlertSettings: MenuBarAlertSettings
     let onNotchHover: (Bool) -> Void
     let onProviderHover: (ProviderKind, Int, Bool) -> Void
     let onProviderTap: (ProviderKind) -> Void
@@ -1042,7 +1119,7 @@ struct NotchContent: View {
                 thickness: metrics.idleWidth, extent: metrics.providerItemHeight, axis: axis)
             let rowSize = metrics.size(thickness: metrics.idleWidth, extent: rowExtent, axis: axis)
             SidebarProviderItem(
-                usage: usage, scale: metrics.scale, alertSettings: menuBarAlertSettings
+                usage: usage, scale: metrics.scale
             )
             .frame(width: itemSize.width, height: itemSize.height)
             .frame(width: rowSize.width, height: rowSize.height)
@@ -1139,7 +1216,6 @@ struct NotchCardContent: View {
     let metrics: NotchMetrics
     let position: NotchPosition
     let backgroundOpacity: Double
-    let alertSettings: MenuBarAlertSettings
     let onHover: (Bool) -> Void
 
     /// The pointer shape always points from "right", so it only needs rotating to face
@@ -1164,8 +1240,7 @@ struct NotchCardContent: View {
             scale: metrics.scale,
             showsAccount: true,
             hiddenWindowTitles: hiddenWindowTitles,
-            backgroundOpacity: backgroundOpacity,
-            alertSettings: alertSettings
+            backgroundOpacity: backgroundOpacity
         )
         // Keyed by provider so swapping the hovered provider while the card is already on
         // screen crossfades/scales between the two cards instead of hard-cutting the content,
@@ -1425,27 +1500,11 @@ struct AnimatedPercentageText: View, Animatable {
 struct SidebarProviderItem: View {
     let usage: ProviderUsage
     let scale: CGFloat
-    let alertSettings: MenuBarAlertSettings
     @State private var displayedPercent = 0.0
 
     private var percent: Double { usage.primary?.percent ?? 0 }
     private var progressColor: Color {
-        if percent >= Double(alertSettings.criticalThreshold) {
-            return Color(nsColor: alertSettings.criticalColor)
-        }
-        if percent >= Double(alertSettings.warningThreshold) {
-            return Color(nsColor: alertSettings.warningColor)
-        }
-        if percent >= Double(alertSettings.cautionThreshold) {
-            return Color(nsColor: alertSettings.cautionColor)
-        }
-        switch usage.kind {
-        case .claude: return .orange
-        case .codex: return .blue
-        case .openCodeGo: return .white
-        case .cursor: return .gray
-        case .antigravity: return .blue
-        }
+        ProviderAppearance.usageColor(for: usage.kind, percent: percent)
     }
 
     var body: some View {
@@ -1666,7 +1725,7 @@ struct SettingsView: View {
     @ObservedObject var pairing: PairingManager
     @AppStorage("showAccountEmails") private var showAccountEmails = true
     @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
-    @AppStorage("whiteProviderLogos") private var whiteProviderLogos = false
+    @AppStorage(ProviderAppearance.themeKey) private var providerColorTheme = ProviderAppearance.theme.rawValue
     @State private var showsNotch: Bool
     let onToggleNotch: (Bool) -> Void
     @State private var showsMenuBar: Bool
@@ -1680,6 +1739,8 @@ struct SettingsView: View {
     let onSelectNotchSize: (NotchSize) -> Void
     @State private var notchPosition: NotchPosition
     let onSelectNotchPosition: (NotchPosition) -> Void
+    @State private var providerColors: [ProviderKind: Color]
+    let onChangeProviderAppearance: () -> Void
     @State private var menuBarAlertColorsEnabled: Bool
     let onChangeMenuBarAlertColors: (Bool) -> Void
     @AppStorage("showMenuBarProviderNames") private var showMenuBarProviderNames = true
@@ -1736,6 +1797,8 @@ struct SettingsView: View {
         onSelectNotchSize: @escaping (NotchSize) -> Void,
         notchPosition: NotchPosition,
         onSelectNotchPosition: @escaping (NotchPosition) -> Void,
+        providerColors: [ProviderKind: NSColor],
+        onChangeProviderAppearance: @escaping () -> Void,
         menuBarAlertColorsEnabled: Bool,
         onChangeMenuBarAlertColors: @escaping (Bool) -> Void,
         onChangeMenuBarProviderNames: @escaping (Bool) -> Void,
@@ -1774,6 +1837,8 @@ struct SettingsView: View {
         self.onSelectNotchSize = onSelectNotchSize
         _notchPosition = State(initialValue: notchPosition)
         self.onSelectNotchPosition = onSelectNotchPosition
+        _providerColors = State(initialValue: providerColors.mapValues { Color(nsColor: $0) })
+        self.onChangeProviderAppearance = onChangeProviderAppearance
         _menuBarAlertColorsEnabled = State(initialValue: menuBarAlertColorsEnabled)
         self.onChangeMenuBarAlertColors = onChangeMenuBarAlertColors
         self.onChangeMenuBarProviderNames = onChangeMenuBarProviderNames
@@ -2022,21 +2087,34 @@ struct SettingsView: View {
                     "Keep the provider rail visible or collapse it until you hover over the notch."
                 )
                 .foregroundStyle(.secondary)
-                Toggle("Use white theme", isOn: $whiteProviderLogos)
-            }
-
-            Section("Menu bar") {
-                Toggle("Show provider names", isOn: $showMenuBarProviderNames)
-                    .onChange(of: showMenuBarProviderNames) { onChangeMenuBarProviderNames($0) }
-                Toggle("Color usage alerts", isOn: $menuBarAlertColorsEnabled)
-                    .onChange(of: menuBarAlertColorsEnabled) { onChangeMenuBarAlertColors($0) }
-                menuBarAlertControls
-                    .disabled(!menuBarAlertColorsEnabled)
-                Text("Choose each alert color and when it starts appearing.")
+                Picker("Provider theme", selection: $providerColorTheme) {
+                    ForEach(ProviderAppearance.Theme.allCases) { theme in
+                        Text(theme.title).tag(theme.rawValue)
+                    }
+                }
+                .onChange(of: providerColorTheme) { rawValue in
+                    guard let theme = ProviderAppearance.Theme(rawValue: rawValue) else { return }
+                    ProviderAppearance.setTheme(theme)
+                    onChangeProviderAppearance()
+                }
+                Text("Default uses white logos and alert colors. Custom uses provider logos and colors below.")
                     .foregroundStyle(.secondary)
-            }
+                if ProviderAppearance.Theme(rawValue: providerColorTheme) == .custom {
+                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                        ForEach(ProviderKind.allCases) { kind in
+                            GridRow {
+                                ProviderLogo(provider: kind, size: 20)
+                                Text(kind.rawValue)
+                                ColorPicker(
+                                    "\(kind.rawValue) color",
+                                    selection: providerColorBinding(for: kind)
+                                )
+                                .labelsHidden()
+                            }
+                        }
+                    }
+                }
 
-            Section("Monitor") {
                 Picker(
                     "Monitor", selection: Binding(get: { notchScreenID }, set: onSelectNotchScreen)
                 ) {
@@ -2046,12 +2124,8 @@ struct SettingsView: View {
                 }
                 Text("Choose which monitor displays the notch.")
                     .foregroundStyle(.secondary)
-            }
 
-            Section("Notch appearance") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Position")
-                        .font(.headline)
+                LabeledContent("Position") {
                     FlexSegmentedControl(
                         options: NotchPosition.allCases,
                         title: { $0.title },
@@ -2063,13 +2137,11 @@ struct SettingsView: View {
                             }
                         )
                     )
-                    .frame(maxWidth: .infinity, minHeight: 24)
+                    .frame(minWidth: 280, maxWidth: .infinity, minHeight: 24)
                 }
                 Text("Top and bottom become a horizontal bar; left and right stay a vertical rail.")
                     .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Size")
-                        .font(.headline)
+                LabeledContent("Size") {
                     FlexSegmentedControl(
                         options: NotchSize.allCases,
                         title: { $0.title },
@@ -2081,11 +2153,9 @@ struct SettingsView: View {
                             }
                         )
                     )
-                    .frame(maxWidth: .infinity, minHeight: 24)
+                    .frame(minWidth: 280, maxWidth: .infinity, minHeight: 24)
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Opacity")
-                        .font(.headline)
+                LabeledContent("Opacity") {
                     HStack {
                         Slider(value: $sidebarOpacity, in: 0.35...1)
                             .onChange(of: sidebarOpacity) { onChangeSidebarOpacity($0) }
@@ -2098,7 +2168,21 @@ struct SettingsView: View {
                 Text(
                     "Applies to the usage card; the provider rail always stays fully opaque so it reads as part of the display."
                 )
-                .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Usage colors") {
+                Toggle("Color usage alerts", isOn: $menuBarAlertColorsEnabled)
+                    .onChange(of: menuBarAlertColorsEnabled) { onChangeMenuBarAlertColors($0) }
+                menuBarAlertControls
+                    .disabled(!menuBarAlertColorsEnabled)
+                Text("These alert colors apply to the notch and menu bar. Choose each color and when it starts appearing.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Menu bar") {
+                Toggle("Show provider names", isOn: $showMenuBarProviderNames)
+                    .onChange(of: showMenuBarProviderNames) { onChangeMenuBarProviderNames($0) }
             }
 
         }
@@ -2119,6 +2203,17 @@ struct SettingsView: View {
                 label: String(localized: "Critical"), color: $criticalColor, threshold: $criticalThreshold,
                 range: (warningThreshold + 1)...100)
         }
+    }
+
+    private func providerColorBinding(for kind: ProviderKind) -> Binding<Color> {
+        Binding(
+            get: { providerColors[kind] ?? Color(nsColor: ProviderAppearance.color(for: kind)) },
+            set: { color in
+                providerColors[kind] = color
+                ProviderAppearance.saveColor(NSColor(color), for: kind)
+                onChangeProviderAppearance()
+            }
+        )
     }
 
     private func alertControl(
@@ -2510,26 +2605,27 @@ extension NSMenu {
     }
 
     private var menuBarAlertSettings: MenuBarAlertSettings {
-        .init(
-            cautionThreshold: UserDefaults.standard.object(forKey: "menuBarCautionThreshold")
-                as? Int ?? MenuBarAlertSettings.default.cautionThreshold,
-            warningThreshold: UserDefaults.standard.object(forKey: "menuBarWarningThreshold")
-                as? Int ?? MenuBarAlertSettings.default.warningThreshold,
-            criticalThreshold: UserDefaults.standard.object(forKey: "menuBarCriticalThreshold")
-                as? Int ?? MenuBarAlertSettings.default.criticalThreshold,
-            cautionColor: menuBarAlertColor(
-                forKey: "menuBarCautionColor", fallback: MenuBarAlertSettings.default.cautionColor),
-            warningColor: menuBarAlertColor(
-                forKey: "menuBarWarningColor", fallback: MenuBarAlertSettings.default.warningColor),
-            criticalColor: menuBarAlertColor(
-                forKey: "menuBarCriticalColor", fallback: MenuBarAlertSettings.default.criticalColor
-            )
+        MenuBarAlertSettings.load()
+    }
+
+    private var providerColors: [ProviderKind: NSColor] {
+        Dictionary(uniqueKeysWithValues: ProviderKind.allCases.map { ($0, ProviderAppearance.color(for: $0)) })
+    }
+
+    private func refreshProviderAppearance() {
+        updateStatusItem(store.providers)
+        sidebarWindows.forEach { $0.contentView = makeHostingView() }
+        if cardWindow != nil, let activeCardProvider {
+            showCard(for: activeCardProvider, index: activeCardIndex)
+        }
+        popover?.contentViewController = NSHostingController(
+            rootView: PopoverContent(store: store, alertSettings: menuBarAlertSettings)
         )
     }
 
     private func setMenuBarAlertColorsEnabled(_ enabled: Bool) {
         menuBarAlertColorsEnabled = enabled
-        updateStatusItem(store.providers)
+        refreshProviderAppearance()
     }
 
     private func setMenuBarAlertSettings(_ settings: MenuBarAlertSettings) {
@@ -2606,7 +2702,7 @@ extension NSMenu {
                         string: "  ·  ",
                         attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
             }
-            if let logo = usage.kind.logo {
+            if let logo = ProviderAppearance.logo(for: usage.kind) {
                 let attachment = NSTextAttachment()
                 attachment.image = logo
                 attachment.bounds = NSRect(x: 0, y: -3, width: 16, height: 16)
@@ -2914,7 +3010,6 @@ extension NSMenu {
             store: store,
             mode: notchMode,
             backgroundOpacity: sidebarOpacity,
-            menuBarAlertSettings: menuBarAlertSettings,
             onNotchHover: { [weak self] isHovered in self?.setRailHovered(isHovered) },
             onProviderHover: { [weak self] provider, index, isHovered in
                 self?.setProviderHovered(provider, index: index, isHovered: isHovered)
@@ -3165,8 +3260,7 @@ extension NSMenu {
             hiddenWindowTitles: store.hiddenWindowTitlesByProvider[provider] ?? [],
             metrics: notchMetrics,
             position: notchMode.position,
-            backgroundOpacity: sidebarOpacity,
-            alertSettings: menuBarAlertSettings
+            backgroundOpacity: sidebarOpacity
         ) { [weak self] isHovered in
             self?.setCardHovered(isHovered)
         }
@@ -3547,7 +3641,9 @@ extension NSMenu {
                 onSelectNotchSize: { [weak self] size in self?.setNotchSize(size) },
                 notchPosition: notchMode.position,
                 onSelectNotchPosition: { [weak self] position in self?.setNotchPosition(position) },
-                 menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
+                providerColors: providerColors,
+                onChangeProviderAppearance: { [weak self] in self?.refreshProviderAppearance() },
+                menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
                  onChangeMenuBarAlertColors: { [weak self] enabled in
                      self?.setMenuBarAlertColorsEnabled(enabled)
                  },

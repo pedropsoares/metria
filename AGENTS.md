@@ -1,6 +1,7 @@
 # Agent Instructions
 
 - All repository text must be en-us, including Swift comments, UI strings, commit messages, and documentation; do not add Portuguese text.
+- All user-facing strings must use the repository's i18n mechanism and be added to the relevant localization catalog with translations when UI changes are made.
 - The native macOS app is a Swift Package executable targeting macOS 13+, with the application entrypoint in `apps/macos-native/Sources/Metria/MetriaApp.swift`.
 - The app is a menu-bar AppKit application whose dashboard, settings, and floating notch surface are SwiftUI views coordinated by `AppDelegate`.
 - The floating surface is a "side notch": `NotchGeometry` anchors it flush against the right screen edge, hanging from just below the menu bar (`visibleFrame`, not the physical notch's `safeAreaInsets`); it stays edge-tight as a compact provider rail while idle and shows the hovered provider's card to the left.

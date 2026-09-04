@@ -745,6 +745,41 @@
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "cerca de %lld minutos" } }
       }
+    },
+    "Custom" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Personalizado" } }
+      }
+    },
+    "Default" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Padrão" } }
+      }
+    },
+    "Default uses white logos and alert colors. Custom uses provider logos and colors below." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O padrão usa logos brancas e cores de alerta. O modo personalizado usa as logos e cores dos provedores abaixo." } }
+      }
+    },
+    "Appearance" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aparência" } }
+      }
+    },
+    "Provider theme" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tema dos provedores" } }
+      }
+    },
+    "These alert colors apply to the notch and menu bar. Choose each color and when it starts appearing." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Estas cores de alerta se aplicam ao notch e à barra de menus. Escolha cada cor e quando ela começa a aparecer." } }
+      }
+    },
+    "Usage colors" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cores de uso" } }
+      }
     }
   },
   "version" : "1.0"

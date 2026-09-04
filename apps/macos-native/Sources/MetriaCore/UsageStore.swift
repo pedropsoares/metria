@@ -150,11 +150,13 @@ public final class UsageStore: ObservableObject {
     private var refreshOperation: Task<Void, Never>?
     private var scheduleTask: Task<Void, Never>?
     private var retryTasks: [ProviderKind: Task<Void, Never>] = [:]
+    private var retryUntilByProvider: [ProviderKind: Date]
     private var isRefreshing = false
     private let enabledProvidersKey = "enabledProviderKinds"
     private let hiddenWindowTitlesKey = "hiddenUsageWindowTitles"
     private let cachedUsageKey = "cachedProviderUsage"
     private let knownProvidersKey = "knownProviderKinds"
+    private let retryUntilKey = "providerRetryUntil"
 
     private struct CachedUsage: Codable {
         struct CachedWindow: Codable {
@@ -192,8 +194,10 @@ public final class UsageStore: ObservableObject {
         enabledProviderKinds = hasSavedKinds ? Set(savedKinds).union(newlyAvailableKinds) : availableKinds
         defaults.set(knownKinds.union(availableKinds).map(\.rawValue), forKey: knownProvidersKey)
         if hasSavedKinds, !newlyAvailableKinds.isEmpty {
-            defaults.set(enabledProviderKinds.map(\.rawValue), forKey: enabledProvidersKey)
+            defaults.set((Set(savedKinds).union(newlyAvailableKinds)).map(\.rawValue), forKey: enabledProvidersKey)
         }
+        self.retryUntilByProvider = Self.loadRetryDates(from: defaults, key: retryUntilKey)
+            .filter { availableKinds.contains($0.key) && $0.value > Date() }
         self.providers = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
             .filter { availableKinds.contains($0.kind) && enabledProviderKinds.contains($0.kind) }
         let savedHidden = (defaults.dictionary(forKey: hiddenWindowTitlesKey) as? [String: [String]]) ?? [:]
@@ -266,6 +270,10 @@ public final class UsageStore: ObservableObject {
             updatedKinds.insert(kind)
         } else {
             updatedKinds.remove(kind)
+            retryTasks[kind]?.cancel()
+            retryTasks[kind] = nil
+            retryUntilByProvider[kind] = nil
+            saveRetryDates()
         }
         enabledProviderKinds = updatedKinds
         defaults.set(updatedKinds.map(\.rawValue), forKey: enabledProvidersKey)
@@ -295,8 +303,20 @@ public final class UsageStore: ObservableObject {
     }
 
     public func start() {
-        refresh()
+        restoreRetryTasks()
+        refresh(onlyStale: true)
         rescheduleTimer()
+    }
+
+    private func restoreRetryTasks() {
+        let expiredKinds = retryUntilByProvider.compactMap { kind, deadline in
+            enabledProviderKinds.contains(kind) && deadline > Date() ? nil : kind
+        }
+        expiredKinds.forEach { retryUntilByProvider[$0] = nil }
+        for (kind, deadline) in retryUntilByProvider {
+            scheduleRetry(for: kind, until: deadline)
+        }
+        saveRetryDates()
     }
 
     /// Cancels any pending wait and starts a fresh one, so a `refreshInterval` change
@@ -309,18 +329,30 @@ public final class UsageStore: ObservableObject {
                 guard let self else { return }
                 try? await Task.sleep(for: .seconds(self.refreshInterval))
                 guard !Task.isCancelled else { return }
-                self.refresh()
+                self.refresh(onlyStale: true)
             }
         }
     }
 
     public func refresh() {
+        refresh(onlyStale: false)
+    }
+
+    private func refresh(onlyStale: Bool) {
+        let now = Date()
         let providers = sources.filter {
             enabledProviderKinds.contains($0.kind) &&
             $0.isAvailable &&
-            retryTasks[$0.kind] == nil
+            retryTasks[$0.kind] == nil &&
+            (retryUntilByProvider[$0.kind] ?? .distantPast) <= now &&
+            (!onlyStale || isProviderStale($0.kind, now: now))
         }
         refresh(providers: providers)
+    }
+
+    private func isProviderStale(_ kind: ProviderKind, now: Date) -> Bool {
+        guard let updatedAt = providers.first(where: { $0.kind == kind })?.updatedAt else { return true }
+        return now.timeIntervalSince(updatedAt) >= refreshInterval
     }
 
     private func refresh(providers: [any UsageProvider]) {
@@ -357,12 +389,16 @@ public final class UsageStore: ObservableObject {
         guard enabledProviderKinds.contains(kind) else {
             retryTasks[kind]?.cancel()
             retryTasks[kind] = nil
+            retryUntilByProvider[kind] = nil
+            saveRetryDates()
             return
         }
 
         switch result {
         case .loaded(let usage):
             replace(usage)
+            retryUntilByProvider[usage.kind] = nil
+            saveRetryDates()
             if !usage.windows.isEmpty {
                 saveCachedUsage()
             }
@@ -402,14 +438,39 @@ public final class UsageStore: ObservableObject {
     }
 
     private func scheduleRetry(for kind: ProviderKind, after delay: TimeInterval?) {
-        guard let delay, delay > 0, retryTasks[kind] == nil,
+        guard let delay, delay > 0, retryTasks[kind] == nil else { return }
+        scheduleRetry(for: kind, until: Date().addingTimeInterval(delay))
+    }
+
+    private func scheduleRetry(for kind: ProviderKind, until deadline: Date) {
+        guard deadline > Date(), retryTasks[kind] == nil,
               let provider = sources.first(where: { $0.kind == kind }) else { return }
+        retryUntilByProvider[kind] = deadline
+        saveRetryDates()
+        let delay = max(0, deadline.timeIntervalSinceNow)
         retryTasks[kind] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let self else { return }
             self.retryTasks[kind] = nil
             guard self.enabledProviderKinds.contains(kind) else { return }
             self.refresh(providers: [provider])
+        }
+    }
+
+    private func saveRetryDates() {
+        let dates = retryUntilByProvider.reduce(into: [String: Date]()) { result, entry in
+            result[entry.key.rawValue] = entry.value
+        }
+        guard let data = try? JSONEncoder().encode(dates) else { return }
+        defaults.set(data, forKey: retryUntilKey)
+    }
+
+    private static func loadRetryDates(from defaults: UserDefaults, key: String) -> [ProviderKind: Date] {
+        guard let data = defaults.data(forKey: key),
+              let dates = try? JSONDecoder().decode([String: Date].self, from: data) else { return [:] }
+        return dates.reduce(into: [ProviderKind: Date]()) { result, entry in
+            guard let kind = ProviderKind(rawValue: entry.key) else { return }
+            result[kind] = entry.value
         }
     }
 
