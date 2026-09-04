@@ -122,53 +122,26 @@ force_dmg_window_bounds() {
     local volume="$1"
     local ds_store="$volume/.DS_Store"
     local target_w=660 target_h=500
-    # #region agent log
-    local debug_log="${ROOT_DIR}/.cursor/debug-8b89b8.log"
-    mkdir -p "$(dirname "$debug_log")" 2>/dev/null || true
-    # #endregion
     sync 2>/dev/null || true
     [[ -f "$ds_store" ]] || return 1
 
-    TARGET_W="$target_w" TARGET_H="$target_h" DS_STORE="$ds_store" DEBUG_LOG="$debug_log" python3 - <<'PY'
-import os, re, json, time
+    TARGET_W="$target_w" TARGET_H="$target_h" DS_STORE="$ds_store" python3 - <<'PY'
+import os, re
 from pathlib import Path
 
 ds = Path(os.environ["DS_STORE"])
 tw, th = int(os.environ["TARGET_W"]), int(os.environ["TARGET_H"])
-log_path = Path(os.environ.get("DEBUG_LOG", ""))
 data = bytearray(ds.read_bytes())
 pat = re.compile(rb"\{\{(\d+), (\d+)\}, \{(\d+), (\d+)\}\}")
 matches = list(pat.finditer(data))
 before = [m.group(0).decode() for m in matches]
 
-def emit(message, payload):
-    # #region agent log
-    if not log_path:
-        return
-    try:
-        entry = {
-            "sessionId": "8b89b8",
-            "runId": "ds-store-force",
-            "hypothesisId": "E",
-            "location": "package-macos.sh:force_dmg_window_bounds",
-            "message": message,
-            "data": payload,
-            "timestamp": int(time.time() * 1000),
-        }
-        with log_path.open("a") as f:
-            f.write(json.dumps(entry) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
 if not matches:
-    emit("no WindowBounds in DS_Store", {"before": before, "size": len(data)})
     print("DMG WindowBounds: missing from .DS_Store", flush=True)
     raise SystemExit(1)
 
 already_ok = all(int(m.group(3)) == tw and int(m.group(4)) == th for m in matches)
 if already_ok:
-    emit("WindowBounds already correct", {"before": before, "target": [tw, th]})
     print("DMG WindowBounds: already %dx%d" % (tw, th), flush=True)
     raise SystemExit(0)
 
@@ -184,27 +157,16 @@ for x in range(0, 1000):
         break
 
 if replacement is None:
-    emit("could not build equal-length WindowBounds", {"old": old.decode(), "target": [tw, th]})
     raise SystemExit(1)
 
 for m in matches:
     if len(m.group(0)) != len(replacement):
-        emit("WindowBounds length mismatch", {
-            "old": m.group(0).decode(),
-            "replacement": replacement.decode(),
-        })
         raise SystemExit(1)
     data[m.start():m.end()] = replacement
 
 ds.write_bytes(data)
 after = [m.group(0).decode() for m in pat.finditer(data)]
 ok = all(int(m.group(3)) == tw and int(m.group(4)) == th for m in pat.finditer(data))
-emit("patched DS_Store WindowBounds", {
-    "before": before,
-    "after": after,
-    "target": [tw, th],
-    "ok": ok,
-})
 print("DMG WindowBounds: %s -> %s" % (before[0], after[0]), flush=True)
 raise SystemExit(0 if ok else 1)
 PY
