@@ -688,6 +688,15 @@ enum NotchPosition: String, CaseIterable, Identifiable {
         case .bottom: "chevron.up"
         }
     }
+
+    var symbolName: String {
+        switch self {
+        case .top: "chevron.up"
+        case .left: "chevron.left"
+        case .right: "chevron.right"
+        case .bottom: "chevron.down"
+        }
+    }
 }
 
 /// Gives the screen-edge side a small vertical overhang while keeping the exposed side
@@ -860,8 +869,15 @@ enum NotchSize: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .small: String(localized: "Small")
-        case .medium: String(localized: "Medium")
+        case .medium: String(localized: "Default")
         case .large: String(localized: "Large")
+        }
+    }
+    var symbolName: String {
+        switch self {
+        case .small: "textformat.size.smaller"
+        case .medium: "textformat.size"
+        case .large: "textformat.size.larger"
         }
     }
     var scale: CGFloat {
@@ -1567,6 +1583,13 @@ enum NotchBehavior: String, CaseIterable, Identifiable {
         case .autoHide: String(localized: "Auto-hide")
         }
     }
+
+    var symbolName: String {
+        switch self {
+        case .pinned: "pin.fill"
+        case .autoHide: "eye.slash"
+        }
+    }
 }
 
 enum LaunchAtLoginManager {
@@ -1702,6 +1725,7 @@ private struct SettingsLoadingView: View {
 private struct FlexSegmentedControl<Option: Hashable>: NSViewRepresentable {
     let options: [Option]
     let title: (Option) -> String
+    var symbolName: ((Option) -> String)? = nil
     @Binding var selection: Option
 
     func makeNSView(context: Context) -> NSSegmentedControl {
@@ -1711,7 +1735,20 @@ private struct FlexSegmentedControl<Option: Hashable>: NSViewRepresentable {
             target: context.coordinator,
             action: #selector(Coordinator.selectionChanged(_:))
         )
+        control.font = NSFont.systemFont(ofSize: 11)
         control.segmentDistribution = .fillEqually
+        if let symbolName {
+            for (index, option) in options.enumerated() {
+                guard let image = NSImage(
+                    systemSymbolName: symbolName(option), accessibilityDescription: nil
+                ) else { continue }
+                let configuredImage = image.withSymbolConfiguration(
+                    NSImage.SymbolConfiguration(pointSize: 9, weight: .regular)
+                ) ?? image
+                control.setImage(configuredImage, forSegment: index)
+                control.setImageScaling(.scaleProportionallyDown, forSegment: index)
+            }
+        }
         control.selectedSegment = options.firstIndex(of: selection) ?? 0
         return control
     }
@@ -1973,8 +2010,6 @@ struct SettingsView: View {
                             }
                         }
                     ))
-                Text("Metria will start automatically and remain available in the menu bar.")
-                    .foregroundStyle(.secondary)
             }
 
             Section("Language") {
@@ -2010,8 +2045,6 @@ struct SettingsView: View {
             Section("About") {
                 Text("Metria")
                     .font(.headline)
-                Text("A lightweight usage monitor for your AI providers.")
-                    .foregroundStyle(.secondary)
                 if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
                     Text("Version \(version)")
                         .foregroundStyle(.secondary)
@@ -2080,24 +2113,19 @@ struct SettingsView: View {
                 )
                 .disabled(showsMenuBar && !showsNotch)
                 Toggle("Show provider account email", isOn: $showAccountEmails)
-                Text("Show the account email when available, or a masked API key for OpenCode Go.")
-                    .foregroundStyle(.secondary)
                 Picker("Show usage as", selection: $spendDisplay) {
                     ForEach(SpendDisplay.allCases) { option in
                         Text(option.title).tag(option)
                     }
                 }
-                Text("Cursor is the only provider that reports what a cycle costs; the others always show a percentage.")
-                    .foregroundStyle(.secondary)
             }
 
             Section("Notch") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Behavior")
-                        .font(.headline)
+                LabeledContent("Behavior") {
                     FlexSegmentedControl(
                         options: NotchBehavior.allCases,
                         title: { $0.title },
+                        symbolName: { $0.symbolName },
                         selection: Binding(
                             get: { notchBehavior },
                             set: { newValue in
@@ -2106,12 +2134,8 @@ struct SettingsView: View {
                             }
                         )
                     )
-                    .frame(maxWidth: .infinity, minHeight: 24)
+                    .frame(minHeight: 24)
                 }
-                Text(
-                    "Keep the provider rail visible or collapse it until you hover over the notch."
-                )
-                .foregroundStyle(.secondary)
                 Picker("Provider theme", selection: $providerColorTheme) {
                     ForEach(ProviderAppearance.Theme.allCases) { theme in
                         Text(theme.title).tag(theme.rawValue)
@@ -2122,8 +2146,6 @@ struct SettingsView: View {
                     ProviderAppearance.setTheme(theme)
                     onChangeProviderAppearance()
                 }
-                Text("Default uses white logos and alert colors. Custom uses provider logos and colors below.")
-                    .foregroundStyle(.secondary)
                 if ProviderAppearance.Theme(rawValue: providerColorTheme) == .custom {
                     Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                         ForEach(ProviderKind.allCases) { kind in
@@ -2147,13 +2169,12 @@ struct SettingsView: View {
                         Text(screen.name).tag(screen.id)
                     }
                 }
-                Text("Choose which monitor displays the notch.")
-                    .foregroundStyle(.secondary)
 
                 LabeledContent("Position") {
                     FlexSegmentedControl(
                         options: NotchPosition.allCases,
                         title: { $0.title },
+                        symbolName: { $0.symbolName },
                         selection: Binding(
                             get: { notchPosition },
                             set: { newValue in
@@ -2162,14 +2183,13 @@ struct SettingsView: View {
                             }
                         )
                     )
-                    .frame(minWidth: 280, maxWidth: .infinity, minHeight: 24)
+                    .frame(minHeight: 24)
                 }
-                Text("Top and bottom become a horizontal bar; left and right stay a vertical rail.")
-                    .foregroundStyle(.secondary)
                 LabeledContent("Size") {
                     FlexSegmentedControl(
                         options: NotchSize.allCases,
                         title: { $0.title },
+                        symbolName: { $0.symbolName },
                         selection: Binding(
                             get: { notchSize },
                             set: { newValue in
@@ -2178,7 +2198,7 @@ struct SettingsView: View {
                             }
                         )
                     )
-                    .frame(minWidth: 280, maxWidth: .infinity, minHeight: 24)
+                    .frame(minHeight: 24)
                 }
                 LabeledContent("Opacity") {
                     HStack {
@@ -2190,10 +2210,6 @@ struct SettingsView: View {
                             .frame(width: 42, alignment: .trailing)
                     }
                 }
-                Text(
-                    "Applies to the usage card; the provider rail always stays fully opaque so it reads as part of the display."
-                )
-                    .foregroundStyle(.secondary)
             }
 
             Section("Usage colors") {
@@ -2201,8 +2217,6 @@ struct SettingsView: View {
                     .onChange(of: menuBarAlertColorsEnabled) { onChangeMenuBarAlertColors($0) }
                 menuBarAlertControls
                     .disabled(!menuBarAlertColorsEnabled)
-                Text("These alert colors apply to the notch and menu bar. Choose each color and when it starts appearing.")
-                    .foregroundStyle(.secondary)
             }
 
             Section("Menu bar") {
@@ -2368,9 +2382,6 @@ struct SettingsView: View {
 
             if !store.isProviderAvailable(kind), let hint = store.setupHint(for: kind) {
                 Text(hint).foregroundStyle(.secondary)
-            } else {
-                Text("Reconnect opens the provider's sign-in flow in Terminal.")
-                    .foregroundStyle(.secondary)
             }
         }
         .font(.callout)
@@ -2391,10 +2402,6 @@ struct SettingsView: View {
                     )
                 )
                 .frame(maxWidth: .infinity, minHeight: 24)
-                if let configurationDescription {
-                    Text(configurationDescription)
-                        .foregroundStyle(.secondary)
-                }
             } header: {
                 Text("Mode")
             }
@@ -2402,11 +2409,6 @@ struct SettingsView: View {
                 ForEach(ProviderKind.allCases) { kind in
                     providerRow(for: kind)
                 }
-            } footer: {
-                Text(
-                    "At least one provider must remain enabled, and at least one usage window per provider."
-                )
-                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -2434,17 +2436,6 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, 6)
-    }
-
-    private var configurationDescription: String? {
-        switch store.aiToolsConfiguration {
-        case .default:
-            String(localized: "All available providers and usage windows are enabled.")
-        case .minimal:
-            String(localized: "Only the first usage window for each provider is enabled.")
-        case .custom:
-            nil
-        }
     }
 
     private var phoneView: some View {
@@ -2525,16 +2516,7 @@ struct SettingsView: View {
                     TextField("https://...", text: $customPWAURL)
                         .onSubmit { onChangeCustomPWAURL(customPWAURL) }
                 }
-                Text(
-                    "Leave Custom PWA URL empty to pair through this Mac on the same Wi-Fi network. Use an HTTPS URL to keep remote access and PWA installation."
-                )
-                .foregroundStyle(.secondary)
             }
-
-            Text(
-                "Scan the QR code with your phone's camera, or open the PWA and enter the phrase. The local address must be reachable from your phone."
-            )
-            .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
         .padding(12)

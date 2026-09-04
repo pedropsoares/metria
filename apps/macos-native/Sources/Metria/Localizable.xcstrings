@@ -393,7 +393,7 @@
     },
     "Auto-hide" : {
       "localizations" : {
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ocultar automaticamente" } }
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ocultar" } }
       }
     },
     "Pin notch" : {
@@ -764,16 +764,6 @@
     "Mode" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Modo" } }
-      }
-    },
-    "All available providers and usage windows are enabled." : {
-      "localizations" : {
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Todos os provedores e limites de uso disponíveis estão habilitados." } }
-      }
-    },
-    "Only the first usage window for each provider is enabled." : {
-      "localizations" : {
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Apenas o primeiro limite de uso de cada provedor está habilitado." } }
       }
     },
     "GitHub" : {
