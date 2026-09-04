@@ -776,6 +776,11 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Apenas o primeiro limite de uso de cada provedor está habilitado." } }
       }
     },
+    "GitHub" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "GitHub" } }
+      }
+    },
     "Default uses white logos and alert colors. Custom uses provider logos and colors below." : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O padrão usa logos brancas e cores de alerta. O modo personalizado usa as logos e cores dos provedores abaixo." } }

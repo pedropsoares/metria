@@ -1939,6 +1939,7 @@ struct SettingsView: View {
                 Divider()
                 detailView
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                githubFooter
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -1954,7 +1955,8 @@ struct SettingsView: View {
     }
 
     private var generalView: some View {
-        Form {
+        VStack(spacing: 0) {
+            Form {
             Section("Behavior") {
                 Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
                     Text("Refresh every \(Int(store.refreshInterval / 60)) min")
@@ -2005,12 +2007,6 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Uninstall") {
-                Text("To uninstall Metria, quit the app and move it to the Trash from Finder.")
-                    .foregroundStyle(.secondary)
-                Button("Quit Metria", role: .destructive, action: onQuit)
-            }
-
             Section("About") {
                 Text("Metria")
                     .font(.headline)
@@ -2021,10 +2017,12 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            }
+            .formStyle(.grouped)
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
         }
-        .formStyle(.grouped)
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .alert(
             "Launch at login",
             isPresented: Binding(
@@ -2044,6 +2042,16 @@ struct SettingsView: View {
         } message: {
             Text("Restart Metria to apply the new language.")
         }
+    }
+
+    private var githubFooter: some View {
+        Link(destination: URL(string: "https://github.com/yurirxmos/metria")!) {
+            Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+        }
+        .font(.caption)
+        .opacity(0.45)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
     }
 
     private var designView: some View {
