@@ -44,4 +44,16 @@ extension AppUpdater: SPUUpdaterDelegate {
             NSApp.activate(ignoringOtherApps: true)
         }
     }
+
+    /// Install and relaunch immediately when an automatic background download finishes.
+    /// Without this callback Sparkle waits for the next app termination, leaving the new
+    /// version installed but inactive until the user opens Metria again.
+    nonisolated func updater(
+        _ updater: SPUUpdater,
+        willInstallUpdateOnQuit item: SUAppcastItem,
+        immediateInstallationBlock: @escaping () -> Void
+    ) -> Bool {
+        immediateInstallationBlock()
+        return true
+    }
 }
