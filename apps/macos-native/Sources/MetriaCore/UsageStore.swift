@@ -91,6 +91,22 @@ public enum ProviderKind: String, CaseIterable, Identifiable, Hashable {
     public var id: String { rawValue }
 }
 
+public enum AIToolsConfiguration: String, CaseIterable, Identifiable {
+    case `default`
+    case minimal
+    case custom
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .default: String(localized: "Default")
+        case .minimal: String(localized: "Minimal")
+        case .custom: String(localized: "Custom")
+        }
+    }
+}
+
 public struct ProviderUsage: Identifiable, Equatable {
     public let kind: ProviderKind
     public let accountLabel: String?
@@ -139,6 +155,7 @@ public final class UsageStore: ObservableObject {
     }
     @Published public private(set) var enabledProviderKinds: Set<ProviderKind>
     @Published public private(set) var hiddenWindowTitlesByProvider: [ProviderKind: Set<String>] = [:]
+    @Published public private(set) var aiToolsConfiguration: AIToolsConfiguration
     /// The providers to display, in `ProviderKind` order, backfilled with an empty
     /// placeholder for any enabled provider that hasn't reported usage yet. Computed once
     /// per underlying change instead of by every view that needs it on every render.
@@ -154,6 +171,7 @@ public final class UsageStore: ObservableObject {
     private var isRefreshing = false
     private let enabledProvidersKey = "enabledProviderKinds"
     private let hiddenWindowTitlesKey = "hiddenUsageWindowTitles"
+    private let aiToolsConfigurationKey = "aiToolsConfiguration"
     private let cachedUsageKey = "cachedProviderUsage"
     private let knownProvidersKey = "knownProviderKinds"
     private let retryUntilKey = "providerRetryUntil"
@@ -179,10 +197,10 @@ public final class UsageStore: ObservableObject {
     public init(providers: [any UsageProvider], defaults: UserDefaults = .standard) {
         self.sources = providers
         self.defaults = defaults
-        // `nil` (key never written) means "never configured — default to every detected
-        // provider enabled". An empty array is a real, intentional choice (the user
-        // disabled every provider) and must not be re-interpreted as "unconfigured" on the
-        // next launch, or a fully-disabled setup would silently re-enable itself.
+        // `nil` (key never written) means "never configured — use the minimal preset". An
+        // empty array is a real, intentional choice (the user disabled every provider) and
+        // must not be re-interpreted as "unconfigured" on the next launch, or a fully-disabled
+        // setup would silently re-enable itself.
         let hasSavedKinds = defaults.object(forKey: enabledProvidersKey) != nil
         let savedKinds = (defaults.array(forKey: enabledProvidersKey) as? [String] ?? [])
             .compactMap(ProviderKind.init(rawValue:))
@@ -191,19 +209,50 @@ public final class UsageStore: ObservableObject {
         let knownKinds = (defaults.array(forKey: knownProvidersKey) as? [String])
             .map { Set($0.compactMap(ProviderKind.init(rawValue:))) } ?? Self.legacyProviderKinds
         let newlyAvailableKinds = availableKinds.subtracting(knownKinds)
-        enabledProviderKinds = hasSavedKinds ? Set(savedKinds).union(newlyAvailableKinds) : availableKinds
+        let initialEnabledProviderKinds = hasSavedKinds ? Set(savedKinds).union(newlyAvailableKinds) : availableKinds
+        enabledProviderKinds = initialEnabledProviderKinds
         defaults.set(knownKinds.union(availableKinds).map(\.rawValue), forKey: knownProvidersKey)
         if hasSavedKinds, !newlyAvailableKinds.isEmpty {
             defaults.set((Set(savedKinds).union(newlyAvailableKinds)).map(\.rawValue), forKey: enabledProvidersKey)
         }
         self.retryUntilByProvider = Self.loadRetryDates(from: defaults, key: retryUntilKey)
             .filter { availableKinds.contains($0.key) && $0.value > Date() }
-        self.providers = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
-            .filter { availableKinds.contains($0.kind) && enabledProviderKinds.contains($0.kind) }
+        let cachedProviders = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
+            .filter { availableKinds.contains($0.kind) && initialEnabledProviderKinds.contains($0.kind) }
+        self.providers = cachedProviders
         let savedHidden = (defaults.dictionary(forKey: hiddenWindowTitlesKey) as? [String: [String]]) ?? [:]
-        hiddenWindowTitlesByProvider = savedHidden.reduce(into: [ProviderKind: Set<String>]()) { result, entry in
+        var initialHiddenWindowTitles = savedHidden.reduce(into: [ProviderKind: Set<String>]()) { result, entry in
             guard let kind = ProviderKind(rawValue: entry.key) else { return }
             result[kind] = Set(entry.value)
+        }
+        let initialConfiguration: AIToolsConfiguration
+        if let savedConfiguration = defaults.string(forKey: aiToolsConfigurationKey)
+            .flatMap(AIToolsConfiguration.init(rawValue:))
+        {
+            initialConfiguration = savedConfiguration
+        } else if !hasSavedKinds {
+            initialConfiguration = .minimal
+            for provider in providers where availableKinds.contains(provider.kind) {
+                var titlesToHide = Set(provider.usageWindowTitles.dropFirst())
+                if let cachedWindows = cachedProviders.first(where: { $0.kind == provider.kind })?.windows {
+                    titlesToHide.formUnion(cachedWindows.dropFirst().map(\.title))
+                }
+                if !titlesToHide.isEmpty {
+                    initialHiddenWindowTitles[provider.kind] = titlesToHide
+                }
+            }
+        } else {
+            let isDefault = initialEnabledProviderKinds == availableKinds && initialHiddenWindowTitles.isEmpty
+            initialConfiguration = isDefault ? .default : .custom
+        }
+        hiddenWindowTitlesByProvider = initialHiddenWindowTitles
+        aiToolsConfiguration = initialConfiguration
+        defaults.set(initialConfiguration.rawValue, forKey: aiToolsConfigurationKey)
+        if !savedHidden.isEmpty || initialConfiguration == .minimal {
+            let serializable = initialHiddenWindowTitles.reduce(into: [String: [String]]()) { result, entry in
+                result[entry.key.rawValue] = Array(entry.value)
+            }
+            defaults.set(serializable, forKey: hiddenWindowTitlesKey)
         }
         updateVisibleProviders()
     }
@@ -275,7 +324,9 @@ public final class UsageStore: ObservableObject {
             retryUntilByProvider[kind] = nil
             saveRetryDates()
         }
+        guard updatedKinds != enabledProviderKinds else { return }
         enabledProviderKinds = updatedKinds
+        markConfigurationAsCustom()
         defaults.set(updatedKinds.map(\.rawValue), forKey: enabledProvidersKey)
         updateVisibleProviders()
         refresh()
@@ -295,11 +346,52 @@ public final class UsageStore: ObservableObject {
             guard visibleCount > 1 else { return }
             hiddenForKind.insert(title)
         }
+        guard hiddenForKind != (hiddenWindowTitlesByProvider[kind] ?? []) else { return }
         hiddenWindowTitlesByProvider[kind] = hiddenForKind
         let serializable = hiddenWindowTitlesByProvider.reduce(into: [String: [String]]()) { result, entry in
             result[entry.key.rawValue] = Array(entry.value)
         }
         defaults.set(serializable, forKey: hiddenWindowTitlesKey)
+        markConfigurationAsCustom()
+    }
+
+    public func setAIToolsConfiguration(_ configuration: AIToolsConfiguration) {
+        guard configuration != .custom else { return }
+
+        let enabledKinds = availableProviderKinds
+        var hiddenTitles: [ProviderKind: Set<String>] = [:]
+        if configuration == .minimal {
+            for kind in enabledKinds {
+                let titles = usageWindowTitles(for: kind)
+                var titlesToHide = Set(titles.dropFirst())
+                // Cached windows can carry titles localized by a previous app language.
+                // Include those exact titles so stale rate-limited data follows the preset too.
+                if let cachedWindows = providers.first(where: { $0.kind == kind })?.windows {
+                    titlesToHide.formUnion(cachedWindows.dropFirst().map(\.title))
+                }
+                if !titlesToHide.isEmpty {
+                    hiddenTitles[kind] = titlesToHide
+                }
+            }
+        }
+
+        enabledProviderKinds = enabledKinds
+        hiddenWindowTitlesByProvider = hiddenTitles
+        aiToolsConfiguration = configuration
+        defaults.set(enabledKinds.map(\.rawValue), forKey: enabledProvidersKey)
+        let serializable = hiddenTitles.reduce(into: [String: [String]]()) { result, entry in
+            result[entry.key.rawValue] = Array(entry.value)
+        }
+        defaults.set(serializable, forKey: hiddenWindowTitlesKey)
+        defaults.set(configuration.rawValue, forKey: aiToolsConfigurationKey)
+        updateVisibleProviders()
+        refresh()
+    }
+
+    private func markConfigurationAsCustom() {
+        guard aiToolsConfiguration != .custom else { return }
+        aiToolsConfiguration = .custom
+        defaults.set(aiToolsConfiguration.rawValue, forKey: aiToolsConfigurationKey)
     }
 
     public func start() {

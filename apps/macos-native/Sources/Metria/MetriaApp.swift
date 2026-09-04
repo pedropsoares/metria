@@ -400,9 +400,9 @@ struct UsageCard: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
             } else {
-                ForEach(visibleWindows) { window in
+                ForEach(Array(visibleWindows.enumerated()), id: \.element.id) { index, window in
                     VStack(alignment: .leading, spacing: (isCompact ? 5 : 8) * scale) {
-                        HStack { Text(window.title); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
+                        HStack { Text(window.localizedTitle(for: usage.kind, index: index)); Spacer(); Text(window.resetText).foregroundStyle(.secondary) }.font(.system(size: (isCompact ? 10 : 15) * scale))
                         ZStack(alignment: .leading) { Capsule().fill(Color(white: 0.10)); Capsule().fill(ProviderAppearance.usageColor(for: usage.kind, percent: window.percent)).frame(width: max(0, barWidth * window.percent / 100)) }.frame(height: (isCompact ? 5 : 7) * scale)
                         let parts = window.spendParts(spendDisplay)
                         HStack(spacing: (isCompact ? 6 : 10) * scale) {
@@ -429,6 +429,23 @@ struct UsageCard: View {
 }
 
 extension UsageWindow {
+    func localizedTitle(for provider: ProviderKind, index: Int) -> String {
+        let titles: [String]
+        switch provider {
+        case .claude:
+            titles = [ClaudeProvider.fiveHourLimitTitle, ClaudeProvider.weeklyLimitTitle]
+        case .codex:
+            titles = [CodexProvider.fiveHourLimitTitle, CodexProvider.weeklyLimitTitle]
+        case .openCodeGo:
+            titles = [OpenCodeGoProvider.fiveHourLimitTitle, OpenCodeGoProvider.weeklyLimitTitle, OpenCodeGoProvider.monthlyLimitTitle]
+        case .cursor:
+            titles = [CursorProvider.autoUsageTitle, CursorProvider.apiUsageTitle]
+        case .antigravity:
+            titles = [AntigravityProvider.fiveHourGeminiTitle, AntigravityProvider.weeklyGeminiTitle, AntigravityProvider.fiveHourOthersTitle, AntigravityProvider.weeklyOthersTitle]
+        }
+        return titles.indices.contains(index) ? titles[index] : title
+    }
+
     var resetText: String {
         guard let resetDate else { return String(localized: "No reset data") }
         let seconds = resetDate.timeIntervalSinceNow
@@ -483,12 +500,12 @@ struct DashboardUsageCard: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ForEach(visibleWindows) { window in
+                    ForEach(Array(visibleWindows.enumerated()), id: \.element.id) { index, window in
                         let color = ProviderAppearance.usageColor(for: usage.kind, percent: window.percent)
                         let parts = window.spendParts(spendDisplay)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
-                                Text(window.title)
+                                Text(window.localizedTitle(for: usage.kind, index: index))
                                 Spacer()
                                 if parts.showsPercent {
                                     Text("\(Int(window.percent.rounded()))%")
@@ -2357,6 +2374,23 @@ struct SettingsView: View {
     private var providersView: some View {
         Form {
             Section {
+                FlexSegmentedControl(
+                    options: AIToolsConfiguration.allCases,
+                    title: { $0.title },
+                    selection: Binding(
+                        get: { store.aiToolsConfiguration },
+                        set: { store.setAIToolsConfiguration($0) }
+                    )
+                )
+                .frame(maxWidth: .infinity, minHeight: 24)
+                if let configurationDescription {
+                    Text(configurationDescription)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Mode")
+            }
+            Section {
                 ForEach(ProviderKind.allCases) { kind in
                     providerRow(for: kind)
                 }
@@ -2392,6 +2426,17 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, 6)
+    }
+
+    private var configurationDescription: String? {
+        switch store.aiToolsConfiguration {
+        case .default:
+            String(localized: "All available providers and usage windows are enabled.")
+        case .minimal:
+            String(localized: "Only the first usage window for each provider is enabled.")
+        case .custom:
+            nil
+        }
     }
 
     private var phoneView: some View {
@@ -2518,6 +2563,7 @@ extension NSMenu {
     var observation: AnyCancellable?
     var visibleProvidersObservation: AnyCancellable?
     var enabledProvidersObservation: AnyCancellable?
+    var hiddenWindowsObservation: AnyCancellable?
     private let ntfyPublisher = NtfyPublisher()
     let pairing = PairingManager()
     private let updater = AppUpdater()
@@ -2547,6 +2593,10 @@ extension NSMenu {
         enabledProvidersObservation = store.$enabledProviderKinds.sink { [weak self] _ in
             guard let self else { return }
             self.updateStatusItem(self.store.providers)
+        }
+        hiddenWindowsObservation = store.$hiddenWindowTitlesByProvider.sink { [weak self] _ in
+            guard let self, let provider = self.activeCardProvider else { return }
+            self.showCard(for: provider, index: self.activeCardIndex)
         }
         // A provider can be added to or dropped from `visibleProviders` after launch (e.g.
         // its very first refresh confirms or rules it out just after `configureSidebar()`
