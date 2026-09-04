@@ -2422,6 +2422,7 @@ extension NSMenu {
     var onboardingWindow: NSWindow?
     var observation: AnyCancellable?
     var visibleProvidersObservation: AnyCancellable?
+    var enabledProvidersObservation: AnyCancellable?
     private let ntfyPublisher = NtfyPublisher()
     let pairing = PairingManager()
     private let updater = AppUpdater()
@@ -2447,6 +2448,10 @@ extension NSMenu {
             self?.updateStatusItem(providers)
             guard let self else { return }
             self.ntfyPublisher.publish(providers, secret: self.pairing.currentSecret)
+        }
+        enabledProvidersObservation = store.$enabledProviderKinds.sink { [weak self] _ in
+            guard let self else { return }
+            self.updateStatusItem(self.store.providers)
         }
         // A provider can be added to or dropped from `visibleProviders` after launch (e.g.
         // its very first refresh confirms or rules it out just after `configureSidebar()`
@@ -2591,7 +2596,7 @@ extension NSMenu {
     private func updateStatusItem(_ providers: [ProviderUsage]) {
         let title = NSMutableAttributedString()
         let usages = providers.sorted { $0.kind.rawValue < $1.kind.rawValue }.filter {
-            $0.primary != nil
+            store.enabledProviderKinds.contains($0.kind) && $0.primary != nil
         }
 
         for (index, usage) in usages.enumerated() {
