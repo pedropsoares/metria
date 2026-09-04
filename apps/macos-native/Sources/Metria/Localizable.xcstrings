@@ -6,9 +6,9 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uso da API" } }
       }
     },
-    "Auto usage" : {
+    "Cursor models" : {
       "localizations" : {
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uso automático" } }
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Modelos do Cursor" } }
       }
     },
     "5-hour Gemini" : {
@@ -594,11 +594,6 @@
     "Small" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Pequeno" } }
-      }
-    },
-    "Software Update" : {
-      "localizations" : {
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualização de Software" } }
       }
     },
     "Starting local server…" : {

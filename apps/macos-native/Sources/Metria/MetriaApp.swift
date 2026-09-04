@@ -439,7 +439,7 @@ extension UsageWindow {
         case .openCodeGo:
             titles = [OpenCodeGoProvider.fiveHourLimitTitle, OpenCodeGoProvider.weeklyLimitTitle, OpenCodeGoProvider.monthlyLimitTitle]
         case .cursor:
-            titles = [CursorProvider.autoUsageTitle, CursorProvider.apiUsageTitle]
+            titles = [CursorProvider.cursorModelsTitle, CursorProvider.apiUsageTitle]
         case .antigravity:
             titles = [AntigravityProvider.fiveHourGeminiTitle, AntigravityProvider.weeklyGeminiTitle, AntigravityProvider.fiveHourOthersTitle, AntigravityProvider.weeklyOthersTitle]
         }
@@ -1976,7 +1976,6 @@ struct SettingsView: View {
                 Divider()
                 detailView
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                githubFooter
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -1994,7 +1993,7 @@ struct SettingsView: View {
     private var generalView: some View {
         VStack(spacing: 0) {
             Form {
-            Section("Behavior") {
+            Section {
                 Stepper(value: $store.refreshInterval, in: 60...1800, step: 60) {
                     Text("Refresh every \(Int(store.refreshInterval / 60)) min")
                 }
@@ -2010,9 +2009,11 @@ struct SettingsView: View {
                             }
                         }
                     ))
+            } header: {
+                Label("Behavior", systemImage: "gearshape")
             }
 
-            Section("Language") {
+            Section {
                 Picker("Language", selection: $selectedLanguage) {
                     ForEach(AppLanguage.allCases) { language in
                         Text(language.displayName).tag(language)
@@ -2023,9 +2024,23 @@ struct SettingsView: View {
                     AppLanguageManager.setLanguage(newLanguage)
                     isLanguageRestartPromptShown = true
                 }
+            } header: {
+                Label("Language", systemImage: "globe")
             }
 
             Section {
+                Text("Metria")
+                    .font(.headline)
+                HStack {
+                    if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                        Text("Version \(version)")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Link(destination: URL(string: "https://github.com/yurirxmos/metria")!) {
+                        Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                    }
+                }
                 Button("Check for Updates…", action: onCheckForUpdates)
                     .disabled(!canCheckForUpdates)
                 if !canCheckForUpdates {
@@ -2033,22 +2048,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                HStack {
-                    Text("Software Update")
-                    Spacer()
-                    Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown")")
-                        .foregroundStyle(.secondary)
-                        .textCase(nil)
-                }
-            }
-
-            Section("About") {
-                Text("Metria")
-                    .font(.headline)
-                if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
-                    Text("Version \(version)")
-                        .foregroundStyle(.secondary)
-                }
+                Label("About", systemImage: "info.circle")
             }
             }
             .formStyle(.grouped)
@@ -2077,19 +2077,9 @@ struct SettingsView: View {
         }
     }
 
-    private var githubFooter: some View {
-        Link(destination: URL(string: "https://github.com/yurirxmos/metria")!) {
-            Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
-        }
-        .font(.caption)
-        .opacity(0.45)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-    }
-
     private var designView: some View {
         Form {
-            Section("Display") {
+            Section {
                 Toggle(
                     "Show notch",
                     isOn: Binding(
@@ -2118,9 +2108,11 @@ struct SettingsView: View {
                         Text(option.title).tag(option)
                     }
                 }
+            } header: {
+                Label("Display", systemImage: "rectangle.on.rectangle")
             }
 
-            Section("Notch") {
+            Section {
                 LabeledContent("Behavior") {
                     FlexSegmentedControl(
                         options: NotchBehavior.allCases,
@@ -2136,32 +2128,6 @@ struct SettingsView: View {
                     )
                     .frame(minHeight: 24)
                 }
-                Picker("Provider theme", selection: $providerColorTheme) {
-                    ForEach(ProviderAppearance.Theme.allCases) { theme in
-                        Text(theme.title).tag(theme.rawValue)
-                    }
-                }
-                .onChange(of: providerColorTheme) { rawValue in
-                    guard let theme = ProviderAppearance.Theme(rawValue: rawValue) else { return }
-                    ProviderAppearance.setTheme(theme)
-                    onChangeProviderAppearance()
-                }
-                if ProviderAppearance.Theme(rawValue: providerColorTheme) == .custom {
-                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-                        ForEach(ProviderKind.allCases) { kind in
-                            GridRow {
-                                ProviderLogo(provider: kind, size: 20)
-                                Text(kind.rawValue)
-                                ColorPicker(
-                                    "\(kind.rawValue) color",
-                                    selection: providerColorBinding(for: kind)
-                                )
-                                .labelsHidden()
-                            }
-                        }
-                    }
-                }
-
                 Picker(
                     "Monitor", selection: Binding(get: { notchScreenID }, set: onSelectNotchScreen)
                 ) {
@@ -2210,18 +2176,24 @@ struct SettingsView: View {
                             .frame(width: 42, alignment: .trailing)
                     }
                 }
+            } header: {
+                Label("Notch", systemImage: "rectangle.portrait.and.arrow.right")
             }
 
-            Section("Usage colors") {
+            Section {
                 Toggle("Color usage alerts", isOn: $menuBarAlertColorsEnabled)
                     .onChange(of: menuBarAlertColorsEnabled) { onChangeMenuBarAlertColors($0) }
                 menuBarAlertControls
                     .disabled(!menuBarAlertColorsEnabled)
+            } header: {
+                Label("Usage colors", systemImage: "paintpalette")
             }
 
-            Section("Menu bar") {
+            Section {
                 Toggle("Show provider names", isOn: $showMenuBarProviderNames)
                     .onChange(of: showMenuBarProviderNames) { onChangeMenuBarProviderNames($0) }
+            } header: {
+                Label("Menu bar", systemImage: "menubar.rectangle")
             }
 
         }
@@ -2403,12 +2375,14 @@ struct SettingsView: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 24)
             } header: {
-                Text("Mode")
+                Label("Mode", systemImage: "slider.horizontal.3")
             }
             Section {
                 ForEach(ProviderKind.allCases) { kind in
                     providerRow(for: kind)
                 }
+            } header: {
+                Label("Providers", systemImage: "square.stack.3d.up")
             }
         }
         .formStyle(.grouped)
@@ -2440,7 +2414,7 @@ struct SettingsView: View {
 
     private var phoneView: some View {
         Form {
-            Section("Pair your phone") {
+            Section {
                 if let qrImage = pairing.qrImage {
                     HStack {
                         Image(nsImage: qrImage)
@@ -2481,18 +2455,22 @@ struct SettingsView: View {
                     }
                 }
                 .controlSize(.small)
+            } header: {
+                Label("Pair your phone", systemImage: "iphone")
             }
 
-            Section("Connection") {
+            Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Ntfy server")
                         .font(.headline)
                     TextField("https://ntfy.sh", text: $ntfyServer)
                         .onSubmit { onChangeServer(ntfyServer) }
                 }
+            } header: {
+                Label("Connection", systemImage: "network")
             }
 
-            Section("PWA hosting") {
+            Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Local address")
                         .font(.headline)
@@ -2504,7 +2482,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Local server port")
                         .font(.headline)
-                    TextField("8973", text: $localServerPort)
+                    TextField("", text: $localServerPort)
                         .onSubmit {
                             guard let port = UInt16(localServerPort), port > 0 else { return }
                             onChangeLocalServerPort(port)
@@ -2513,9 +2491,11 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Custom PWA URL")
                         .font(.headline)
-                    TextField("https://...", text: $customPWAURL)
+                    TextField("", text: $customPWAURL)
                         .onSubmit { onChangeCustomPWAURL(customPWAURL) }
                 }
+            } header: {
+                Label("PWA hosting", systemImage: "server.rack")
             }
         }
         .formStyle(.grouped)

@@ -8,10 +8,10 @@ import MetriaCore
 struct CursorProvider: UsageProvider {
     let kind = ProviderKind.cursor
     let setupHint = String(localized: "Sign in to Cursor to make usage available.")
-    static let autoUsageTitle = String(localized: "Auto usage")
+    static let cursorModelsTitle = String(localized: "Cursor models")
     static let apiUsageTitle = String(localized: "API usage")
     static let thisCycleTitle = String(localized: "This cycle")
-    let usageWindowTitles = [autoUsageTitle, apiUsageTitle]
+    let usageWindowTitles = [cursorModelsTitle, apiUsageTitle]
 
     private var stateStore: CursorStateStore {
         CursorStateStore(databaseURL: FileManager.default.homeDirectoryForCurrentUser
@@ -141,7 +141,7 @@ struct CursorProvider: UsageProvider {
 
         func windows(resetDate: Date?) -> [UsageWindow] {
             let percentWindows = [
-                planUsage?.autoPercentUsed.map { UsageWindow(title: CursorProvider.autoUsageTitle, percent: clamped($0), resetDate: resetDate) },
+                planUsage?.autoPercentUsed.map { UsageWindow(title: CursorProvider.cursorModelsTitle, percent: clamped($0), resetDate: resetDate) },
                 planUsage?.apiPercentUsed.map { UsageWindow(title: CursorProvider.apiUsageTitle, percent: clamped($0), resetDate: resetDate) }
             ].compactMap { $0 }
             guard percentWindows.isEmpty else { return percentWindows }
