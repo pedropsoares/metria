@@ -22,6 +22,7 @@ let package = Package(
                 "apps/macos-native/Sources/Metria/LocalNetwork.swift",
                  "apps/macos-native/Sources/Metria/LocalPWAServer.swift",
                  "apps/macos-native/Sources/Metria/ProviderActivityMonitor.swift",
+                "apps/macos-native/Sources/Metria/Providers/AntigravityProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/ClaudeProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/CodexProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/CursorProvider.swift",
@@ -34,9 +35,10 @@ let package = Package(
                  "apps/macos-native/Sources/Metria/Updater.swift",
                  "apps/macos-native/Sources/Metria/OnboardingView.swift"
              ],
-             resources: [
-                 .process("apps/macos-native/Sources/Metria/Localizable.xcstrings"),
-                 .copy("Assets/claude-logo.png"),
+              resources: [
+                  .process("apps/macos-native/Sources/Metria/Localizable.xcstrings"),
+                  .copy("Assets/antigravity-logo.png"),
+                  .copy("Assets/claude-logo.png"),
                 .copy("Assets/codex-logo.png"),
                 .copy("Assets/cursor-logo.png"),
                 .copy("Assets/metria-logo.png"),
