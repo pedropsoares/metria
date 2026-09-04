@@ -66,69 +66,153 @@ else
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
-# Styles the DMG installer window: background art, fixed icon positions and
-# window size. Best-effort by design — AppleScript Finder control can fail on
-# headless runners, and a bare DMG is always preferable to a failed release.
-#
-# Takes a MOUNTED volume path (not a plain directory): Finder flushes
-# .DS_Store on detach, which plain staging dirs never trigger.
+# Styles the DMG installer window via Finder's `tell disk` / container window
+# API (create-dmg style). Opening a custom -mountpoint with Finder window 1
+# styles icons/background but often fails to persist WindowBounds on CI
+# (v0.1.36/v0.1.38 shipped 920x464). A unique staging volume name lets
+# `tell disk` work without colliding with a user-mounted Metria.dmg.
 layout_dmg_window() {
     local volume="$1"
+    local disk_name="$2"
     mkdir -p "$volume/.background"
     cp "$ROOT_DIR/Assets/dmg-background.png" "$volume/.background/background.png"
     SetFile -a V "$volume/.background" 2>/dev/null || true
-    # Path bar must be forced off: it is NOT stored in .DS_Store, so the
-    # viewer's Finder prefs otherwise steal vertical chrome and force a
-    # scrollbar. Bounds are written twice — CI/macOS often drops the first
-    # set bounds (v0.1.36 shipped WindowBounds 920x464 instead of 660x530).
     osascript <<EOF >/dev/null 2>&1 || return 0
 tell application "Finder"
-    open POSIX file "$volume"
-    delay 0.5
-    set dmgWindow to Finder window 1
-    set current view of dmgWindow to icon view
-    set toolbar visible of dmgWindow to false
-    set pathbar visible of dmgWindow to false
-    -- Counter-intuitive but verified: hiding the status bar leaves a white
-    -- filler strip on current macOS, while showing it renders fully dark.
-    set statusbar visible of dmgWindow to true
-    -- Outer 530pt with path bar off: title + status ≈ chrome; 470pt art fills
-    -- the content area (30pt gradient footer absorbs minor chrome variance).
-    set bounds of dmgWindow to {100, 100, 760, 630}
-    set iconViewOpts to icon view options of dmgWindow
-    set arrangement of iconViewOpts to not arranged
-    set icon size of iconViewOpts to 72
-    set background picture of iconViewOpts to POSIX file "$volume/.background/background.png"
-    -- Icon size 72 centered in the 176x152 baked cards (slots {170,332}/{490,332}):
-    -- 72px icon spans 296-368, Finder label lands ~372-392, baked captions at
-    -- ~404. Finder position is the icon CENTER, not the top-left.
-    set position of item "Metria.app" of dmgWindow to {170, 332}
-    set position of item "Applications" of dmgWindow to {490, 332}
-    set position of item ".background" of dmgWindow to {1000, 1000}
-    delay 1
-    set pathbar visible of dmgWindow to false
-    set bounds of dmgWindow to {100, 100, 760, 630}
-    delay 1
-    close dmgWindow
+    tell disk "$disk_name"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        try
+            set pathbar visible of container window to false
+        end try
+        -- Status bar (item count + icon-size slider) must stay off for the
+        -- branded installer look. Outer height is 500pt so 470pt art fills the
+        -- content area with title-bar chrome only (no path/status bars).
+        set statusbar visible of container window to false
+        set the bounds of container window to {100, 100, 760, 600}
+        set theViewOptions to the icon view options of container window
+        set arrangement of theViewOptions to not arranged
+        set icon size of theViewOptions to 72
+        set background picture of theViewOptions to file ".background:background.png"
+        set position of item "Metria.app" of container window to {170, 332}
+        set position of item "Applications" of container window to {490, 332}
+        try
+            set position of item ".background" of container window to {1000, 1000}
+        end try
+        update without registering applications
+        delay 2
+        try
+            set pathbar visible of container window to false
+        end try
+        set the bounds of container window to {100, 100, 760, 600}
+        delay 1
+        close
+        delay 1
+    end tell
 end tell
 EOF
     return 0
 }
 
+# Safety net: if AppleScript still left a wrong WindowBounds (seen on GHA as
+# 920x464), patch the bwsp string in-place with an equal-length replacement so
+# the binary plist length prefix stays valid.
+force_dmg_window_bounds() {
+    local volume="$1"
+    local ds_store="$volume/.DS_Store"
+    local target_w=660 target_h=500
+    sync 2>/dev/null || true
+    [[ -f "$ds_store" ]] || return 1
+
+    TARGET_W="$target_w" TARGET_H="$target_h" DS_STORE="$ds_store" python3 - <<'PY'
+import os, re
+from pathlib import Path
+
+ds = Path(os.environ["DS_STORE"])
+tw, th = int(os.environ["TARGET_W"]), int(os.environ["TARGET_H"])
+data = bytearray(ds.read_bytes())
+pat = re.compile(rb"\{\{(\d+), (\d+)\}, \{(\d+), (\d+)\}\}")
+matches = list(pat.finditer(data))
+before = [m.group(0).decode() for m in matches]
+
+if not matches:
+    print("DMG WindowBounds: missing from .DS_Store", flush=True)
+    raise SystemExit(1)
+
+already_ok = all(int(m.group(3)) == tw and int(m.group(4)) == th for m in matches)
+if already_ok:
+    print("DMG WindowBounds: already %dx%d" % (tw, th), flush=True)
+    raise SystemExit(0)
+
+replacement = None
+old = matches[0].group(0)
+for x in range(0, 1000):
+    for y in range(0, 1000):
+        cand = ("{{%d, %d}, {%d, %d}}" % (x, y, tw, th)).encode()
+        if len(cand) == len(old):
+            replacement = cand
+            break
+    if replacement is not None:
+        break
+
+if replacement is None:
+    raise SystemExit(1)
+
+for m in matches:
+    if len(m.group(0)) != len(replacement):
+        raise SystemExit(1)
+    data[m.start():m.end()] = replacement
+
+ds.write_bytes(data)
+after = [m.group(0).decode() for m in pat.finditer(data)]
+ok = all(int(m.group(3)) == tw and int(m.group(4)) == th for m in pat.finditer(data))
+print("DMG WindowBounds: %s -> %s" % (before[0], after[0]), flush=True)
+raise SystemExit(0 if ok else 1)
+PY
+}
+
 # Builds a styled read-only DMG from a staging dir via a writable scratch
-# image (mount -> layout -> detach flushes .DS_Store -> convert to UDZO).
+# image (mount -> tell disk layout -> bounds patch -> rename -> detach -> UDZO).
 build_styled_dmg() {
     local dmg_root="$1" dmg_path="$2" volname="$3"
     local scratch="$BUILD_DIR/.dmg-scratch.dmg"
+    local staging_name="${volname}-staging-$$"
     rm -f "$scratch"
     local size_mb
     size_mb=$(du -sm "$dmg_root" | cut -f1)
-    hdiutil create -volname "$volname" -srcfolder "$dmg_root" -ov -format UDRW -size "$((size_mb + 20))m" "$scratch" >/dev/null || return 1
-    # Unique mountpoint: never collide with a user-mounted older Metria DMG
-    # (same volume name), which would style — or fail to detach — the wrong disk.
-    local mountpoint="/Volumes/${volname}-staging-$$"
-    hdiutil attach "$scratch" -mountpoint "$mountpoint" -nobrowse >/dev/null || return 1
-    layout_dmg_window "$mountpoint"
+    # Unique volume name (not just mountpoint): Finder's `tell disk` only sees
+    # volumes mounted at /Volumes/<name>, and custom -mountpoint breaks it.
+    hdiutil create -volname "$staging_name" -srcfolder "$dmg_root" -ov -format UDRW -size "$((size_mb + 20))m" "$scratch" >/dev/null || return 1
+    local attach_out mountpoint
+    attach_out="$(hdiutil attach "$scratch" -nobrowse)" || return 1
+    mountpoint="$(printf '%s\n' "$attach_out" | awk 'END { print $NF }')"
+    [[ -d "$mountpoint" ]] || return 1
+
+    layout_dmg_window "$mountpoint" "$staging_name"
+    if ! force_dmg_window_bounds "$mountpoint"; then
+        printf '%s\n' "Warning: could not force DMG WindowBounds to 660x500." >&2
+        hdiutil detach "$mountpoint" >/dev/null 2>&1 || hdiutil detach "$mountpoint" -force >/dev/null 2>&1 || true
+        rm -f "$scratch"
+        return 1
+    fi
+
+    # Final installer should show volume name "Metria", not the staging name.
+    if ! diskutil rename "$mountpoint" "$volname" >/dev/null; then
+        printf '%s\n' "Warning: could not rename staging DMG volume to $volname." >&2
+        hdiutil detach "$mountpoint" >/dev/null 2>&1 || true
+        rm -f "$scratch"
+        return 1
+    fi
+    # Rename moves the mount path to /Volumes/<volname> (or " 1" if taken).
+    if [[ ! -d "$mountpoint" ]]; then
+        if [[ -d "/Volumes/$volname" ]]; then
+            mountpoint="/Volumes/$volname"
+        else
+            mountpoint="$(ls -d /Volumes/"$volname"* 2>/dev/null | head -1 || true)"
+        fi
+    fi
+
     if ! hdiutil detach "$mountpoint" >/dev/null 2>&1; then
         sleep 2
         hdiutil detach "$mountpoint" >/dev/null 2>&1 || hdiutil detach "$mountpoint" -force >/dev/null 2>&1 || return 1
@@ -144,9 +228,6 @@ ditto --norsrc "$APP_BUNDLE" "$BUILD_DIR/dmg-root/$APP_NAME.app"
 ln -s /Applications "$BUILD_DIR/dmg-root/Applications"
 if ! build_styled_dmg "$BUILD_DIR/dmg-root" "$DMG_PATH" "$APP_NAME"; then
     printf '%s\n' "Warning: styled DMG failed; shipping a bare DMG instead." >&2
-    # Sweep the same mountpoint build_styled_dmg attached ($$ is this shell's
-    # PID, identical inside the function), in case its detach retries failed.
-    hdiutil detach "/Volumes/${APP_NAME}-staging-$$" >/dev/null 2>&1 || true
     rm -f "$BUILD_DIR/.dmg-scratch.dmg"
     hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
 fi
@@ -163,8 +244,6 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     ln -s /Applications "$BUILD_DIR/dmg-root/Applications"
     if ! build_styled_dmg "$BUILD_DIR/dmg-root" "$DMG_PATH" "$APP_NAME"; then
         printf '%s\n' "Warning: styled DMG failed; shipping a bare DMG instead." >&2
-        # Same computed mountpoint as build_styled_dmg ($$ is shared).
-        hdiutil detach "/Volumes/${APP_NAME}-staging-$$" >/dev/null 2>&1 || true
         rm -f "$BUILD_DIR/.dmg-scratch.dmg"
         hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
     fi
